@@ -14,18 +14,6 @@
 
 
 
-namespace ENotifyStateHandleHit
-{
-	enum Type
-	{
-		Start,
-		End,
-		None
-	};
-}
-
-
-
 struct FBXTLTaskNodeData
 {
 	// 设置Node对应的Task对象
@@ -96,6 +84,13 @@ public:
 	const FBXTLTaskNodeData& GetTaskNodeData() const;
 
 private:
+	enum EDragType
+	{
+		StartTime,
+		Duration,
+		None
+	};
+
 	FBXTLTaskNodeData TaskNodeData;
 
 	TWeakPtr<FBXTLController> Controller = nullptr;
@@ -140,9 +135,6 @@ public:
 
 	void UpdateSizeAndPosition(const FGeometry& AllottedGeometry);
 
-protected:
-	void OnEditorTaskSelectionChanged(TArray<class UBSATask*> InTaskSelection);
-
 private:
 	bool bSelected;
 
@@ -155,8 +147,6 @@ private:
 	float NotifyScrubHandleCenter;
 
 	FVector2D ScreenPosition;
-
-	bool bDrawTooltipToRight;
 
 	FVector2D TextSize;
 
@@ -182,8 +172,8 @@ public:
 	// 是否支持键盘聚焦
 	bool SupportsKeyboardFocus() const override;
 
-	// 分析鼠标拖拽TaskNode的类型
-	ENotifyStateHandleHit::Type DurationHandleHitTest(const FVector2D& CursorScreenPosition) const;
+	// 刷新拖拽类型
+	void RefreshDragType(const FVector2D& CursorScreenPosition);
 
 	// 是否正在被拖动
 	bool BeingDragged() const;
@@ -209,13 +199,9 @@ public:
 	float HandleOverflowPan(const FVector2D& ScreenCursorPos, float TrackScreenSpaceXPosition, float TrackScreenSpaceMin, float TrackScreenSpaceMax);
 
 private:
-	bool bBeingDragged;
+	int32 DragIndex;
 
-	int32 DragMarkerTransactionIdx;
-
-	int32 DragMarkerPositionIdx;
-
-	ENotifyStateHandleHit::Type CurrentDragHandle;
+	EDragType DragType;
 
 	float WidgetX;
 

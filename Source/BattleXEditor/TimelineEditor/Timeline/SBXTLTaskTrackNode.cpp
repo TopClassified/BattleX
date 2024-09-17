@@ -124,11 +124,8 @@ void SBXTLTaskTrackNode::Construct(const FArguments& InArgs)
 {
 	Font = FCoreStyle::GetDefaultFontStyle("Regular", 10);
 	bSelected = false;
-	bBeingDragged = false;
-	CurrentDragHandle = ENotifyStateHandleHit::None;
-	bDrawTooltipToRight = true;
-	DragMarkerTransactionIdx = INDEX_NONE;
-	DragMarkerPositionIdx = INDEX_NONE;
+	DragIndex = INDEX_NONE;
+	DragType = EDragType::None;
 
 	TaskNodeData.SetTaskNodeData(InArgs._Task);
 	Controller = InArgs._Controller;
@@ -194,13 +191,14 @@ int32 SBXTLTaskTrackNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allot
 		BoxColor = FLinearColor(0.73f, 0.36f, 0.0f);
 	}
 
-	// 根据时长创建一个Box
+	// 持续任务
 	if (NotifyDurationSizeX > 0.0f)
 	{
 		FVector2f DurationBoxSize = FVector2f(NotifyDurationSizeX, TextSize.Y + TextBorderSize.Y * 2.0f);
 		FVector2f DurationBoxPosition = FVector2f(NotifyScrubHandleCenter, (NotifyHeight - TextSize.Y) * 0.5f + DrawBoxHeightOffset);
 		FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(DurationBoxSize, FSlateLayoutTransform(DurationBoxPosition)), StyleInfo, ESlateDrawEffect::None, BoxColor);
 	}
+	// 瞬时任务
 	else
 	{
 		float SizeY = TextSize.Y + TextBorderSize.Y * 2.0f;
@@ -323,12 +321,12 @@ void SBXTLTaskTrackNode::UpdateSizeAndPosition(const FGeometry& AllottedGeometry
 
 	CachedAllotedGeometrySize = AllottedGeometry.Size * AllottedGeometry.Scale;
 
-	if (CurrentDragHandle != ENotifyStateHandleHit::None || bBeingDragged)
+	if (DragType != EDragType::None)
 	{
 		NotifyTimePositionX = ScaleInfo.InputToLocalX(NodeStartTime);
 		NotifyDurationSizeX = ScaleInfo.PixelsPerInput * NodeDuration;
 	}
-	else if (!bBeingDragged)
+	else
 	{
 		NotifyTimePositionX = ScaleInfo.InputToLocalX(TaskNodeData.GetStartTime());
 		NotifyDurationSizeX = ScaleInfo.PixelsPerInput * TaskNodeData.GetDuration();
@@ -336,21 +334,10 @@ void SBXTLTaskTrackNode::UpdateSizeAndPosition(const FGeometry& AllottedGeometry
 
 	const TSharedRef< FSlateFontMeasure > FontMeasureService = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
 	TextSize = FontMeasureService->Measure(GetNotifyText(), Font);
-	LabelWidth = TextSize.X + (TextBorderSize.X * 2.f) + (ScrubHandleSize.X / 2.f);
 
-	float NotifyHandleBoxWidth = FMath::Max(ScrubHandleSize.X, AlignmentMarkerSize.X * 2);
-
-	FVector2D Size = GetSize();
-	float LeftEdgeToNotify = NotifyTimePositionX;
-	float RightEdgeToNotify = AllottedGeometry.Size.X - NotifyTimePositionX;
-	bDrawTooltipToRight = NotifyDurationSizeX > 0.0f || ((RightEdgeToNotify > LabelWidth) || (RightEdgeToNotify > LeftEdgeToNotify));
-
-	WidgetX = bDrawTooltipToRight ? (NotifyTimePositionX - (NotifyHandleBoxWidth / 2.f)) : (NotifyTimePositionX - LabelWidth);
-	float MaxSizeX = FMath::Max(NotifyDurationSizeX, TextSize.X);
-	WidgetSize = bDrawTooltipToRight ? FVector2D(MaxSizeX, NotifyHeight) : FVector2D(LabelWidth + MaxSizeX, NotifyHeight);
-	WidgetSize.X += NotifyHandleBoxWidth;
-
-	NotifyScrubHandleCenter = bDrawTooltipToRight ? NotifyHandleBoxWidth / 2.f : LabelWidth;
+	WidgetX = NotifyTimePositionX;
+	WidgetSize = FVector2D(FMath::Max(NotifyDurationSizeX, TextSize.X), NotifyHeight);
+	WidgetSize.X += FMath::Max(ScrubHandleSize.X, AlignmentMarkerSize.X * 2);
 }
 
 #pragma endregion Parameter
@@ -365,21 +352,15 @@ FReply SBXTLTaskTrackNode::OnFocusReceived(const FGeometry& MyGeometry, const FF
 
 void SBXTLTaskTrackNode::OnFocusLost(const FFocusEvent& InFocusEvent)
 {
-	if (CurrentDragHandle != ENotifyStateHandleHit::None)
+	if (DragType != EDragType::None)
 	{
-		CurrentDragHandle = ENotifyStateHandleHit::None;
-
-		if (DragMarkerTransactionIdx != INDEX_NONE)
+		if (DragIndex != INDEX_NONE)
 		{
 			GEditor->EndTransaction();
-			DragMarkerTransactionIdx = INDEX_NONE;
 		}
 
-		if (DragMarkerPositionIdx != INDEX_NONE)
-		{
-			GEditor->EndTransaction();
-			DragMarkerPositionIdx = INDEX_NONE;
-		}
+		DragIndex = INDEX_NONE;
+		DragType = EDragType::None;
 	}
 }
 
@@ -388,87 +369,72 @@ bool SBXTLTaskTrackNode::SupportsKeyboardFocus() const
 	return true;
 }
 
-ENotifyStateHandleHit::Type SBXTLTaskTrackNode::DurationHandleHitTest(const FVector2D& CursorTrackPosition) const
+void SBXTLTaskTrackNode::RefreshDragType(const FVector2D& CursorTrackPosition)
 {
-	ENotifyStateHandleHit::Type MarkerHit = ENotifyStateHandleHit::None;
+	DragType = EDragType::None;
 
-	// 计算点击位置与TaskNode的相对位置，来判断能否对Task产生影响，以及产生什么影响
-	if (NotifyDurationSizeX > 0.0f)
+	float ScrubHandleHalfWidth = ScrubHandleSize.X / 2.0f;
+	FVector2D NotifyNodePosition(ScrubHandleHalfWidth, 0.0f);
+	FVector2D NotifyNodeSize(NotifyDurationSizeX + ScrubHandleHalfWidth * 2.0f, NotifyHeight);
+
+	FVector2D MouseRelativePosition(CursorTrackPosition - GetWidgetPosition());
+	if (MouseRelativePosition.ComponentwiseAllGreaterThan(NotifyNodePosition) && MouseRelativePosition.ComponentwiseAllLessThan(NotifyNodePosition + NotifyNodeSize))
 	{
-		float ScrubHandleHalfWidth = ScrubHandleSize.X / 2.0f;
-
-		FVector2D NotifyNodePosition(NotifyScrubHandleCenter - ScrubHandleHalfWidth, 0.0f);
-		FVector2D NotifyNodeSize(NotifyDurationSizeX + ScrubHandleHalfWidth * 2.0f, NotifyHeight);
-
-		FVector2D MouseRelativePosition(CursorTrackPosition - GetWidgetPosition());
-
-		if (MouseRelativePosition.ComponentwiseAllGreaterThan(NotifyNodePosition) && MouseRelativePosition.ComponentwiseAllLessThan(NotifyNodePosition + NotifyNodeSize))
+		// 持续任务需要区分
+		if (NotifyDurationSizeX > 0.0f)
 		{
 			// 该次拖动想要修改开始时间
 			if (MouseRelativePosition.X <= (NotifyNodePosition.X + ScrubHandleSize.X))
 			{
-				MarkerHit = ENotifyStateHandleHit::Start;
+				DragType = EDragType::StartTime;
 			}
 			// 该次拖动想要修改时长
 			else if (MouseRelativePosition.X >= (NotifyNodePosition.X + NotifyNodeSize.X - ScrubHandleSize.X))
 			{
-				MarkerHit = ENotifyStateHandleHit::End;
+				DragType = EDragType::Duration;
 			}
 		}
+		// 瞬时任务默认修改开始时间
+		else
+		{
+			DragType = EDragType::StartTime;
+		}
 	}
-
-	return MarkerHit;
 }
 
 bool SBXTLTaskTrackNode::BeingDragged() const
 {
-	return CurrentDragHandle == ENotifyStateHandleHit::Start || CurrentDragHandle == ENotifyStateHandleHit::End;
+	return (DragType == EDragType::StartTime) || (DragType == EDragType::Duration);
 }
 
 FReply SBXTLTaskTrackNode::OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	ENotifyStateHandleHit::Type MarkerHit = DurationHandleHitTest(LastMouseDownPosition);
-	if (!bBeingDragged)
+	if (DragType == EDragType::None)
 	{
-		NodeStartTime = TaskNodeData.GetStartTime();
-		NodeDuration = TaskNodeData.GetDuration();
-		if (MarkerHit == ENotifyStateHandleHit::None)
+		RefreshDragType(LastMouseDownPosition);
+	
+		if (DragType != EDragType::None)
 		{
-			DragMarkerPositionIdx = GEditor->BeginTransaction(NSLOCTEXT("Node", "Drag Postion", "Drag State Node Postion"));
+			NodeStartTime = TaskNodeData.GetStartTime();
+			NodeDuration = TaskNodeData.GetDuration();
+			DragIndex = GEditor->BeginTransaction(NSLOCTEXT("Node", "Drag Postion", "Drag State Node Postion"));
+
+			return StartDragTTNEvent.Execute(SharedThis(this), MouseEvent, FVector2D(MyGeometry.AbsolutePosition), false);
 		}
 	}
 
-	FVector2D ScreenNodePosition = FVector2D(MyGeometry.AbsolutePosition);
-
-	bool bDragOnMarker = false;
-	bBeingDragged = true;
-
-	if (GetDurationSize() > 0.0f)
-	{
-		if (MarkerHit == ENotifyStateHandleHit::Start || MarkerHit == ENotifyStateHandleHit::End)
-		{
-			bDragOnMarker = true;
-			bBeingDragged = false;
-			CurrentDragHandle = MarkerHit;
-
-			DragMarkerTransactionIdx = GEditor->BeginTransaction(NSLOCTEXT("Node", "Drag Transation", "Drag State Node Marker"));
-		}
-
-	}
-
-	return StartDragTTNEvent.Execute(SharedThis(this), MouseEvent, ScreenNodePosition, bDragOnMarker);
+	return FReply::Unhandled();
 }
 
 void SBXTLTaskTrackNode::DragCancelled()
 {
-	if (bBeingDragged && CurrentDragHandle == ENotifyStateHandleHit::None)
+	if (DragType != EDragType::None)
 	{
-		TaskNodeData.SetStartTime(TaskNodeData.GetStartTime());
-		check(DragMarkerPositionIdx != INDEX_NONE);
 		GEditor->EndTransaction();
-		DragMarkerPositionIdx = INDEX_NONE;
 	}
-	bBeingDragged = false;
+
+	DragIndex = INDEX_NONE;
+	DragType = EDragType::None;
 }
 
 void SBXTLTaskTrackNode::SetLastMouseDownPosition(const FVector2D& CursorPosition)
@@ -478,7 +444,7 @@ void SBXTLTaskTrackNode::SetLastMouseDownPosition(const FVector2D& CursorPositio
 
 FReply SBXTLTaskTrackNode::OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	if (CurrentDragHandle == ENotifyStateHandleHit::None)
+	if (DragType == EDragType::None)
 	{
 		FSlateApplication::Get().ReleaseAllPointerCapture();
 		return FReply::Handled();
@@ -491,12 +457,12 @@ FReply SBXTLTaskTrackNode::OnMouseMove(const FGeometry& MyGeometry, const FPoint
 	float TrackScreenSpaceOrigin = CachedTrackGeometry.LocalToAbsolute(FVector2D(ScaleInfo.InputToLocalX(0.0f), 0.0f)).X;
 	float TrackScreenSpaceLimit = CachedTrackGeometry.LocalToAbsolute(FVector2D(ScaleInfo.InputToLocalX(TimelinePlayLength), 0.0f)).X;
 
-	if (CurrentDragHandle == ENotifyStateHandleHit::Start || bBeingDragged)
+	if (DragType == EDragType::StartTime)
 	{
 		float NewDisplayTime = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X);
 		NodeStartTime = NewDisplayTime;
 	}
-	else if (CurrentDragHandle == ENotifyStateHandleHit::End)
+	else if (DragType == EDragType::Duration)
 	{
 		float NewDuration = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X) - TaskNodeData.GetStartTime();
 		NodeDuration = NewDuration;
@@ -517,29 +483,24 @@ FReply SBXTLTaskTrackNode::OnMouseButtonUp(const FGeometry& MyGeometry, const FP
 	float TrackScreenSpaceLimit = CachedTrackGeometry.LocalToAbsolute(FVector2D(ScaleInfo.InputToLocalX(TimelinePlayLength), 0.0f)).X;
 
 
-	if (bLeftButton && CurrentDragHandle != ENotifyStateHandleHit::None)
+	if (bLeftButton && DragType != EDragType::None)
 	{
 		// 对Task的起始时间进行修改
-		if (CurrentDragHandle == ENotifyStateHandleHit::Start)
+		if (DragType == EDragType::StartTime)
 		{
 			float NewDisplayTime = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X);
-
 			TaskNodeData.SetStartTime(NewDisplayTime);
 		}
 		// 对Task的时长进行修改
-		else
+		else if (DragType == EDragType::Duration)
 		{
 			float NewDuration = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X) - TaskNodeData.GetStartTime();
-
 			TaskNodeData.SetDuration(NewDuration);
 		}
 
-		CurrentDragHandle = ENotifyStateHandleHit::None;
-
-		// End drag transaction before handing mouse back
-		check(DragMarkerTransactionIdx != INDEX_NONE);
 		GEditor->EndTransaction();
-		DragMarkerTransactionIdx = INDEX_NONE;
+		DragIndex = INDEX_NONE;
+		DragType = EDragType::None;
 
 		return FReply::Handled().ReleaseMouseCapture();
 	}
@@ -554,10 +515,10 @@ FCursorReply SBXTLTaskTrackNode::OnCursorQuery(const FGeometry& MyGeometry, cons
 		FVector2D RelMouseLocation = MyGeometry.AbsoluteToLocal(CursorEvent.GetScreenSpacePosition());
 
 		const float HandleHalfWidth = ScrubHandleSize.X / 2.0f;
-		const float DistFromFirstHandle = FMath::Abs(RelMouseLocation.X - NotifyScrubHandleCenter);
-		const float DistFromSecondHandle = FMath::Abs(RelMouseLocation.X - (NotifyScrubHandleCenter + NotifyDurationSizeX));
+		const float DistFromFirstHandle = FMath::Abs(RelMouseLocation.X);
+		const float DistFromSecondHandle = FMath::Abs(RelMouseLocation.X - NotifyDurationSizeX);
 
-		if (DistFromFirstHandle < HandleHalfWidth || DistFromSecondHandle < HandleHalfWidth || CurrentDragHandle != ENotifyStateHandleHit::None)
+		if (DistFromFirstHandle < HandleHalfWidth || DistFromSecondHandle < HandleHalfWidth || DragType != EDragType::None)
 		{
 			return FCursorReply::Cursor(EMouseCursor::ResizeLeftRight);
 		}
