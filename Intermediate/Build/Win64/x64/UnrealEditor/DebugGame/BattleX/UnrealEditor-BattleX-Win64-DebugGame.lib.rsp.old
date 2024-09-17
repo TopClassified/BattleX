@@ -1,0 +1,14 @@
+/NOLOGO
+/errorReport:prompt
+/MACHINE:x64
+/SUBSYSTEM:WINDOWS
+/DEF
+/NAME:"UnrealEditor-BattleX-Win64-DebugGame.dll"
+/IGNORE:4221
+/NODEFAULTLIB
+"..\Intermediate\Build\Win64\x64\UnrealEditor\Development\UnrealEd\SharedPCH.UnrealEd.Project.NonOptimized.ValApi.Cpp20.h.obj"
+"H:\Lyra\Plugins\BattleX\Intermediate\Build\Win64\x64\UnrealEditor\DebugGame\BattleX\Module.BattleX.1.cpp.obj"
+"H:\Lyra\Plugins\BattleX\Intermediate\Build\Win64\x64\UnrealEditor\DebugGame\BattleX\Module.BattleX.2.cpp.obj"
+"H:\Lyra\Plugins\BattleX\Intermediate\Build\Win64\x64\UnrealEditor\DebugGame\BattleX\Module.BattleX.3.cpp.obj"
+"..\Intermediate\Build\Win64\x64\UnrealEditor\Development\Default.rc2.res"
+/OUT:"H:\Lyra\Plugins\BattleX\Intermediate\Build\Win64\x64\UnrealEditor\DebugGame\BattleX\UnrealEditor-BattleX-Win64-DebugGame.lib"

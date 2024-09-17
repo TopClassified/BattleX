@@ -1,0 +1,59 @@
+{
+	"RemapUnityFiles": 
+	{
+		"Module.BattleX.1.cpp.obj": [
+			"BattleX.init.gen.cpp.obj",
+			"BXColdWeapon.gen.cpp.obj",
+			"BXCollision.gen.cpp.obj",
+			"BXCurves.gen.cpp.obj",
+			"BXEnums.gen.cpp.obj",
+			"BXFunctionLibrary.gen.cpp.obj",
+			"BXGear.gen.cpp.obj"
+		],
+		"Module.BattleX.2.cpp.obj": [
+			"BXGearComponent.gen.cpp.obj",
+			"BXGearData.gen.cpp.obj",
+			"BXGearEnums.gen.cpp.obj",
+			"BXGearStructs.gen.cpp.obj",
+			"BXManager.gen.cpp.obj",
+			"BXSettings.gen.cpp.obj",
+			"BXShapeComponent.gen.cpp.obj",
+			"BXSkillAsset.gen.cpp.obj",
+			"BXStructs.gen.cpp.obj",
+			"BXSubSystem.gen.cpp.obj",
+			"BXTask.gen.cpp.obj",
+			"BXTEnums.gen.cpp.obj",
+			"BXTLAsset.gen.cpp.obj",
+			"BXTLComponent.gen.cpp.obj",
+			"BXTLEnums.gen.cpp.obj",
+			"BXTLStructs.gen.cpp.obj"
+		],
+		"Module.BattleX.3.cpp.obj": [
+			"BXTProcessor.gen.cpp.obj",
+			"BXTStructs.gen.cpp.obj",
+			"BattleX.cpp.obj",
+			"BXFunctionLibrary.cpp.obj",
+			"BXManager.cpp.obj",
+			"BXSettings.cpp.obj",
+			"BXSubSystem.cpp.obj",
+			"BXCollision.cpp.obj",
+			"BXShapeComponent.cpp.obj",
+			"BXCondition.cpp.obj",
+			"BXColdWeapon.cpp.obj",
+			"BXGear.cpp.obj",
+			"BXGearComponent.cpp.obj",
+			"BXGearData.cpp.obj",
+			"BXLockComponent.cpp.obj",
+			"BXTask.cpp.obj",
+			"BXTProcessor.cpp.obj",
+			"BXSkillAsset.cpp.obj",
+			"BXTLAsset.cpp.obj",
+			"BXTLComponent.cpp.obj",
+			"BXMissile.cpp.obj",
+			"BXPMovementComponent.cpp.obj",
+			"BXProjectile.cpp.obj",
+			"BXSpellField.cpp.obj",
+			"BXUnit.cpp.obj"
+		]
+	}
+}
