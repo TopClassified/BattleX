@@ -1,8 +1,0 @@
-{
-	"BuildId": "f99d5d09-7797-4079-89d7-b05472b553ed",
-	"Modules": 
-	{
-		"BattleX": "UnrealEditor-BattleX-Win64-DebugGame.dll",
-		"BattleXEditor": "UnrealEditor-BattleXEditor-Win64-DebugGame.dll"
-	}
-}
