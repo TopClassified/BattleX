@@ -194,56 +194,39 @@ int32 SBXTLTaskTrackNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allot
 		BoxColor = FLinearColor(0.73f, 0.36f, 0.0f);
 	}
 
-
 	// 根据时长创建一个Box
-	if (NotifyDurationSizeX > 0.f)
+	if (NotifyDurationSizeX > 0.0f)
 	{
-		FVector2f DurationBoxSize = FVector2f(NotifyDurationSizeX, TextSize.Y + TextBorderSize.Y * 2.f);
-		FVector2f DurationBoxPosition = FVector2f(NotifyScrubHandleCentre, (NotifyHeight - TextSize.Y) * 0.5f + DrawBoxHeightOffset);
-		FSlateDrawElement::MakeBox
-		(
-			OutDrawElements, LayerId,
-			AllottedGeometry.ToPaintGeometry(DurationBoxSize, FSlateLayoutTransform(DurationBoxPosition)),
-			StyleInfo, ESlateDrawEffect::None, BoxColor
-		);
+		FVector2f DurationBoxSize = FVector2f(NotifyDurationSizeX, TextSize.Y + TextBorderSize.Y * 2.0f);
+		FVector2f DurationBoxPosition = FVector2f(NotifyScrubHandleCenter, (NotifyHeight - TextSize.Y) * 0.5f + DrawBoxHeightOffset);
+		FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(DurationBoxSize, FSlateLayoutTransform(DurationBoxPosition)), StyleInfo, ESlateDrawEffect::None, BoxColor);
+	}
+	else
+	{
+		float SizeY = TextSize.Y + TextBorderSize.Y * 2.0f;
+		FVector2f DurationBoxPosition = FVector2f(NotifyScrubHandleCenter, (NotifyHeight - TextSize.Y) * 0.5f + DrawBoxHeightOffset);
+
+		TArray<FVector2f> Points;
+		Points.Add(FVector2f(DurationBoxPosition.X, DurationBoxPosition.Y));
+		Points.Add(FVector2f(DurationBoxPosition.X, DurationBoxPosition.Y + SizeY));
+		Points.Add(FVector2f(DurationBoxPosition.X + SizeY, DurationBoxPosition.Y + SizeY * 0.5f));
+		Points.Add(FVector2f(DurationBoxPosition.X, DurationBoxPosition.Y));
+
+		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, BoxColor);
 	}
 
-
-	// 背景
+	// 文字
 	float HalfScrubHandleWidth = ScrubHandleSize.X / 2.0f;
 	FVector2f LabelSize(TextSize);
 	LabelSize.X += TextBorderSize.X * 2.0f + HalfScrubHandleWidth;
 	LabelSize.Y += TextBorderSize.Y * 2.0f;
-	FVector2f LabelPosition(bDrawTooltipToRight ? NotifyScrubHandleCentre : NotifyScrubHandleCentre - LabelSize.X, (NotifyHeight - TextSize.Y) * 0.5f);
-	if (NotifyDurationSizeX == 0.f)
-	{
-		FSlateDrawElement::MakeBox
-		(
-			OutDrawElements, LayerId,
-			AllottedGeometry.ToPaintGeometry(LabelSize, FSlateLayoutTransform(LabelPosition)),
-			StyleInfo, ESlateDrawEffect::None, BoxColor
-		);
-	}
-
-
-	// 文字
 	FVector2f TextPosition(TextBorderSize);
-	TextPosition += LabelPosition;
-	if (bDrawTooltipToRight)
-	{
-		TextPosition.X += HalfScrubHandleWidth;
-	}
-	TextPosition.Y += DrawBoxHeightOffset;
-
+	TextPosition.X += HalfScrubHandleWidth + NotifyScrubHandleCenter;
+	TextPosition.Y += DrawBoxHeightOffset + (NotifyHeight - TextSize.Y) * 0.5f;
 	FVector2f DrawTextSize;
 	DrawTextSize.X = TextSize.X;
 	DrawTextSize.Y = TextSize.Y;
-	FSlateDrawElement::MakeText
-	(
-		OutDrawElements, TextLayerID,
-		AllottedGeometry.ToPaintGeometry(DrawTextSize, FSlateLayoutTransform(TextPosition)),
-		Text, Font, ESlateDrawEffect::None, FLinearColor::White
-	);
+	FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(DrawTextSize, FSlateLayoutTransform(TextPosition)), Text, Font, ESlateDrawEffect::None, FLinearColor::White);
 
 	return TextLayerID;
 }
@@ -367,7 +350,7 @@ void SBXTLTaskTrackNode::UpdateSizeAndPosition(const FGeometry& AllottedGeometry
 	WidgetSize = bDrawTooltipToRight ? FVector2D(MaxSizeX, NotifyHeight) : FVector2D(LabelWidth + MaxSizeX, NotifyHeight);
 	WidgetSize.X += NotifyHandleBoxWidth;
 
-	NotifyScrubHandleCentre = bDrawTooltipToRight ? NotifyHandleBoxWidth / 2.f : LabelWidth;
+	NotifyScrubHandleCenter = bDrawTooltipToRight ? NotifyHandleBoxWidth / 2.f : LabelWidth;
 }
 
 #pragma endregion Parameter
@@ -414,7 +397,7 @@ ENotifyStateHandleHit::Type SBXTLTaskTrackNode::DurationHandleHitTest(const FVec
 	{
 		float ScrubHandleHalfWidth = ScrubHandleSize.X / 2.0f;
 
-		FVector2D NotifyNodePosition(NotifyScrubHandleCentre - ScrubHandleHalfWidth, 0.0f);
+		FVector2D NotifyNodePosition(NotifyScrubHandleCenter - ScrubHandleHalfWidth, 0.0f);
 		FVector2D NotifyNodeSize(NotifyDurationSizeX + ScrubHandleHalfWidth * 2.0f, NotifyHeight);
 
 		FVector2D MouseRelativePosition(CursorTrackPosition - GetWidgetPosition());
@@ -571,8 +554,8 @@ FCursorReply SBXTLTaskTrackNode::OnCursorQuery(const FGeometry& MyGeometry, cons
 		FVector2D RelMouseLocation = MyGeometry.AbsoluteToLocal(CursorEvent.GetScreenSpacePosition());
 
 		const float HandleHalfWidth = ScrubHandleSize.X / 2.0f;
-		const float DistFromFirstHandle = FMath::Abs(RelMouseLocation.X - NotifyScrubHandleCentre);
-		const float DistFromSecondHandle = FMath::Abs(RelMouseLocation.X - (NotifyScrubHandleCentre + NotifyDurationSizeX));
+		const float DistFromFirstHandle = FMath::Abs(RelMouseLocation.X - NotifyScrubHandleCenter);
+		const float DistFromSecondHandle = FMath::Abs(RelMouseLocation.X - (NotifyScrubHandleCenter + NotifyDurationSizeX));
 
 		if (DistFromFirstHandle < HandleHalfWidth || DistFromSecondHandle < HandleHalfWidth || CurrentDragHandle != ENotifyStateHandleHit::None)
 		{

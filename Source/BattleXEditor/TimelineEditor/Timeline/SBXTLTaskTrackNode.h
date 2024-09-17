@@ -152,7 +152,7 @@ private:
 
 	float NotifyDurationSizeX;
 
-	float NotifyScrubHandleCentre;
+	float NotifyScrubHandleCenter;
 
 	FVector2D ScreenPosition;
 
