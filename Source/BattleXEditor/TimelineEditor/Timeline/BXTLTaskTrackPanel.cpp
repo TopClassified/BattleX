@@ -8,6 +8,7 @@
 #include "Widgets/Views/SExpanderArrow.h"
 #include "Widgets/Text/SInlineEditableTextBlock.h"
 
+#include "TimelineTrack.h"
 #include "SBXTLTaskTrack.h"
 #include "SBXTLTaskTrackOutliner.h"
 #include "BXTLController.h"
@@ -20,8 +21,6 @@
 
 #define LOCTEXT_NAMESPACE "FBXTLTaskTrackPanel"
 
-const float FBXTLTaskTrackPanel::NotificationTrackHeight = 38.0f;
-
 TIMELINE_IMPLEMENT_TRACK(FBXTLTaskTrackPanel);
 
 FBXTLTaskTrackPanel::FBXTLTaskTrackPanel
@@ -32,12 +31,12 @@ FBXTLTaskTrackPanel::FBXTLTaskTrackPanel
 {
 	Controller = InController;
 
-	SetHeight(NotificationTrackHeight);
+	SetHeight(FTimelineTrack::TimelineTrackHeight);
 }
 
 void FBXTLTaskTrackPanel::UpdateLayout()
 {
-	SetHeight(NotificationTrackHeight);
+	SetHeight(FTimelineTrack::TimelineTrackHeight);
 
 	RefreshOutlinerWidget();
 

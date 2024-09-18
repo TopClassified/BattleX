@@ -4,9 +4,10 @@
 
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SBorder.h"
+
+#include "TimelineTrack.h"
 #include "BXTLDragDropOp.h"
 #include "BXTLTaskTrackPanel.h"
-
 #include "BXTLEditorUtilities.h"
 
 
@@ -36,14 +37,7 @@ void SBXTLTaskTrack::Construct(const FArguments& InArgs)
 	PasteTaskEvent = InArgs._OnPasteTasks;
 	ExportTemplateEvent = InArgs._OnExportTemplate;
 
-	this->ChildSlot
-	[
-		SAssignNew(TrackArea, SBorder)
-		.Visibility(EVisibility::SelfHitTestInvisible)
-		.BorderImage(FAppStyle::GetBrush("NoBorder"))
-		.Padding(FMargin(0.f, 0.f))
-		.ColorAndOpacity(FLinearColor::White)
-	];
+	this->ChildSlot[SAssignNew(TrackArea, SOverlay)];
 
 	UpdateLayout();
 }
@@ -51,6 +45,11 @@ void SBXTLTaskTrack::Construct(const FArguments& InArgs)
 void SBXTLTaskTrack::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
 { 
 	UpdateCachedGeometry(AllottedGeometry); 
+
+	if (!TaskNode->BeingDragged())
+	{
+		TaskNode->UpdateSizeAndPosition(AllottedGeometry);
+	}
 }
 
 int32 SBXTLTaskTrack::GetTrackIndex() const
@@ -63,57 +62,8 @@ int32 SBXTLTaskTrack::GetTrackIndex() const
 
 
 #pragma region Render
-int32 SBXTLTaskTrack::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
-{
-	const FSlateBrush* StyleInfo = FAppStyle::GetBrush(TEXT("Persona.NotifyEditor.NotifyTrackBackground"));
-	FLinearColor Color = TrackColor.Get();
-
-	FPaintGeometry MyGeometry = AllottedGeometry.ToPaintGeometry();
-
-	int32 CustomLayerId = LayerId + 1;
-	FTrackScaleInfo ScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0.f, 0.f, AllottedGeometry.Size);
-
-	FSlateDrawElement::MakeLines
-	(
-		OutDrawElements, CustomLayerId, AllottedGeometry.ToPaintGeometry(),
-		TArray<FVector2D>({ FVector2D(0.0f, AllottedGeometry.GetLocalSize().Y), FVector2D(AllottedGeometry.GetLocalSize().X, AllottedGeometry.GetLocalSize().Y) }),
-		ESlateDrawEffect::None, FLinearColor(0.1f, 0.1f, 0.1f, 0.3f)
-	);
-
-	++CustomLayerId;
-
-	if (!TaskNode->BeingDragged())
-	{
-		TaskNode->UpdateSizeAndPosition(AllottedGeometry);
-	}
-	else 
-	{
-		float Value = CalculateDraggedNodePos();
-		if (Value >= 0.0f)
-		{
-			float XPos = Value;
-			TArray<FVector2D> LinePoints;
-			LinePoints.Add(FVector2D(XPos, 0.f));
-			LinePoints.Add(FVector2D(XPos, AllottedGeometry.Size.Y));
-
-			FSlateDrawElement::MakeLines
-			(
-				OutDrawElements, CustomLayerId, MyGeometry, LinePoints, 
-				ESlateDrawEffect::None, FLinearColor(1.0f, 0.5f, 0.0f)
-			);
-		}
-	}
-
-	return SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, CustomLayerId, InWidgetStyle, bParentEnabled);
-}
-
 void SBXTLTaskTrack::UpdateLayout()
 {
-	TrackArea->SetContent
-	(
-		SAssignNew(NodeSlots, SOverlay)
-	);
-
 	SAssignNew(TaskNode, SBXTLTaskTrackNode)
 	.Task(CachedTask.Get())
 	.Controller(Controller)
@@ -123,11 +73,8 @@ void SBXTLTaskTrack::UpdateLayout()
 	.OnRefreshPanel(RefreshPanelEvent)
 	.OnStartDragTTN(this, &SBXTLTaskTrack::OnNotifyNodeDragStarted, 0);
 
-	NodeSlots->AddSlot()
-	.Padding(TAttribute<FMargin>::Create(TAttribute<FMargin>::FGetter::CreateSP(this, &SBXTLTaskTrack::GetNotifyTrackPadding)))
-	[
-		TaskNode->AsShared()
-	];
+	TrackArea->ClearChildren();
+	TrackArea->AddSlot().Padding(TAttribute<FMargin>::Create(TAttribute<FMargin>::FGetter::CreateSP(this, &SBXTLTaskTrack::GetNotifyTrackPadding)))[TaskNode->AsShared()];
 }
 
 #pragma endregion Render
@@ -137,8 +84,7 @@ void SBXTLTaskTrack::UpdateLayout()
 #pragma region Menu
 TSharedPtr<SWidget> SBXTLTaskTrack::SummonContextMenu(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	FVector2D CursorPos = MouseEvent.GetScreenSpacePosition();
-	LastClickedTime = CalculateTime(MyGeometry, MouseEvent.GetScreenSpacePosition());
+	TSharedPtr<SWidget> Result = nullptr;
 
 	FMenuBuilder MenuBuilder(true, nullptr);
 	MenuBuilder.BeginSection("Track", LOCTEXT("NotifyHeading", "Track Actions"));
@@ -200,10 +146,16 @@ TSharedPtr<SWidget> SBXTLTaskTrack::SummonContextMenu(const FGeometry& MyGeometr
 	}
 	MenuBuilder.EndSection();
 
-	FWidgetPath WidgetPath = MouseEvent.GetEventPath() != nullptr ? *MouseEvent.GetEventPath() : FWidgetPath();
-	FSlateApplication::Get().PushMenu(SharedThis(this), WidgetPath, MenuBuilder.MakeWidget(), CursorPos, FPopupTransitionEffect(FPopupTransitionEffect::ContextMenu));
+	Result = MenuBuilder.MakeWidget();
+	FWidgetPath WidgetPath = MouseEvent.GetEventPath() ? *MouseEvent.GetEventPath() : FWidgetPath();
+	FSlateApplication::Get().PushMenu
+	(
+		SharedThis(this), WidgetPath, Result.ToSharedRef(), 
+		MouseEvent.GetScreenSpacePosition(), 
+		FPopupTransitionEffect(FPopupTransitionEffect::ContextMenu)
+	);
 
-	return TSharedPtr<SWidget>();
+	return Result;
 }
 
 void SBXTLTaskTrack::AddNewTaskMenu(FMenuBuilder& MenuBuilder)
@@ -215,7 +167,7 @@ void SBXTLTaskTrack::CreateNewTaskNodeAtCursor(UClass* NotifyClass)
 {
 	FSlateApplication::Get().DismissAllMenus();
 
-	AddTaskEvent.ExecuteIfBound(NotifyClass, LastClickedTime);
+	AddTaskEvent.ExecuteIfBound(NotifyClass, 0.0f);
 }
 
 void SBXTLTaskTrack::CopyTaskMenu()
@@ -238,11 +190,6 @@ void SBXTLTaskTrack::ExportTemplateMenu()
 
 
 #pragma region Widget
-float SBXTLTaskTrack::GetLastClickedTime() const
-{ 
-	return LastClickedTime; 
-}
-
 const FGeometry& SBXTLTaskTrack::GetCachedGeometry() const
 { 
 	return CachedGeometry; 
@@ -251,20 +198,19 @@ const FGeometry& SBXTLTaskTrack::GetCachedGeometry() const
 void SBXTLTaskTrack::UpdateCachedGeometry(const FGeometry& InGeometry)
 {
 	CachedGeometry = InGeometry;
-
-	TaskNode->CachedTrackGeometry = InGeometry;
 }
 
 FTrackScaleInfo SBXTLTaskTrack::GetCachedScaleInfo() const
 { 
-	return FTrackScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0.f, 0.f, CachedGeometry.GetLocalSize()); 
+	return FTrackScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0.0f, 0.0f, CachedGeometry.GetLocalSize()); 
 }
 
 FVector2D SBXTLTaskTrack::ComputeDesiredSize(float) const
 {
 	FVector2D Size;
 	Size.X = 200;
-	Size.Y = FBXTLTaskTrackPanel::NotificationTrackHeight;
+	Size.Y = FTimelineTrack::TimelineTrackHeight;
+
 	return Size;
 }
 
@@ -311,55 +257,42 @@ FReply SBXTLTaskTrack::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& I
 
 FReply SBXTLTaskTrack::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	FVector2D CursorPos = MouseEvent.GetScreenSpacePosition();
-	CursorPos = MyGeometry.AbsoluteToLocal(CursorPos);
-
 	if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
-		TaskNode->SetLastMouseDownPosition(CursorPos);
+		TaskNode->SetLastMouseDownPosition(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()));
 
 		return FReply::Handled().DetectDrag(TaskNode.ToSharedRef(), EKeys::LeftMouseButton);
 	}
 	else if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 	{
-		return FReply::Handled();
-	}
-
-	return FReply::Handled();
-}
-
-FReply SBXTLTaskTrack::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
-{
-	bool bLeftMouseButton = MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton;
-	bool bRightMouseButton = MouseEvent.GetEffectingButton() == EKeys::RightMouseButton;
-
-	if (bRightMouseButton)
-	{
-		TSharedPtr<SWidget> WidgetToFocus;
-		WidgetToFocus = SummonContextMenu(MyGeometry, MouseEvent);
-
-		return (WidgetToFocus.IsValid())
-			? FReply::Handled().ReleaseMouseCapture().SetUserFocus(WidgetToFocus.ToSharedRef(), EFocusCause::SetDirectly)
-			: FReply::Handled().ReleaseMouseCapture();
-	}
-	else if (bLeftMouseButton)
-	{
-		SelectTaskNode();
-
-		FVector2D CursorPos = MouseEvent.GetScreenSpacePosition();
-		CursorPos = MyGeometry.AbsoluteToLocal(CursorPos);
-
-		LastClickedTime = CalculateTime(MyGeometry, MouseEvent.GetScreenSpacePosition());
-
+		// 接受回调，其他回调不在处理
 		return FReply::Handled();
 	}
 
 	return FReply::Unhandled();
 }
 
-FCursorReply SBXTLTaskTrack::OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const
+FReply SBXTLTaskTrack::OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	return FCursorReply::Unhandled();
+	return FReply::Handled();
+}
+
+FReply SBXTLTaskTrack::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+	{
+		SelectTaskNode();
+
+		return FReply::Handled();
+	}
+	else if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+	{
+		TSharedPtr<SWidget> WidgetToFocus = SummonContextMenu(MyGeometry, MouseEvent);
+
+		return (WidgetToFocus.IsValid()) ? FReply::Handled().ReleaseMouseCapture().SetUserFocus(WidgetToFocus.ToSharedRef(), EFocusCause::SetDirectly) : FReply::Handled().ReleaseMouseCapture();
+	}
+
+	return FReply::Unhandled();
 }
 
 void SBXTLTaskTrack::HandleNodeDrop(TSharedPtr<SBXTLTaskTrackNode> Node, float Offset)
@@ -397,17 +330,6 @@ void SBXTLTaskTrack::OnDeleteKeyPressed()
 	}
 }
 
-float SBXTLTaskTrack::CalculateTime(const FGeometry& MyGeometry, FVector2D NodePos, bool bInputIsAbsolute)
-{
-	if (bInputIsAbsolute)
-	{
-		NodePos = MyGeometry.AbsoluteToLocal(NodePos);
-	}
-
-	FTrackScaleInfo ScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0.0f, 0.0f, MyGeometry.Size);
-	return FMath::Clamp<float>(ScaleInfo.LocalXToInput(NodePos.X), 0.0f, TimelinePlayLength);
-}
-
 FMargin SBXTLTaskTrack::GetNotifyTrackPadding() const
 {
 	float LeftMargin = TaskNode->GetWidgetPosition().X;
@@ -420,8 +342,6 @@ FReply SBXTLTaskTrack::OnNotifyNodeDragStarted(TSharedRef<SBXTLTaskTrackNode> No
 {
 	if (!bDragOnMarker)
 	{
-		SelectTaskNode();
-
 		TArray<TSharedPtr<SBXTLTaskTrackNode>> NodesToDrag;
 		NodesToDrag.Add(NotifyNode);
 

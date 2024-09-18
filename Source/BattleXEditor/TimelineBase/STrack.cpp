@@ -29,37 +29,34 @@ int32 STrack::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
 	static const FName SelectionColorName("SelectionColor");
 
 	TSharedPtr<FTimelineTrack> Track = WeakTrack.Pin();
-	if(Track.IsValid())
+	if(Track.IsValid() && Track->IsVisible())
 	{
-		if (Track->IsVisible())
+		float TotalNodeHeight = Track->GetHeight() + Track->GetPadding().Combined();
+
+		// draw hovered
+		if (Track->IsHovered())
 		{
-			float TotalNodeHeight = Track->GetHeight() + Track->GetPadding().Combined();
-
-			// draw hovered
-			if (Track->IsHovered())
-			{
-				FSlateDrawElement::MakeBox
-				(
-					OutDrawElements,
-					LayerId++,
-					AllottedGeometry.ToPaintGeometry(FVector2D(AllottedGeometry.GetLocalSize().X, TotalNodeHeight), FSlateLayoutTransform(1.0f, TransformPoint(1.0f, UE::Slate::CastToVector2f(FVector2D(0, 0))))),
-					FAppStyle::GetBrush(BorderName),
-					ESlateDrawEffect::None,
-					FLinearColor(1.0f, 1.0f, 1.0f, 0.05f)
-				);
-			}
-
-			// Draw track bottom border
-			FSlateDrawElement::MakeLines
+			FSlateDrawElement::MakeBox
 			(
 				OutDrawElements,
 				LayerId++,
-				AllottedGeometry.ToPaintGeometry(),
-				TArray<FVector2D>({FVector2D(0.0f, TotalNodeHeight), FVector2D(AllottedGeometry.GetLocalSize().X, TotalNodeHeight)}),
+				AllottedGeometry.ToPaintGeometry(FVector2D(AllottedGeometry.GetLocalSize().X, TotalNodeHeight), FSlateLayoutTransform(1.0f, TransformPoint(1.0f, UE::Slate::CastToVector2f(FVector2D(0, 0))))),
+				FAppStyle::GetBrush(BorderName),
 				ESlateDrawEffect::None,
-				FLinearColor(0.1f, 0.1f, 0.1f, 0.3f)
+				FLinearColor(1.0f, 1.0f, 1.0f, 0.05f)
 			);
 		}
+
+		// Draw track bottom border
+		FSlateDrawElement::MakeLines
+		(
+			OutDrawElements,
+			LayerId++,
+			AllottedGeometry.ToPaintGeometry(),
+			TArray<FVector2D>({ FVector2D(0.0f, TotalNodeHeight), FVector2D(AllottedGeometry.GetLocalSize().X, TotalNodeHeight) }),
+			ESlateDrawEffect::None,
+			FLinearColor(0.1f, 0.1f, 0.1f, 0.3f)
+		);
 	}
 
 	return SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId + 1, InWidgetStyle, bParentEnabled);
@@ -84,9 +81,9 @@ void STrack::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime,
 FVector2D STrack::ComputeDesiredSize(float LayoutScale) const
 {
 	TSharedPtr<FTimelineTrack> Track = WeakTrack.Pin();
-	if(Track.IsValid())
+	if(WeakTrack.IsValid())
 	{
-		return FVector2D(100.f, Track->GetHeight() + Track->GetPadding().Combined());
+		return FVector2D(100.0f, Track->GetHeight() + Track->GetPadding().Combined());
 	}
 
 	return FVector2D::ZeroVector;

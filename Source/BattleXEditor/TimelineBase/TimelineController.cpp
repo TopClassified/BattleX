@@ -128,7 +128,6 @@ void FTimelineController::ClearTrackSelection()
 	}
 
 	PostClearTrackSelection();
-
 }
 
 void FTimelineController::SetTrackSelected(const TSharedRef<FTimelineTrack>& InTrack, bool bIsSelected)

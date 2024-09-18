@@ -28,9 +28,6 @@ struct FBXTLTaskNodeData
 	// 获取颜色
 	TOptional<FLinearColor> GetColor() const;
 
-	// 获取Tip
-	FText GetNodeTooltip() const;
-
 	// 获取开始时间
 	float GetStartTime() const;
 
@@ -105,7 +102,7 @@ public:
 	int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const;
 
 	// 绘制移动时的偏移虚影
-	void DrawHandleOffset(const float& Offset, const float& HandleCentre, FSlateWindowElementList& OutDrawElements, int32 MarkerLayer, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FLinearColor NodeColour) const;
+	void DrawHandleOffset(const float& Offset, const float& HandleCenter, FSlateWindowElementList& OutDrawElements, int32 MarkerLayer, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FLinearColor NodeColour) const;
 
 #pragma endregion Render
 
@@ -116,8 +113,6 @@ public:
 	bool IsSelected() const;
 
 	FText GetNotifyText() const;
-
-	FText GetNodeTooltip() const;
 
 	FVector2D GetSize() const;
 
@@ -140,22 +135,19 @@ private:
 
 	FSlateFontInfo Font;
 
-	float NotifyTimePositionX;
+	float TaskTimePositionX;
 
-	float NotifyDurationSizeX;
-
-	float NotifyScrubHandleCenter;
+	float TaskDurationSizeX;
 
 	FVector2D ScreenPosition;
 
-	FVector2D TextSize;
+	FVector2f TextSize;
 
 	float LabelWidth;
 
 	float NodeStartTime;
 
 	float NodeDuration;
-
 
 #pragma endregion Parameter
 
@@ -187,16 +179,8 @@ public:
 	// 设置鼠标按下时的位置
 	void SetLastMouseDownPosition(const FVector2D& CursorPosition);
 
-	// 鼠标移动回调
-	FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
-
-	// 鼠标按键抬起回调
-	FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
-
-	// 鼠标悬停查询
+	// 改变指针样式
 	FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override;
-
-	float HandleOverflowPan(const FVector2D& ScreenCursorPos, float TrackScreenSpaceXPosition, float TrackScreenSpaceMin, float TrackScreenSpaceMax);
 
 private:
 	int32 DragIndex;
@@ -214,8 +198,6 @@ private:
 	float TimelinePlayLength;
 
 	FVector2D LastMouseDownPosition;
-
-	FGeometry CachedTrackGeometry;
 
 	FVector2D CachedAllotedGeometrySize;
 

@@ -51,7 +51,6 @@ public:
 class STrackArea : public SPanel
 {
 public:
-
 	SLATE_BEGIN_ARGS(STrackArea)
 	{
 		_Clipping = EWidgetClipping::ClipToBounds;
@@ -63,7 +62,6 @@ public:
 	/** Construct this widget */
 	void Construct(const FArguments& InArgs, const TSharedRef<FTimelineController>& InTimelineController, const TSharedRef<FTimeSliderController>& InTimeSliderController);
 
-public:
 	/** Empty the track area */
 	void Empty();
 
@@ -104,7 +102,6 @@ private:
 	/** The track area's children. */
 	TPanelChildren<FTrackAreaSlot> Children;
 
-private:
 	/** Cached geometry. */
 	FGeometry CachedGeometry;
 

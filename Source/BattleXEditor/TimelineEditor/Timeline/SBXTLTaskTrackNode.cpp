@@ -7,6 +7,7 @@
 #include "Framework/Application/SlateApplication.h"
 
 #include "STimeline.h"
+#include "TimelineTrack.h"
 #include "BXTLEditor.h"
 #include "BXTLTaskTrackPanel.h"
 #include "BXTLEditorDelegates.h"
@@ -22,12 +23,9 @@
 
 #define LOCTEXT_NAMESPACE "SBXTLTaskTrackNode"
 
-const float NotifyHeightOffset = 0.0f;
-const float DrawBoxHeightOffset = -4.0f;
-const float NotifyHeight = FBXTLTaskTrackPanel::NotificationTrackHeight;
-const FVector2D ScrubHandleSize(12.0f, 12.0f);
-const FVector2D AlignmentMarkerSize(10.0f, 20.0f);
-const FVector2D TextBorderSize(1.0f, 4.0f);
+const float ScrubSizeX = 10.0f;
+const float TextOffsetX = 4.0f;
+const float TextExpandSizeY = 4.0f;
 
 void FBXTLTaskNodeData::SetTaskNodeData(UBXTask* InTask)
 {
@@ -52,26 +50,6 @@ TOptional<FLinearColor> FBXTLTaskNodeData::GetColor() const
 	}
 
 	return ((CachedTask->TriggerTypes & 1) > 0) ? TOptional<FLinearColor>(FColor(0, 160, 160)) : TOptional<FLinearColor>(FLinearColor::Gray);
-}
-
-FText FBXTLTaskNodeData::GetNodeTooltip() const
-{
-	if (!CachedTask.IsValid())
-	{
-		return FText();
-	}
-
-	FString ToolTipString = FString::Format
-	(
-		TEXT("@ start:{0},dura: {1}\n {2} "), 
-		{ 
-			FString::FormatAsNumber(GetStartTime()),  
-			FString::FormatAsNumber(GetDuration()),
-			*CachedTask->GetClass()->GetToolTipText().ToString()
-		}
-	);
-
-	return FText::FromString(ToolTipString);
 }
 
 float FBXTLTaskNodeData::GetStartTime() const
@@ -137,8 +115,6 @@ void SBXTLTaskTrackNode::Construct(const FArguments& InArgs)
 
 	SetClipping(EWidgetClipping::ClipToBounds);
 
-	SetToolTipText(TAttribute<FText>(this, &SBXTLTaskTrackNode::GetNodeTooltip));
-
 	// 注册事件
 	if (Controller.IsValid() && Controller.Pin()->GetEditor().IsValid())
 	{
@@ -182,8 +158,6 @@ int32 SBXTLTaskTrackNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allot
 	int32 TextLayerID = ScrubHandleID + 1;
 	int32 BranchPointLayerID = TextLayerID + 1;
 
-	const FSlateBrush* StyleInfo = FAppStyle::GetBrush(TEXT("SpecialEditableTextImageNormal"));
-
 	FText Text = GetNotifyText();
 	FLinearColor BoxColor = TaskNodeData.GetColor().GetValue();
 	if (bSelected)
@@ -191,18 +165,23 @@ int32 SBXTLTaskTrackNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allot
 		BoxColor = FLinearColor(0.73f, 0.36f, 0.0f);
 	}
 
+	float BoxHeightPosition = FTimelineTrack::TimelineTrackHeight * 0.125f;
+
 	// 持续任务
-	if (NotifyDurationSizeX > 0.0f)
+	if (TaskDurationSizeX > 0.0f)
 	{
-		FVector2f DurationBoxSize = FVector2f(NotifyDurationSizeX, TextSize.Y + TextBorderSize.Y * 2.0f);
-		FVector2f DurationBoxPosition = FVector2f(NotifyScrubHandleCenter, (NotifyHeight - TextSize.Y) * 0.5f + DrawBoxHeightOffset);
+		FVector2f DurationBoxSize = FVector2f(TaskDurationSizeX, TextSize.Y + TextExpandSizeY * 2.0f);
+		FVector2f DurationBoxPosition = FVector2f(0.0f, BoxHeightPosition);
+
+		const FSlateBrush* StyleInfo = FAppStyle::GetBrush(TEXT("SpecialEditableTextImageNormal"));
+
 		FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(DurationBoxSize, FSlateLayoutTransform(DurationBoxPosition)), StyleInfo, ESlateDrawEffect::None, BoxColor);
 	}
 	// 瞬时任务
 	else
 	{
-		float SizeY = TextSize.Y + TextBorderSize.Y * 2.0f;
-		FVector2f DurationBoxPosition = FVector2f(NotifyScrubHandleCenter, (NotifyHeight - TextSize.Y) * 0.5f + DrawBoxHeightOffset);
+		float SizeY = TextSize.Y + TextExpandSizeY * 2.0f;
+		FVector2f DurationBoxPosition = FVector2f(0.0f, BoxHeightPosition);
 
 		TArray<FVector2f> Points;
 		Points.Add(FVector2f(DurationBoxPosition.X, DurationBoxPosition.Y));
@@ -214,34 +193,25 @@ int32 SBXTLTaskTrackNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allot
 	}
 
 	// 文字
-	float HalfScrubHandleWidth = ScrubHandleSize.X / 2.0f;
-	FVector2f LabelSize(TextSize);
-	LabelSize.X += TextBorderSize.X * 2.0f + HalfScrubHandleWidth;
-	LabelSize.Y += TextBorderSize.Y * 2.0f;
-	FVector2f TextPosition(TextBorderSize);
-	TextPosition.X += HalfScrubHandleWidth + NotifyScrubHandleCenter;
-	TextPosition.Y += DrawBoxHeightOffset + (NotifyHeight - TextSize.Y) * 0.5f;
-	FVector2f DrawTextSize;
-	DrawTextSize.X = TextSize.X;
-	DrawTextSize.Y = TextSize.Y;
-	FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(DrawTextSize, FSlateLayoutTransform(TextPosition)), Text, Font, ESlateDrawEffect::None, FLinearColor::White);
+	FVector2f TextPosition(TextOffsetX, FTimelineTrack::TimelineTrackHeight * 0.5f - TextSize.Y * 0.5f);
+	FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(TextSize, FSlateLayoutTransform(TextPosition)), Text, Font, ESlateDrawEffect::None, FLinearColor::White);
 
 	return TextLayerID;
 }
 
-void SBXTLTaskTrackNode::DrawHandleOffset(const float& Offset, const float& HandleCentre, FSlateWindowElementList& OutDrawElements, int32 MarkerLayer, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FLinearColor NodeColor) const
+void SBXTLTaskTrackNode::DrawHandleOffset(const float& Offset, const float& HandleCenter, FSlateWindowElementList& OutDrawElements, int32 MarkerLayer, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FLinearColor NodeColor) const
 {
 	FVector2f MarkerPosition;
-	FVector2f MarkerSize(AlignmentMarkerSize);
+	FVector2f MarkerSize(10.0f, 20.0f);
 
 	if (Offset < 0.f)
 	{
-		MarkerPosition.Set(HandleCentre - AlignmentMarkerSize.X, (NotifyHeight - AlignmentMarkerSize.Y) / 2.f);
+		MarkerPosition.Set(HandleCenter - MarkerSize.X, (FTimelineTrack::TimelineTrackHeight - MarkerSize.Y) * 0.5f);
 	}
 	else
 	{
-		MarkerPosition.Set(HandleCentre + AlignmentMarkerSize.X, (NotifyHeight - AlignmentMarkerSize.Y) / 2.f);
-		MarkerSize.X = -AlignmentMarkerSize.X;
+		MarkerPosition.Set(HandleCenter + MarkerSize.X, (FTimelineTrack::TimelineTrackHeight - MarkerSize.Y) * 0.5f);
+		MarkerSize.X *= -1.0f;
 	}
 
 	FSlateDrawElement::MakeBox
@@ -275,11 +245,6 @@ FText SBXTLTaskTrackNode::GetNotifyText() const
 	return FText::FromString(Temp);
 }
 
-FText SBXTLTaskTrackNode::GetNodeTooltip() const
-{
-	return TaskNodeData.GetNodeTooltip();
-}
-
 FVector2D SBXTLTaskTrackNode::GetSize() const
 {
 	return WidgetSize;
@@ -292,17 +257,17 @@ const FVector2D& SBXTLTaskTrackNode::GetScreenPosition() const
 
 float SBXTLTaskTrackNode::GetDurationSize() const
 { 
-	return NotifyDurationSizeX;
+	return TaskDurationSizeX;
 }
 
 FVector2D SBXTLTaskTrackNode::GetWidgetPosition() const
 {
-	return FVector2D(WidgetX, NotifyHeightOffset);
+	return FVector2D(WidgetX, 0.0f);
 }
 
 FVector2D SBXTLTaskTrackNode::GetNotifyPosition() const
 {
-	return FVector2D(NotifyTimePositionX, NotifyHeightOffset);
+	return FVector2D(TaskTimePositionX, 0.0f);
 }
 
 FVector2D SBXTLTaskTrackNode::GetNotifyPositionOffset() const
@@ -320,24 +285,25 @@ void SBXTLTaskTrackNode::UpdateSizeAndPosition(const FGeometry& AllottedGeometry
 	FTrackScaleInfo ScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0, 0, AllottedGeometry.Size);
 
 	CachedAllotedGeometrySize = AllottedGeometry.Size * AllottedGeometry.Scale;
+	CachedAllotedGeometrySize.Y *= 0.5f;
 
 	if (DragType != EDragType::None)
 	{
-		NotifyTimePositionX = ScaleInfo.InputToLocalX(NodeStartTime);
-		NotifyDurationSizeX = ScaleInfo.PixelsPerInput * NodeDuration;
+		TaskTimePositionX = ScaleInfo.InputToLocalX(NodeStartTime);
+		TaskDurationSizeX = ScaleInfo.PixelsPerInput * NodeDuration;
 	}
 	else
 	{
-		NotifyTimePositionX = ScaleInfo.InputToLocalX(TaskNodeData.GetStartTime());
-		NotifyDurationSizeX = ScaleInfo.PixelsPerInput * TaskNodeData.GetDuration();
+		TaskTimePositionX = ScaleInfo.InputToLocalX(TaskNodeData.GetStartTime());
+		TaskDurationSizeX = ScaleInfo.PixelsPerInput * TaskNodeData.GetDuration();
 	}
 
 	const TSharedRef< FSlateFontMeasure > FontMeasureService = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
 	TextSize = FontMeasureService->Measure(GetNotifyText(), Font);
+	TextSize.Y = FTimelineTrack::TimelineTrackHeight * 0.75f - TextExpandSizeY * 2.0f;
 
-	WidgetX = NotifyTimePositionX;
-	WidgetSize = FVector2D(FMath::Max(NotifyDurationSizeX, TextSize.X), NotifyHeight);
-	WidgetSize.X += FMath::Max(ScrubHandleSize.X, AlignmentMarkerSize.X * 2);
+	WidgetX = TaskTimePositionX;
+	WidgetSize = FVector2D(FMath::Max3(TaskDurationSizeX, TextSize.X * 1.2f, ScrubSizeX * 2.0f), FTimelineTrack::TimelineTrackHeight);
 }
 
 #pragma endregion Parameter
@@ -373,23 +339,22 @@ void SBXTLTaskTrackNode::RefreshDragType(const FVector2D& CursorTrackPosition)
 {
 	DragType = EDragType::None;
 
-	float ScrubHandleHalfWidth = ScrubHandleSize.X / 2.0f;
-	FVector2D NotifyNodePosition(ScrubHandleHalfWidth, 0.0f);
-	FVector2D NotifyNodeSize(NotifyDurationSizeX + ScrubHandleHalfWidth * 2.0f, NotifyHeight);
+	FVector2D NotifyNodePosition(0.0f, 0.0f);
+	FVector2D NotifyNodeSize(TaskDurationSizeX > 0.0f ? TaskDurationSizeX : WidgetSize.X, FTimelineTrack::TimelineTrackHeight);
 
 	FVector2D MouseRelativePosition(CursorTrackPosition - GetWidgetPosition());
 	if (MouseRelativePosition.ComponentwiseAllGreaterThan(NotifyNodePosition) && MouseRelativePosition.ComponentwiseAllLessThan(NotifyNodePosition + NotifyNodeSize))
 	{
 		// 持续任务需要区分
-		if (NotifyDurationSizeX > 0.0f)
+		if (TaskDurationSizeX > 0.0f)
 		{
 			// 该次拖动想要修改开始时间
-			if (MouseRelativePosition.X <= (NotifyNodePosition.X + ScrubHandleSize.X))
+			if (MouseRelativePosition.X <= (NotifyNodePosition.X + NotifyNodeSize.X - ScrubSizeX))
 			{
 				DragType = EDragType::StartTime;
 			}
 			// 该次拖动想要修改时长
-			else if (MouseRelativePosition.X >= (NotifyNodePosition.X + NotifyNodeSize.X - ScrubHandleSize.X))
+			else
 			{
 				DragType = EDragType::Duration;
 			}
@@ -442,105 +407,22 @@ void SBXTLTaskTrackNode::SetLastMouseDownPosition(const FVector2D& CursorPositio
 	LastMouseDownPosition = CursorPosition; 
 }
 
-FReply SBXTLTaskTrackNode::OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
-{
-	if (DragType == EDragType::None)
-	{
-		FSlateApplication::Get().ReleaseAllPointerCapture();
-		return FReply::Handled();
-	}
-
-	FTrackScaleInfo ScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0, 0, CachedAllotedGeometrySize);
-
-	float XPositionInTrack = MyGeometry.AbsolutePosition.X - CachedTrackGeometry.AbsolutePosition.X;
-	float TrackScreenSpaceXPosition = MyGeometry.AbsolutePosition.X - XPositionInTrack;
-	float TrackScreenSpaceOrigin = CachedTrackGeometry.LocalToAbsolute(FVector2D(ScaleInfo.InputToLocalX(0.0f), 0.0f)).X;
-	float TrackScreenSpaceLimit = CachedTrackGeometry.LocalToAbsolute(FVector2D(ScaleInfo.InputToLocalX(TimelinePlayLength), 0.0f)).X;
-
-	if (DragType == EDragType::StartTime)
-	{
-		float NewDisplayTime = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X);
-		NodeStartTime = NewDisplayTime;
-	}
-	else if (DragType == EDragType::Duration)
-	{
-		float NewDuration = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X) - TaskNodeData.GetStartTime();
-		NodeDuration = NewDuration;
-	}
-
-	return FReply::Handled();
-}
-
-FReply SBXTLTaskTrackNode::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
-{
-	bool bLeftButton = MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton;
-
-	FTrackScaleInfo ScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0, 0, CachedAllotedGeometrySize);
-
-	float XPositionInTrack = MyGeometry.AbsolutePosition.X - CachedTrackGeometry.AbsolutePosition.X;
-	float TrackScreenSpaceXPosition = MyGeometry.AbsolutePosition.X - XPositionInTrack;
-	float TrackScreenSpaceOrigin = CachedTrackGeometry.LocalToAbsolute(FVector2D(ScaleInfo.InputToLocalX(0.0f), 0.0f)).X;
-	float TrackScreenSpaceLimit = CachedTrackGeometry.LocalToAbsolute(FVector2D(ScaleInfo.InputToLocalX(TimelinePlayLength), 0.0f)).X;
-
-
-	if (bLeftButton && DragType != EDragType::None)
-	{
-		// 对Task的起始时间进行修改
-		if (DragType == EDragType::StartTime)
-		{
-			float NewDisplayTime = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X);
-			TaskNodeData.SetStartTime(NewDisplayTime);
-		}
-		// 对Task的时长进行修改
-		else if (DragType == EDragType::Duration)
-		{
-			float NewDuration = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X) - TaskNodeData.GetStartTime();
-			TaskNodeData.SetDuration(NewDuration);
-		}
-
-		GEditor->EndTransaction();
-		DragIndex = INDEX_NONE;
-		DragType = EDragType::None;
-
-		return FReply::Handled().ReleaseMouseCapture();
-	}
-
-	return FReply::Unhandled();
-}
-
 FCursorReply SBXTLTaskTrackNode::OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const
 {
-	if (IsHovered() && GetDurationSize() > 0.0f)
+	if (IsHovered() && TaskDurationSizeX > 0.0f)
 	{
-		FVector2D RelMouseLocation = MyGeometry.AbsoluteToLocal(CursorEvent.GetScreenSpacePosition());
+		FVector2D MouseLocation = MyGeometry.AbsoluteToLocal(CursorEvent.GetScreenSpacePosition());
 
-		const float HandleHalfWidth = ScrubHandleSize.X / 2.0f;
-		const float DistFromFirstHandle = FMath::Abs(RelMouseLocation.X);
-		const float DistFromSecondHandle = FMath::Abs(RelMouseLocation.X - NotifyDurationSizeX);
+		const float DistFromFirstHandle = FMath::Abs(MouseLocation.X);
+		const float DistFromSecondHandle = FMath::Abs(MouseLocation.X - TaskDurationSizeX);
 
-		if (DistFromFirstHandle < HandleHalfWidth || DistFromSecondHandle < HandleHalfWidth || DragType != EDragType::None)
+		if (DistFromFirstHandle < ScrubSizeX || DistFromSecondHandle < ScrubSizeX)
 		{
 			return FCursorReply::Cursor(EMouseCursor::ResizeLeftRight);
 		}
 	}
 
 	return FCursorReply::Unhandled();
-}
-
-float SBXTLTaskTrackNode::HandleOverflowPan(const FVector2D& ScreenCursorPos, float TrackScreenSpaceXPosition, float TrackScreenSpaceMin, float TrackScreenSpaceMax)
-{
-	float Overflow = 0.0f;
-
-	if (ScreenCursorPos.X < TrackScreenSpaceXPosition && TrackScreenSpaceXPosition > TrackScreenSpaceMin - 10.0f)
-	{
-		Overflow = FMath::Min(ScreenCursorPos.X - TrackScreenSpaceXPosition, -10.0f);
-	}
-	else if (ScreenCursorPos.X > CachedAllotedGeometrySize.X && (TrackScreenSpaceXPosition + CachedAllotedGeometrySize.X) < TrackScreenSpaceMax + 10.0f)
-	{
-		Overflow = FMath::Max(ScreenCursorPos.X - (TrackScreenSpaceXPosition + CachedAllotedGeometrySize.X), 10.0f);
-	}
-
-	return Overflow;
 }
 
 #pragma endregion Widget

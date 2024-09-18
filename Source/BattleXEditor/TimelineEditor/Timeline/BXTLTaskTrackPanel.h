@@ -10,9 +10,6 @@ class FBXTLTaskTrackPanel : public FTimelineTrack
 	TIMELINE_DECLARE_TRACK(FBXTLTaskTrackPanel, FTimelineTrack);
 
 public:
-	static const float NotificationTrackHeight;
-	static const float NotificationSubTrackHeight;
-
 	FBXTLTaskTrackPanel(const TSharedRef<class FBXTLController>& InController, class UBXTask* InTask, const FText& InDisplayName, const FText& InToolTipText);
 
 	void UpdateLayout();

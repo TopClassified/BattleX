@@ -22,19 +22,20 @@ FTrackAreaSlot::FTrackAreaSlot(const TSharedPtr<STrack>& InSlotContent)
 	HAlignment = HAlign_Fill;
 	VAlignment = VAlign_Top;
 
-	AttachWidget
-	(
-		SNew(SWeakWidget)
-		.Clipping(EWidgetClipping::ClipToBounds)
-		.PossiblyNullContent(InSlotContent)
-	);
+	AttachWidget(SNew(SWeakWidget).Clipping(EWidgetClipping::ClipToBounds).PossiblyNullContent(InSlotContent));
 }
 
 float FTrackAreaSlot::GetVerticalOffset() const
 {
 	TSharedPtr<STrack> PinnedTrackWidget = TrackWidget.Pin();
+
 	return PinnedTrackWidget.IsValid() ? PinnedTrackWidget->GetPhysicalPosition() : 0.f;
 }
+
+
+
+
+
 
 void STrackArea::Construct(const FArguments& InArgs, const TSharedRef<FTimelineController>& InTimelineController, const TSharedRef<FTimeSliderController>& InTimeSliderController)
 {
@@ -79,8 +80,7 @@ void STrackArea::OnArrangeChildren(const FGeometry& AllottedGeometry, FArrangedC
 		AlignmentArrangeResult YResult;
 	};
 
-	TArray<Temp> TempMsgs;
-
+	TArray<Temp> TempMessages;
 	for (int32 ChildIndex = 0; ChildIndex < Children.Num(); ++ChildIndex)
 	{
 		const FTrackAreaSlot& CurChild = Children[ChildIndex];
@@ -92,13 +92,13 @@ void STrackArea::OnArrangeChildren(const FGeometry& AllottedGeometry, FArrangedC
 		}
 
 		const FMargin Padding(0, CurChild.GetVerticalOffset(), 0, 0);
+		AlignmentArrangeResult XResult = AlignChild<Orient_Horizontal>(AllottedGeometry.GetLocalSize().X, CurChild, Padding, 1.0f, false);
+		AlignmentArrangeResult YResult = AlignChild<Orient_Vertical>(AllottedGeometry.GetLocalSize().Y, CurChild, Padding, 1.0f, false);
+		YResult.Size = FTimelineTrack::TimelineTrackHeight;
 
-		Temp TT(ChildIndex, ChildVisibility, AlignChild<Orient_Horizontal>(AllottedGeometry.GetLocalSize().X, CurChild, Padding, 1.0f, false), AlignChild<Orient_Vertical>(AllottedGeometry.GetLocalSize().Y, CurChild, Padding, 1.0f, false));
-
-		TempMsgs.Add(TT);
+		TempMessages.Add(Temp(ChildIndex, ChildVisibility, XResult, YResult));
 	}
-
-	TempMsgs.Sort
+	TempMessages.Sort
 	(
 		[&](const Temp& A, const Temp& B)
 		{
@@ -106,9 +106,9 @@ void STrackArea::OnArrangeChildren(const FGeometry& AllottedGeometry, FArrangedC
 		}
 	);
 
-	for (int32 i = 0; i < TempMsgs.Num(); ++i)
+	for (int32 i = 0; i < TempMessages.Num(); ++i)
 	{
-		Temp& TT = TempMsgs[i];
+		Temp& TT = TempMessages[i];
 		ArrangedChildren.AddWidget(TT.Vis, AllottedGeometry.MakeChild(Children[TT.Index].GetWidget(), FVector2D(TT.XResult.Offset, TT.YResult.Offset), FVector2D(TT.XResult.Size, TT.YResult.Size)));
 	}
 }
@@ -181,7 +181,6 @@ FReply STrackArea::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEv
 	TSharedPtr<FTimeSliderController> TimeSliderController = WeakTimeSliderController.Pin();
 	if(TimeSliderController.IsValid())
 	{
-
 		return WeakTimeSliderController.Pin()->OnMouseButtonUp(*this, MyGeometry, MouseEvent);
 	}
 

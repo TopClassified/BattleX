@@ -16,7 +16,9 @@
 
 #define LOCTEXT_NAMESPACE "FTimelineTrack"
 
-const float FTimelineTrack::OutlinerRightPadding = 8.0f;
+const float FTimelineTrack::OutlinerRightPadding = 10.0f;
+const float FTimelineTrack::TimelineTrackHeight = 32.0f;
+const float FTimelineTrack::TimelineSubTrackHeight = 16.0f;
 
 TIMELINE_IMPLEMENT_TRACK(FTimelineTrack);
 
@@ -122,8 +124,7 @@ TSharedRef<SWidget> FTimelineTrack::GenerateContainerWidgetForOutliner(const TSh
 
 TSharedRef<SWidget> FTimelineTrack::GenerateStandardOutlinerWidget(const TSharedRef<SOutlinerItem>& InRow, bool bWithLabelText, TSharedPtr<SBorder>& OutOuterBorder, TSharedPtr<SHorizontalBox>& OutInnerHorizontalBox)
 {
-	TSharedRef<SWidget> Widget =
-		SAssignNew(OutOuterBorder, SBorder)
+	TSharedRef<SWidget> Widget = SAssignNew(OutOuterBorder, SBorder)
 		.ToolTipText(this, &FTimelineTrack::GetToolTipText)
 		.BorderImage(FAppStyle::GetBrush("Sequencer.Section.BackgroundTint"))
 		.BorderBackgroundColor(FAppStyle::GetColor("Timeline.Outliner.ItemColor"))

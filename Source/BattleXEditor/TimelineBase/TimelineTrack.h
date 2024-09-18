@@ -4,15 +4,17 @@
 #include "TimelineController.h"
 #include "Widgets/Views/STableRow.h"
 
+
+
 enum class ECheckBoxState : uint8;
-
 struct EVisibility;
-
 class SWidget;
 class SBorder;
 class FMenuBuilder;
 class SHorizontalBox;
 class SOutlinerItem;
+
+
 
 /**
  * Structure used to define padding for a track
@@ -35,6 +37,8 @@ struct FTrackPadding
 	/** Padding to be applied to the bottom of the track */
 	float Bottom;
 };
+
+
 
 // Simple RTTI implementation for tracks
 #define TIMELINE_DECLARE_BASE_TRACK(BaseClassName) \
@@ -61,14 +65,15 @@ struct FTrackPadding
 
 
 
+
+
+
 /** Track to be displayed by the timeline */
 class BATTLEXEDITOR_API FTimelineTrack : public TSharedFromThis<FTimelineTrack>
 {
 	TIMELINE_DECLARE_BASE_TRACK(FTimelineTrack);
 
 public:
-	static const float OutlinerRightPadding;
-
 	FTimelineTrack
 	(
 		const TSharedPtr<FTimelineController>& InModel, const FText& InDisplayName, 
@@ -208,6 +213,13 @@ protected:
 	float GetScrubValue() const;
 	void SelectObjects(const TArray<UObject*>& SelectedItems);
 	void OnSetInputViewRange(float ViewMin, float ViewMax);
+
+public:
+	static const float OutlinerRightPadding;
+
+	static const float TimelineTrackHeight;
+
+	static const float TimelineSubTrackHeight;
 
 protected:
 	/** Child objects */
