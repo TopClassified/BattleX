@@ -58,8 +58,6 @@ private:
 
 #pragma region Render
 public:
-	int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
-
 	void UpdateLayout();
 
 private:
@@ -71,8 +69,6 @@ private:
 
 #pragma region Widget
 public:
-	float GetLastClickedTime() const;
-
 	const FGeometry& GetCachedGeometry() const;
 
 	void UpdateCachedGeometry(const FGeometry& InGeometry);
@@ -85,14 +81,13 @@ public:
 
 	FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 
+	FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+
 	FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 
 	FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override;
 
 	void HandleNodeDrop(TSharedPtr<SBXTLExtraTrackNode> Node, float Offset = 0.0f);
-
-private:
-	float CalculateTime(const FGeometry& MyGeometry, FVector2D NodePos, bool bInputIsAbsolute = true);
 
 	FMargin GetNotifyTrackPadding() const;
 
@@ -108,8 +103,6 @@ private:
 	TAttribute<float> InputMin;
 
 	TAttribute<float> InputMax;
-
-	float LastClickedTime;
 
 	float CurrentDragXPosition;
 

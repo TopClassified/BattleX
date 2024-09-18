@@ -11,8 +11,6 @@ class FBXTLExtraTrackPanel : public FTimelineTrack
 	TIMELINE_DECLARE_TRACK(FBXTLExtraTrackPanel, FTimelineTrack);
 
 public:
-	static float NotificationTrackHeight;
-
 	FBXTLExtraTrackPanel
 	(
 		const TSharedRef<class FBXTLController>& InController, 

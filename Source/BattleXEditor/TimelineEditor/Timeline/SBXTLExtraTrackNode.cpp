@@ -17,26 +17,19 @@
 
 #define LOCTEXT_NAMESPACE "SBXTLExtraTrackNode"
 
-namespace BXTLExtraNodeParam
+#pragma region Important
+namespace BXTLETN
 {
-	const float NotifyHeightOffset = 0.f;
-	const float DrawBoxHeightOffset = 0.0f;
-	const float NotifyHeight = FBXTLExtraTrackPanel::NotificationTrackHeight;
-	const FVector2D ScrubHandleSize(10.0f, 10.0f);
-	const FVector2D AlignmentMarkerSize(10.f, 4.f);
-	const FVector2D TextBorderSize(1.f, 1.f);
+	const float ScrubSizeX = 10.0f;
+	const float TextOffsetX = 4.0f;
+	const float TextExpandSizeY = 4.0f;
 }
 
-
-
-#pragma region Important
 void SBXTLExtraTrackNode::Construct(const FArguments& InArgs)
 {
-	Font = FCoreStyle::GetDefaultFontStyle("Regular", 8);
-	bBeingDragged = false;
-	CurrentDragHandle = EExtraTrackHandleHit::None;
-	bDrawTooltipToRight = true;
-	DragMarkerTransactionIdx = INDEX_NONE;
+	Font = FCoreStyle::GetDefaultFontStyle("Regular", 6);
+	DragIndex = INDEX_NONE;
+	DragType = EDragType::None;
 
 	CachedAsset = InArgs._Asset;
 	SectionIndex = InArgs._SectionIndex;
@@ -45,11 +38,9 @@ void SBXTLExtraTrackNode::Construct(const FArguments& InArgs)
 	ViewInputMax = InArgs._ViewInputMax;
 	TimelinePlayLength = InArgs._TimelinePlayLength.Get();
 	RefreshPanelEvent = InArgs._OnRefreshPanel;
-	StartDragNodeEvent = InArgs._OnStartDragNode;
+	StartDragETNEvent = InArgs._OnStartDragNode;
 
 	SetClipping(EWidgetClipping::ClipToBounds);
-
-	SetToolTipText(TAttribute<FText>(this, &SBXTLExtraTrackNode::GetNodeTooltip));
 }
 
 SBXTLExtraTrackNode::~SBXTLExtraTrackNode()
@@ -74,56 +65,25 @@ int32 SBXTLExtraTrackNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 	int32 TextLayerID = ScrubHandleID + 1;
 	int32 BranchPointLayerID = TextLayerID + 1;
 
-	const FSlateBrush* StyleInfo = FAppStyle::GetBrush(TEXT("SpecialEditableTextImageNormal"));
-
 	FText Text = GetNotifyText();
 	FLinearColor BoxColor = FLinearColor::Blue;
 
-	// 根据时长创建一个Box
-	if (NotifyDurationSizeX > 0.f)
-	{
-		FVector2D DurationBoxSize = FVector2D(NotifyDurationSizeX, TextSize.Y + BXTLExtraNodeParam::TextBorderSize.Y * 2.f);
-		FVector2f DurationBoxPosition = FVector2f(NotifyScrubHandleCentre, (BXTLExtraNodeParam::NotifyHeight - TextSize.Y) * 0.5f + BXTLExtraNodeParam::DrawBoxHeightOffset);
-		FSlateDrawElement::MakeBox
-		(
-			OutDrawElements, LayerId,
-			AllottedGeometry.ToPaintGeometry(DurationBoxSize, FSlateLayoutTransform(1.0f, TransformPoint(1.0f, UE::Slate::CastToVector2f(DurationBoxPosition)))),
-			StyleInfo, ESlateDrawEffect::None, BoxColor
-		);
-	}
+	float BoxHeightPosition = FTimelineTrack::TimelineSubTrackHeight * 0.125f;
 
-	// 背景
-	float HalfScrubHandleWidth = BXTLExtraNodeParam::ScrubHandleSize.X / 2.0f;
-	FVector2D LabelSize = TextSize + BXTLExtraNodeParam::TextBorderSize * 2.f;
-	LabelSize.X += HalfScrubHandleWidth;
-	FVector2D LabelPosition(bDrawTooltipToRight ? NotifyScrubHandleCentre : NotifyScrubHandleCentre - LabelSize.X, (BXTLExtraNodeParam::NotifyHeight - TextSize.Y) * 0.5f);
-	if (NotifyDurationSizeX == 0.f)
+	// 根据时长创建一个Box
+	if (ExtraDurationSizeX > 0.0f)
 	{
-		FSlateDrawElement::MakeBox
-		(
-			OutDrawElements, LayerId,
-			AllottedGeometry.ToPaintGeometry(LabelSize, FSlateLayoutTransform(1.0f, TransformPoint(1.0f, UE::Slate::CastToVector2f(LabelPosition)))),
-			StyleInfo, ESlateDrawEffect::None, BoxColor
-		);
+		FVector2D DurationBoxSize = FVector2D(ExtraDurationSizeX, TextSize.Y + BXTLETN::TextExpandSizeY * 2.0f);
+		FVector2f DurationBoxPosition = FVector2f(0.0f, BoxHeightPosition);
+		
+		const FSlateBrush* StyleInfo = FAppStyle::GetBrush(TEXT("SpecialEditableTextImageNormal"));
+
+		FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(DurationBoxSize, FSlateLayoutTransform(DurationBoxPosition)), StyleInfo, ESlateDrawEffect::None, BoxColor);
 	}
 
 	// 文字
-	FVector2D TextPosition = LabelPosition + BXTLExtraNodeParam::TextBorderSize;
-	if (bDrawTooltipToRight)
-	{
-		TextPosition.X += HalfScrubHandleWidth;
-	}
-	TextPosition.Y += BXTLExtraNodeParam::DrawBoxHeightOffset;
-
-	FVector2D DrawTextSize;
-	DrawTextSize.X = TextSize.X;
-	DrawTextSize.Y = TextSize.Y;
-	FSlateDrawElement::MakeText
-	(
-		OutDrawElements, TextLayerID, 
-		AllottedGeometry.ToPaintGeometry(DrawTextSize, FSlateLayoutTransform(1.0f, TransformPoint(1.0f, UE::Slate::CastToVector2f(TextPosition)))),
-		Text, Font, ESlateDrawEffect::None, FLinearColor::White
-	);
+	FVector2f TextPosition(BXTLETN::TextOffsetX, FTimelineTrack::TimelineSubTrackHeight * 0.5f - TextSize.Y * 0.5f);
+	FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(TextSize, FSlateLayoutTransform(TextPosition)), Text, Font, ESlateDrawEffect::None, FLinearColor::White);
 
 	return TextLayerID;
 }
@@ -131,16 +91,16 @@ int32 SBXTLExtraTrackNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 void SBXTLExtraTrackNode::DrawHandleOffset(const float& Offset, const float& HandleCentre, FSlateWindowElementList& OutDrawElements, int32 MarkerLayer, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FLinearColor NodeColor) const
 {
 	FVector2D MarkerPosition;
-	FVector2D MarkerSize = BXTLExtraNodeParam::AlignmentMarkerSize;
+	FVector2D MarkerSize(10.0f, 10.0f);
 
 	if (Offset < 0.f)
 	{
-		MarkerPosition.Set(HandleCentre - BXTLExtraNodeParam::AlignmentMarkerSize.X, (BXTLExtraNodeParam::NotifyHeight - BXTLExtraNodeParam::AlignmentMarkerSize.Y) * 0.5f);
+		MarkerPosition.Set(HandleCentre - MarkerSize.X, (FTimelineTrack::TimelineSubTrackHeight - MarkerSize.Y) * 0.5f);
 	}
 	else
 	{
-		MarkerPosition.Set(HandleCentre + BXTLExtraNodeParam::AlignmentMarkerSize.X, (BXTLExtraNodeParam::NotifyHeight - BXTLExtraNodeParam::AlignmentMarkerSize.Y) * 0.5f);
-		MarkerSize.X = BXTLExtraNodeParam::AlignmentMarkerSize.X * -1.0f;
+		MarkerPosition.Set(HandleCentre + MarkerSize.X, (FTimelineTrack::TimelineSubTrackHeight - MarkerSize.Y) * 0.5f);
+		MarkerSize.X *= -1.0f;
 	}
 
 	FSlateDrawElement::MakeBox
@@ -162,11 +122,6 @@ FText SBXTLExtraTrackNode::GetNotifyText() const
 	return GetNodeName();
 }
 
-FText SBXTLExtraTrackNode::GetNodeTooltip() const
-{
-	return GetNodeName();
-}
-
 FVector2D SBXTLExtraTrackNode::GetSize() const
 {
 	return WidgetSize;
@@ -179,17 +134,17 @@ const FVector2D& SBXTLExtraTrackNode::GetScreenPosition() const
 
 float SBXTLExtraTrackNode::GetDurationSize() const
 { 
-	return NotifyDurationSizeX; 
+	return ExtraDurationSizeX;
 }
 
 FVector2D SBXTLExtraTrackNode::GetWidgetPosition() const
 {
-	return FVector2D(WidgetX, BXTLExtraNodeParam::NotifyHeightOffset);
+	return FVector2D(WidgetX, 0.0f);
 }
 
 FVector2D SBXTLExtraTrackNode::GetNotifyPosition() const
 {
-	return FVector2D(NotifyTimePositionX, BXTLExtraNodeParam::NotifyHeightOffset);
+	return FVector2D(ExtraTimePositionX, 0.0f);
 }
 
 FVector2D SBXTLExtraTrackNode::GetNotifyPositionOffset() const
@@ -208,26 +163,15 @@ void SBXTLExtraTrackNode::UpdateSizeAndPosition(const FGeometry& AllottedGeometr
 
 	CachedAllotedGeometrySize = AllottedGeometry.Size * AllottedGeometry.Scale;
 
-	NotifyTimePositionX = ScaleInfo.InputToLocalX(GetNodeStartTime());
-	NotifyDurationSizeX = ScaleInfo.PixelsPerInput * GetNodeDuration();
+	ExtraTimePositionX = ScaleInfo.InputToLocalX(GetNodeStartTime());
+	ExtraDurationSizeX = ScaleInfo.PixelsPerInput * GetNodeDuration();
 
-	const TSharedRef< FSlateFontMeasure > FontMeasureService = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+	const TSharedRef<FSlateFontMeasure> FontMeasureService = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
 	TextSize = FontMeasureService->Measure(GetNotifyText(), Font);
-	LabelWidth = TextSize.X + (BXTLExtraNodeParam::TextBorderSize.X * 2.0f) + (BXTLExtraNodeParam::ScrubHandleSize.X / 2.0f);
+	TextSize.Y = FTimelineTrack::TimelineSubTrackHeight * 0.75f - BXTLETN::TextExpandSizeY * 2.0f;
 
-	float NotifyHandleBoxWidth = FMath::Max(BXTLExtraNodeParam::ScrubHandleSize.X, BXTLExtraNodeParam::AlignmentMarkerSize.X * 2.0f);
-
-	FVector2D Size = GetSize();
-	float LeftEdgeToNotify = NotifyTimePositionX;
-	float RightEdgeToNotify = AllottedGeometry.Size.X - NotifyTimePositionX;
-	bDrawTooltipToRight = NotifyDurationSizeX > 0.0f || ((RightEdgeToNotify > LabelWidth) || (RightEdgeToNotify > LeftEdgeToNotify));
-
-	WidgetX = bDrawTooltipToRight ? (NotifyTimePositionX - (NotifyHandleBoxWidth / 2.0f)) : (NotifyTimePositionX - LabelWidth);
-	float MaxSizeX = FMath::Max(NotifyDurationSizeX, TextSize.X);
-	WidgetSize = bDrawTooltipToRight ? FVector2D(MaxSizeX, BXTLExtraNodeParam::NotifyHeight) : FVector2D(LabelWidth + MaxSizeX, BXTLExtraNodeParam::NotifyHeight);
-	WidgetSize.X += NotifyHandleBoxWidth;
-
-	NotifyScrubHandleCentre = bDrawTooltipToRight ? NotifyHandleBoxWidth / 2.0f : LabelWidth;
+	WidgetX = ExtraTimePositionX;
+	WidgetSize = FVector2D(FMath::Max3(ExtraDurationSizeX, TextSize.X * 1.2f, BXTLETN::ScrubSizeX * 2.0f), FTimelineTrack::TimelineSubTrackHeight);
 }
 
 FText SBXTLExtraTrackNode::GetNodeName() const
@@ -244,7 +188,7 @@ FText SBXTLExtraTrackNode::GetNodeName() const
 	}
 	else if (NodeType >= EBXTLExtraType::ET_ComboWindow1 && NodeType <= EBXTLExtraType::ET_ComboWindow8)
 	{
-		Result = TEXT("ComboWindow");
+		Result = TEXT("ComboWindow:") + FString::FromInt((int32)NodeType - (int32)EBXTLExtraType::ET_ComboWindow1 + 1);
 	}
 
 	return FText::FromString(Result);
@@ -323,11 +267,6 @@ void SBXTLExtraTrackNode::SetNodeDuration(float InDuration)
 
 
 #pragma region Widget
-bool SBXTLExtraTrackNode::HitTest(const FGeometry& AllottedGeometry, FVector2D MouseLocalPose) const
-{
-	return true;
-}
-
 FReply SBXTLExtraTrackNode::OnFocusReceived(const FGeometry& MyGeometry, const FFocusEvent& InFocusEvent)
 {
 	return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::SetDirectly, true);
@@ -335,13 +274,15 @@ FReply SBXTLExtraTrackNode::OnFocusReceived(const FGeometry& MyGeometry, const F
 
 void SBXTLExtraTrackNode::OnFocusLost(const FFocusEvent& InFocusEvent)
 {
-	if (CurrentDragHandle != EExtraTrackHandleHit::None)
+	if (DragType != EDragType::None)
 	{
-		CurrentDragHandle = EExtraTrackHandleHit::None;
+		if (DragIndex != INDEX_NONE)
+		{
+			GEditor->EndTransaction();
+		}
 
-		check(DragMarkerTransactionIdx != INDEX_NONE);
-		GEditor->EndTransaction();
-		DragMarkerTransactionIdx = INDEX_NONE;
+		DragIndex = INDEX_NONE;
+		DragType = EDragType::None;
 	}
 }
 
@@ -350,67 +291,60 @@ bool SBXTLExtraTrackNode::SupportsKeyboardFocus() const
 	return true;
 }
 
-EExtraTrackHandleHit::Type SBXTLExtraTrackNode::DurationHandleHitTest(const FVector2D& CursorTrackPosition) const
+void SBXTLExtraTrackNode::RefreshDragType(const FVector2D& CursorTrackPosition)
 {
-	EExtraTrackHandleHit::Type MarkerHit = EExtraTrackHandleHit::Start;//NodeType == 2 ? EExtraTrackHandleHit::End : EExtraTrackHandleHit::Start;
+	DragType = EDragType::None;
 
-	// 计算点击位置与TaskNode的相对位置，来判断能否对Task产生影响，以及产生什么影响
-	if (NotifyDurationSizeX > 0.0f)
+	FVector2D NodePosition(0.0f, 0.0f);
+	FVector2D NodeSize(ExtraDurationSizeX > 0.0f ? ExtraDurationSizeX : WidgetSize.X, FTimelineTrack::TimelineSubTrackHeight);
+
+	FVector2D MouseRelativePosition(CursorTrackPosition - GetWidgetPosition());
+	if (MouseRelativePosition.ComponentwiseAllGreaterThan(NodePosition) && MouseRelativePosition.ComponentwiseAllLessThan(NodePosition + NodeSize))
 	{
-		float ScrubHandleHalfWidth = BXTLExtraNodeParam::ScrubHandleSize.X / 2.0f;
-
-		FVector2D NotifyNodePosition(NotifyScrubHandleCentre - ScrubHandleHalfWidth, 0.0f);
-		FVector2D NotifyNodeSize(NotifyDurationSizeX + ScrubHandleHalfWidth * 2.0f, BXTLExtraNodeParam::NotifyHeight);
-
-		FVector2D MouseRelativePosition(CursorTrackPosition - GetWidgetPosition());
-
-		if (MouseRelativePosition.ComponentwiseAllGreaterThan(NotifyNodePosition) && MouseRelativePosition.ComponentwiseAllLessThan(NotifyNodePosition + NotifyNodeSize))
+		// 该次拖动想要修改开始时间
+		if (MouseRelativePosition.X <= (NodePosition.X + NodeSize.X - BXTLETN::ScrubSizeX))
 		{
-			// 该次拖动想要修改开始时间
-			if (MouseRelativePosition.X <= (NotifyNodePosition.X + BXTLExtraNodeParam::ScrubHandleSize.X))
-			{
-				MarkerHit = EExtraTrackHandleHit::Start;
-			}
-			// 该次拖动想要修改时长
-			else if (MouseRelativePosition.X >= (NotifyNodePosition.X + NotifyNodeSize.X - BXTLExtraNodeParam::ScrubHandleSize.X))
-			{
-				MarkerHit = EExtraTrackHandleHit::End;
-			}
+			DragType = EDragType::StartTime;
+		}
+		// 该次拖动想要修改时长
+		else
+		{
+			DragType = EDragType::Duration;
 		}
 	}
-
-	return MarkerHit;
 }
 
 bool SBXTLExtraTrackNode::BeingDragged() const
 {
-	return bBeingDragged;
+	return (DragType == EDragType::StartTime) || (DragType == EDragType::Duration);
 }
 
 FReply SBXTLExtraTrackNode::OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	FVector2D ScreenNodePosition = FVector2D(MyGeometry.AbsolutePosition);
-
-	bool bDragOnMarker = false;
-	bBeingDragged = true;
-
-	if (GetDurationSize() >= 0.0f)
+	if (DragType == EDragType::None)
 	{
-		EExtraTrackHandleHit::Type MarkerHit = DurationHandleHitTest(LastMouseDownPosition);
-		bDragOnMarker = true;
-		bBeingDragged = false;
-		CurrentDragHandle = MarkerHit;
+		RefreshDragType(LastMouseDownPosition);
 
-		DragMarkerTransactionIdx = GEditor->BeginTransaction(NSLOCTEXT("BXTLExtraNode", "ExtraNodeDragTransation", "Extra State Node Marker"));
+		if (DragType != EDragType::None)
+		{
+			DragIndex = GEditor->BeginTransaction(NSLOCTEXT("Node", "Drag Postion", "Drag State Node Postion"));
+
+			return StartDragETNEvent.Execute(SharedThis(this), MouseEvent, FVector2D(MyGeometry.AbsolutePosition), false);
+		}
 	}
 
-	return StartDragNodeEvent.Execute(SharedThis(this), MouseEvent, ScreenNodePosition, bDragOnMarker);
+	return FReply::Unhandled();
 }
 
 void SBXTLExtraTrackNode::DragCancelled()
 {
-	bBeingDragged = false;
+	if (DragType != EDragType::None)
+	{
+		GEditor->EndTransaction();
+	}
 
+	DragIndex = INDEX_NONE;
+	DragType = EDragType::None;
 }
 
 void SBXTLExtraTrackNode::SetLastMouseDownPosition(const FVector2D& CursorPosition)
@@ -418,91 +352,24 @@ void SBXTLExtraTrackNode::SetLastMouseDownPosition(const FVector2D& CursorPositi
 	LastMouseDownPosition = CursorPosition; 
 }
 
-FReply SBXTLExtraTrackNode::OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
-{
-	if (CurrentDragHandle == EExtraTrackHandleHit::None)
-	{
-		FSlateApplication::Get().ReleaseAllPointerCapture();
-		return FReply::Handled();
-	}
-
-	FTrackScaleInfo ScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0, 0, CachedAllotedGeometrySize);
-
-	float XPositionInTrack = MyGeometry.AbsolutePosition.X - CachedTrackGeometry.AbsolutePosition.X;
-	float TrackScreenSpaceXPosition = MyGeometry.AbsolutePosition.X - XPositionInTrack;
-	float TrackScreenSpaceOrigin = CachedTrackGeometry.LocalToAbsolute(FVector2D(ScaleInfo.InputToLocalX(0.0f), 0.0f)).X;
-	float TrackScreenSpaceLimit = CachedTrackGeometry.LocalToAbsolute(FVector2D(ScaleInfo.InputToLocalX(TimelinePlayLength), 0.0f)).X;
-
-	// 对起始时间进行修改
-	if (CurrentDragHandle != EExtraTrackHandleHit::End)
-	{
-		float NewDisplayTime = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X);
-
-		SetNodeStartTime(NewDisplayTime);
-	}
-	// 对时长进行修改
-	else
-	{
-		float NewDuration = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X) - GetNodeStartTime();
-
-		SetNodeDuration(NewDuration);
-	}
-
-	return FReply::Handled();
-}
-
-FReply SBXTLExtraTrackNode::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
-{
-	bool bLeftButton = MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton;
-
-	if (bLeftButton && CurrentDragHandle != EExtraTrackHandleHit::None)
-	{
-		CurrentDragHandle = EExtraTrackHandleHit::None;
-
-		// End drag transaction before handing mouse back
-		check(DragMarkerTransactionIdx != INDEX_NONE);
-		GEditor->EndTransaction();
-		DragMarkerTransactionIdx = INDEX_NONE;
-
-		return FReply::Handled().ReleaseMouseCapture();
-	}
-
-	return FReply::Unhandled();
-}
-
 FCursorReply SBXTLExtraTrackNode::OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const
 {
-	if (IsHovered() && GetDurationSize() > 0.0f)
+	float DurationSize = GetDurationSize();
+
+	if (IsHovered() && DurationSize > 0.0f)
 	{
-		FVector2D RelMouseLocation = MyGeometry.AbsoluteToLocal(CursorEvent.GetScreenSpacePosition());
+		FVector2D MouseLocation = MyGeometry.AbsoluteToLocal(CursorEvent.GetScreenSpacePosition());
 
-		const float HandleHalfWidth = BXTLExtraNodeParam::ScrubHandleSize.X / 2.0f;
-		const float DistFromFirstHandle = FMath::Abs(RelMouseLocation.X - NotifyScrubHandleCentre);
-		const float DistFromSecondHandle = FMath::Abs(RelMouseLocation.X - (NotifyScrubHandleCentre + NotifyDurationSizeX));
+		const float DistFromFirstHandle = FMath::Abs(MouseLocation.X);
+		const float DistFromSecondHandle = FMath::Abs(MouseLocation.X - DurationSize);
 
-		if (DistFromFirstHandle < HandleHalfWidth || DistFromSecondHandle < HandleHalfWidth || CurrentDragHandle != EExtraTrackHandleHit::None)
+		if (DistFromFirstHandle < BXTLETN::ScrubSizeX || DistFromSecondHandle < BXTLETN::ScrubSizeX)
 		{
 			return FCursorReply::Cursor(EMouseCursor::ResizeLeftRight);
 		}
 	}
 
 	return FCursorReply::Unhandled();
-}
-
-float SBXTLExtraTrackNode::HandleOverflowPan(const FVector2D& ScreenCursorPos, float TrackScreenSpaceXPosition, float TrackScreenSpaceMin, float TrackScreenSpaceMax)
-{
-	float Overflow = 0.0f;
-
-	if (ScreenCursorPos.X < TrackScreenSpaceXPosition && TrackScreenSpaceXPosition > TrackScreenSpaceMin - 10.0f)
-	{
-		Overflow = FMath::Min(ScreenCursorPos.X - TrackScreenSpaceXPosition, -10.0f);
-	}
-	else if (ScreenCursorPos.X > CachedAllotedGeometrySize.X && (TrackScreenSpaceXPosition + CachedAllotedGeometrySize.X) < TrackScreenSpaceMax + 10.0f)
-	{
-		Overflow = FMath::Max(ScreenCursorPos.X - (TrackScreenSpaceXPosition + CachedAllotedGeometrySize.X), 10.0f);
-	}
-
-	return Overflow;
 }
 
 #pragma  endregion Widget

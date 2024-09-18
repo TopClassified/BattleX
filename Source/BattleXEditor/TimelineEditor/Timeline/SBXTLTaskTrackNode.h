@@ -76,10 +76,6 @@ public:
 
 	void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 
-	FBXTLTaskNodeData* GetTaskNodeDataPtr();
-
-	const FBXTLTaskNodeData& GetTaskNodeData() const;
-
 private:
 	enum EDragType
 	{
@@ -87,8 +83,6 @@ private:
 		Duration,
 		None
 	};
-
-	FBXTLTaskNodeData TaskNodeData;
 
 	TWeakPtr<FBXTLController> Controller = nullptr;
 
@@ -126,6 +120,8 @@ public:
 
 	FVector2D GetNotifyPositionOffset() const;
 
+	FBXTLTaskNodeData& GetTaskNodeData();
+
 	FVector2D ComputeDesiredSize(float) const override;
 
 	void UpdateSizeAndPosition(const FGeometry& AllottedGeometry);
@@ -143,11 +139,11 @@ private:
 
 	FVector2f TextSize;
 
-	float LabelWidth;
-
 	float NodeStartTime;
 
 	float NodeDuration;
+
+	FBXTLTaskNodeData TaskNodeData;
 
 #pragma endregion Parameter
 

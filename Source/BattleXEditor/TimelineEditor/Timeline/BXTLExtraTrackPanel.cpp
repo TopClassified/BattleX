@@ -9,20 +9,18 @@
 
 TIMELINE_IMPLEMENT_TRACK(FBXTLExtraTrackPanel);
 
-float FBXTLExtraTrackPanel::NotificationTrackHeight = 18.0f;
-
 FBXTLExtraTrackPanel::FBXTLExtraTrackPanel
 (
 	const TSharedRef<FBXTLController>& InModel, UBXTLAsset* InAsset, int32 InSectionIndex,
 	EBXTLExtraType InTrackType, const FText& InDisplayName, const FText& InToolTipText
 ) : FTimelineTrack(InModel, InDisplayName, InToolTipText), CachedAsset(InAsset), SectionIndex(InSectionIndex), TrackType(InTrackType)
 {
-	SetHeight(NotificationTrackHeight);
+	SetHeight(FTimelineTrack::TimelineSubTrackHeight);
 }
 
 void FBXTLExtraTrackPanel::UpdateLayout()
 {
-	SetHeight(NotificationTrackHeight);
+	SetHeight(FTimelineTrack::TimelineSubTrackHeight);
 
 	if (TrackWidget.IsValid())
 	{

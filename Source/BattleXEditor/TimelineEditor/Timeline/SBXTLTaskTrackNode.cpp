@@ -1,4 +1,5 @@
 #include "SBXTLTaskTrackNode.h"
+#include "Editor.h"
 #include "Fonts/FontMeasure.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Layout/SBox.h"
@@ -15,17 +16,9 @@
 #include "BXTask.h"
 #include "BXTLController.h"
 
-#if WITH_EDITOR
-#include "Editor.h"
-#endif
-
 
 
 #define LOCTEXT_NAMESPACE "SBXTLTaskTrackNode"
-
-const float ScrubSizeX = 10.0f;
-const float TextOffsetX = 4.0f;
-const float TextExpandSizeY = 4.0f;
 
 void FBXTLTaskNodeData::SetTaskNodeData(UBXTask* InTask)
 {
@@ -98,6 +91,13 @@ void FBXTLTaskNodeData::SetDuration(float InDuration)
 
 
 #pragma region Important
+namespace BXTLTTN
+{
+	const float ScrubSizeX = 10.0f;
+	const float TextOffsetX = 4.0f;
+	const float TextExpandSizeY = 4.0f;
+}
+
 void SBXTLTaskTrackNode::Construct(const FArguments& InArgs)
 {
 	Font = FCoreStyle::GetDefaultFontStyle("Regular", 10);
@@ -136,16 +136,6 @@ void SBXTLTaskTrackNode::Tick(const FGeometry& AllottedGeometry, const double In
 	ScreenPosition = FVector2D(AllottedGeometry.AbsolutePosition);
 }
 
-FBXTLTaskNodeData* SBXTLTaskTrackNode::GetTaskNodeDataPtr()
-{ 
-	return &TaskNodeData; 
-}
-
-const FBXTLTaskNodeData& SBXTLTaskTrackNode::GetTaskNodeData() const
-{ 
-	return TaskNodeData; 
-}
-
 #pragma endregion Important
 
 
@@ -170,30 +160,37 @@ int32 SBXTLTaskTrackNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allot
 	// 持续任务
 	if (TaskDurationSizeX > 0.0f)
 	{
-		FVector2f DurationBoxSize = FVector2f(TaskDurationSizeX, TextSize.Y + TextExpandSizeY * 2.0f);
+		FVector2f DurationBoxSize = FVector2f(TaskDurationSizeX, TextSize.Y + BXTLTTN::TextExpandSizeY * 2.0f);
 		FVector2f DurationBoxPosition = FVector2f(0.0f, BoxHeightPosition);
 
 		const FSlateBrush* StyleInfo = FAppStyle::GetBrush(TEXT("SpecialEditableTextImageNormal"));
-
 		FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(DurationBoxSize, FSlateLayoutTransform(DurationBoxPosition)), StyleInfo, ESlateDrawEffect::None, BoxColor);
 	}
 	// 瞬时任务
 	else
 	{
-		float SizeY = TextSize.Y + TextExpandSizeY * 2.0f;
-		FVector2f DurationBoxPosition = FVector2f(0.0f, BoxHeightPosition);
+		float BoxSize = TextSize.Y + BXTLTTN::TextExpandSizeY * 2.0f;
+		const FSlateBrush* StyleInfo = FAppStyle::GetBrush(TEXT("SpecialEditableTextImageNormal"));
 
-		TArray<FVector2f> Points;
-		Points.Add(FVector2f(DurationBoxPosition.X, DurationBoxPosition.Y));
-		Points.Add(FVector2f(DurationBoxPosition.X, DurationBoxPosition.Y + SizeY));
-		Points.Add(FVector2f(DurationBoxPosition.X + SizeY, DurationBoxPosition.Y + SizeY * 0.5f));
-		Points.Add(FVector2f(DurationBoxPosition.X, DurationBoxPosition.Y));
-
-		FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, BoxColor);
+		FSlateDrawElement::MakeBox
+		(
+			OutDrawElements, LayerId, 
+			AllottedGeometry.ToPaintGeometry(FVector2f(2.0f, BoxSize), FSlateLayoutTransform(FVector2f(0.0f, BoxHeightPosition))),
+			StyleInfo, ESlateDrawEffect::None, BoxColor
+		);
+		
+		FSlateDrawElement::MakeRotatedBox
+		(
+			OutDrawElements, LayerId, 
+			AllottedGeometry.ToPaintGeometry(FVector2f(TextSize.Y, TextSize.Y),
+			FSlateLayoutTransform(FVector2f(0.0f, BoxHeightPosition * 2.0f))),
+			StyleInfo, ESlateDrawEffect::None, UE_HALF_PI * 0.5f, TOptional<FVector2f>(), 
+			FSlateDrawElement::RelativeToElement, BoxColor
+		);
 	}
 
 	// 文字
-	FVector2f TextPosition(TextOffsetX, FTimelineTrack::TimelineTrackHeight * 0.5f - TextSize.Y * 0.5f);
+	FVector2f TextPosition(BXTLTTN::TextOffsetX, FTimelineTrack::TimelineTrackHeight * 0.5f - TextSize.Y * 0.5f);
 	FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(TextSize, FSlateLayoutTransform(TextPosition)), Text, Font, ESlateDrawEffect::None, FLinearColor::White);
 
 	return TextLayerID;
@@ -275,6 +272,11 @@ FVector2D SBXTLTaskTrackNode::GetNotifyPositionOffset() const
 	return GetNotifyPosition() - GetWidgetPosition();
 }
 
+FBXTLTaskNodeData& SBXTLTaskTrackNode::GetTaskNodeData()
+{
+	return TaskNodeData;
+}
+
 FVector2D SBXTLTaskTrackNode::ComputeDesiredSize(float) const
 {
 	return GetSize();
@@ -298,12 +300,12 @@ void SBXTLTaskTrackNode::UpdateSizeAndPosition(const FGeometry& AllottedGeometry
 		TaskDurationSizeX = ScaleInfo.PixelsPerInput * TaskNodeData.GetDuration();
 	}
 
-	const TSharedRef< FSlateFontMeasure > FontMeasureService = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+	const TSharedRef<FSlateFontMeasure> FontMeasureService = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
 	TextSize = FontMeasureService->Measure(GetNotifyText(), Font);
-	TextSize.Y = FTimelineTrack::TimelineTrackHeight * 0.75f - TextExpandSizeY * 2.0f;
+	TextSize.Y = FTimelineTrack::TimelineTrackHeight * 0.75f - BXTLTTN::TextExpandSizeY * 2.0f;
 
 	WidgetX = TaskTimePositionX;
-	WidgetSize = FVector2D(FMath::Max3(TaskDurationSizeX, TextSize.X * 1.2f, ScrubSizeX * 2.0f), FTimelineTrack::TimelineTrackHeight);
+	WidgetSize = FVector2D(FMath::Max3(TaskDurationSizeX, TextSize.X * 1.2f, BXTLTTN::ScrubSizeX * 2.0f), FTimelineTrack::TimelineTrackHeight);
 }
 
 #pragma endregion Parameter
@@ -339,17 +341,17 @@ void SBXTLTaskTrackNode::RefreshDragType(const FVector2D& CursorTrackPosition)
 {
 	DragType = EDragType::None;
 
-	FVector2D NotifyNodePosition(0.0f, 0.0f);
-	FVector2D NotifyNodeSize(TaskDurationSizeX > 0.0f ? TaskDurationSizeX : WidgetSize.X, FTimelineTrack::TimelineTrackHeight);
+	FVector2D NodePosition(0.0f, 0.0f);
+	FVector2D NodeSize(TaskDurationSizeX > 0.0f ? TaskDurationSizeX : WidgetSize.X, FTimelineTrack::TimelineTrackHeight);
 
 	FVector2D MouseRelativePosition(CursorTrackPosition - GetWidgetPosition());
-	if (MouseRelativePosition.ComponentwiseAllGreaterThan(NotifyNodePosition) && MouseRelativePosition.ComponentwiseAllLessThan(NotifyNodePosition + NotifyNodeSize))
+	if (MouseRelativePosition.ComponentwiseAllGreaterThan(NodePosition) && MouseRelativePosition.ComponentwiseAllLessThan(NodePosition + NodeSize))
 	{
 		// 持续任务需要区分
 		if (TaskDurationSizeX > 0.0f)
 		{
 			// 该次拖动想要修改开始时间
-			if (MouseRelativePosition.X <= (NotifyNodePosition.X + NotifyNodeSize.X - ScrubSizeX))
+			if (MouseRelativePosition.X <= (NodePosition.X + NodeSize.X - BXTLTTN::ScrubSizeX))
 			{
 				DragType = EDragType::StartTime;
 			}
@@ -416,7 +418,7 @@ FCursorReply SBXTLTaskTrackNode::OnCursorQuery(const FGeometry& MyGeometry, cons
 		const float DistFromFirstHandle = FMath::Abs(MouseLocation.X);
 		const float DistFromSecondHandle = FMath::Abs(MouseLocation.X - TaskDurationSizeX);
 
-		if (DistFromFirstHandle < ScrubSizeX || DistFromSecondHandle < ScrubSizeX)
+		if (DistFromFirstHandle < BXTLTTN::ScrubSizeX || DistFromSecondHandle < BXTLTTN::ScrubSizeX)
 		{
 			return FCursorReply::Cursor(EMouseCursor::ResizeLeftRight);
 		}

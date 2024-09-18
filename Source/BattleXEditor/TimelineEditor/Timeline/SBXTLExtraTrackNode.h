@@ -16,18 +16,6 @@
 
 
 
-namespace EExtraTrackHandleHit
-{
-	enum Type
-	{
-		Start,
-		End,
-		None
-	};
-}
-
-
-
 class SBXTLExtraTrackNode : public SLeafWidget
 {
 #pragma region Important
@@ -52,6 +40,13 @@ public:
 	void Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime) override;
 
 private:
+	enum EDragType
+	{
+		StartTime,
+		Duration,
+		None
+	};
+
 	TWeakObjectPtr<class UBXTLAsset> CachedAsset = nullptr;
 
 #pragma endregion Important
@@ -73,8 +68,6 @@ public:
 #pragma region Parameter
 public:
 	FText GetNotifyText() const;
-
-	FText GetNodeTooltip() const;
 
 	FVector2D GetSize() const;
 
@@ -109,19 +102,13 @@ private:
 
 	FSlateFontInfo Font;
 
-	float NotifyTimePositionX;
+	float ExtraTimePositionX;
 
-	float NotifyDurationSizeX;
-
-	float NotifyScrubHandleCentre;
+	float ExtraDurationSizeX;
 
 	FVector2D ScreenPosition;
 
-	bool bDrawTooltipToRight;
-
-	FVector2D TextSize;
-
-	float LabelWidth;
+	FVector2f TextSize;
 
 #pragma endregion Parameter
 
@@ -129,9 +116,6 @@ private:
 
 #pragma region Widget
 public:
-	// 判断是否命中
-	bool HitTest(const FGeometry& AllottedGeometry, FVector2D MouseLocalPose) const;
-
 	// 接收聚焦
 	FReply OnFocusReceived(const FGeometry& MyGeometry, const FFocusEvent& InFocusEvent) override;
 
@@ -141,8 +125,8 @@ public:
 	// 是否支持键盘聚焦
 	bool SupportsKeyboardFocus() const override;
 
-	// 分析鼠标拖拽TaskNode的类型
-	EExtraTrackHandleHit::Type DurationHandleHitTest(const FVector2D& CursorScreenPosition) const;
+	// 刷新拖拽类型
+	void RefreshDragType(const FVector2D& CursorScreenPosition);
 
 	// 是否正在被拖动
 	bool BeingDragged() const;
@@ -156,23 +140,13 @@ public:
 	// 设置鼠标按下时的位置
 	void SetLastMouseDownPosition(const FVector2D& CursorPosition);
 
-	// 鼠标移动回调
-	FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
-	
-	// 鼠标按键抬起回调
-	FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
-
-	// 鼠标悬停查询
+	// 改变指针样式
 	FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override;
 
-	float HandleOverflowPan(const FVector2D& ScreenCursorPos, float TrackScreenSpaceXPosition, float TrackScreenSpaceMin, float TrackScreenSpaceMax);
-
 private:
-	bool bBeingDragged;
+	int32 DragIndex;
 
-	int32 DragMarkerTransactionIdx;
-
-	EExtraTrackHandleHit::Type CurrentDragHandle;
+	EDragType DragType;
 
 	float WidgetX;
 
@@ -198,7 +172,7 @@ private:
 private:
 	FBXTLRefreshPanel RefreshPanelEvent;
 
-	FBXTLStartDragETN StartDragNodeEvent;
+	FBXTLStartDragETN StartDragETNEvent;
 
 #pragma endregion Event
 

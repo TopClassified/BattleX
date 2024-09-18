@@ -300,7 +300,7 @@ void SBXTLTaskTrack::HandleNodeDrop(TSharedPtr<SBXTLTaskTrackNode> Node, float O
 	float LocalX = GetCachedGeometry().AbsoluteToLocal(Node->GetScreenPosition() + Offset).X;
 	float Time = GetCachedScaleInfo().LocalXToInput(LocalX);
 
-	Node->GetTaskNodeDataPtr()->SetStartTime(Time);
+	Node->GetTaskNodeData().SetStartTime(Time);
 }
 
 void SBXTLTaskTrack::SelectTaskNode()
