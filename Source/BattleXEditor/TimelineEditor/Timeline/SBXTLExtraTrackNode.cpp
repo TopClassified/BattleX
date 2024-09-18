@@ -23,6 +23,7 @@ namespace BXTLETN
 	const float ScrubSizeX = 10.0f;
 	const float TextOffsetX = 4.0f;
 	const float TextExpandSizeY = 4.0f;
+	const float WidgetExpandSizeX = 200.0f;
 }
 
 void SBXTLExtraTrackNode::Construct(const FArguments& InArgs)
@@ -164,14 +165,14 @@ void SBXTLExtraTrackNode::UpdateSizeAndPosition(const FGeometry& AllottedGeometr
 	CachedAllotedGeometrySize = AllottedGeometry.Size * AllottedGeometry.Scale;
 
 	ExtraTimePositionX = ScaleInfo.InputToLocalX(GetNodeStartTime());
-	ExtraDurationSizeX = ScaleInfo.PixelsPerInput * GetNodeDuration();
+	ExtraDurationSizeX = ScaleInfo.PixelsPerInput * (DragType == EDragType::Duration ? NodeDuration : GetNodeDuration());
 
 	const TSharedRef<FSlateFontMeasure> FontMeasureService = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
 	TextSize = FontMeasureService->Measure(GetNotifyText(), Font);
 	TextSize.Y = FTimelineTrack::TimelineSubTrackHeight * 0.75f - BXTLETN::TextExpandSizeY * 2.0f;
 
 	WidgetX = ExtraTimePositionX;
-	WidgetSize = FVector2D(FMath::Max3(ExtraDurationSizeX, TextSize.X * 1.2f, BXTLETN::ScrubSizeX * 2.0f), FTimelineTrack::TimelineSubTrackHeight);
+	WidgetSize = FVector2D(FMath::Max3(ExtraDurationSizeX, TextSize.X + BXTLETN::ScrubSizeX, BXTLETN::ScrubSizeX) + BXTLETN::WidgetExpandSizeX, FTimelineTrack::TimelineSubTrackHeight);
 }
 
 FText SBXTLExtraTrackNode::GetNodeName() const
@@ -296,18 +297,18 @@ void SBXTLExtraTrackNode::RefreshDragType(const FVector2D& CursorTrackPosition)
 	DragType = EDragType::None;
 
 	FVector2D NodePosition(0.0f, 0.0f);
-	FVector2D NodeSize(ExtraDurationSizeX > 0.0f ? ExtraDurationSizeX : WidgetSize.X, FTimelineTrack::TimelineSubTrackHeight);
+	FVector2D NodeSize(WidgetSize.X, FTimelineTrack::TimelineSubTrackHeight);
 
 	FVector2D MouseRelativePosition(CursorTrackPosition - GetWidgetPosition());
 	if (MouseRelativePosition.ComponentwiseAllGreaterThan(NodePosition) && MouseRelativePosition.ComponentwiseAllLessThan(NodePosition + NodeSize))
 	{
 		// 该次拖动想要修改开始时间
-		if (MouseRelativePosition.X <= (NodePosition.X + NodeSize.X - BXTLETN::ScrubSizeX))
+		if (MouseRelativePosition.X < (NodePosition.X + ExtraDurationSizeX - BXTLETN::ScrubSizeX))
 		{
 			DragType = EDragType::StartTime;
 		}
 		// 该次拖动想要修改时长
-		else
+		else if (MouseRelativePosition.X < (NodePosition.X + ExtraDurationSizeX + BXTLETN::ScrubSizeX))
 		{
 			DragType = EDragType::Duration;
 		}
@@ -316,7 +317,7 @@ void SBXTLExtraTrackNode::RefreshDragType(const FVector2D& CursorTrackPosition)
 
 bool SBXTLExtraTrackNode::BeingDragged() const
 {
-	return (DragType == EDragType::StartTime) || (DragType == EDragType::Duration);
+	return DragType == EDragType::StartTime;
 }
 
 FReply SBXTLExtraTrackNode::OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
@@ -345,6 +346,45 @@ void SBXTLExtraTrackNode::DragCancelled()
 
 	DragIndex = INDEX_NONE;
 	DragType = EDragType::None;
+}
+
+FReply SBXTLExtraTrackNode::OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	if (DragType == EDragType::Duration)
+	{
+		FTrackScaleInfo ScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0, 0, CachedAllotedGeometrySize);
+
+		float XPositionInTrack = MyGeometry.AbsolutePosition.X - CachedTrackGeometry.AbsolutePosition.X;
+		float NewDuration = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X) - GetNodeStartTime();
+
+		NodeDuration = NewDuration;
+
+		return FReply::Handled();
+	}
+
+	return FReply::Unhandled();
+}
+
+void SBXTLExtraTrackNode::OnMouseLeave(const FPointerEvent& MouseEvent)
+{
+	if (DragType == EDragType::Duration)
+	{
+		SetNodeDuration(NodeDuration);
+		DragType = EDragType::None;
+	}
+}
+
+FReply SBXTLExtraTrackNode::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	if (DragType == EDragType::Duration)
+	{
+		SetNodeDuration(NodeDuration);
+		DragType = EDragType::None;
+
+		return FReply::Handled();
+	}
+
+	return FReply::Unhandled();
 }
 
 void SBXTLExtraTrackNode::SetLastMouseDownPosition(const FVector2D& CursorPosition)

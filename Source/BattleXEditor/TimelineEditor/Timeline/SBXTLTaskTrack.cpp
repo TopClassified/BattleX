@@ -46,9 +46,14 @@ void SBXTLTaskTrack::Tick(const FGeometry& AllottedGeometry, const double InCurr
 { 
 	UpdateCachedGeometry(AllottedGeometry); 
 
-	if (!TaskNode->BeingDragged())
+	if (TaskNode.IsValid())
 	{
-		TaskNode->UpdateSizeAndPosition(AllottedGeometry);
+		TaskNode->CachedTrackGeometry = AllottedGeometry;
+	
+		if (!TaskNode->BeingDragged())
+		{
+			TaskNode->UpdateSizeAndPosition(AllottedGeometry);
+		}
 	}
 }
 

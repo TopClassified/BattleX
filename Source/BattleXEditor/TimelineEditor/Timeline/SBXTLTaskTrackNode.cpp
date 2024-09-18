@@ -96,6 +96,7 @@ namespace BXTLTTN
 	const float ScrubSizeX = 10.0f;
 	const float TextOffsetX = 4.0f;
 	const float TextExpandSizeY = 4.0f;
+	const float WidgetExpandSizeX = 200.0f;
 }
 
 void SBXTLTaskTrackNode::Construct(const FArguments& InArgs)
@@ -289,23 +290,15 @@ void SBXTLTaskTrackNode::UpdateSizeAndPosition(const FGeometry& AllottedGeometry
 	CachedAllotedGeometrySize = AllottedGeometry.Size * AllottedGeometry.Scale;
 	CachedAllotedGeometrySize.Y *= 0.5f;
 
-	if (DragType != EDragType::None)
-	{
-		TaskTimePositionX = ScaleInfo.InputToLocalX(NodeStartTime);
-		TaskDurationSizeX = ScaleInfo.PixelsPerInput * NodeDuration;
-	}
-	else
-	{
-		TaskTimePositionX = ScaleInfo.InputToLocalX(TaskNodeData.GetStartTime());
-		TaskDurationSizeX = ScaleInfo.PixelsPerInput * TaskNodeData.GetDuration();
-	}
+	TaskTimePositionX = ScaleInfo.InputToLocalX(TaskNodeData.GetStartTime());
+	TaskDurationSizeX = ScaleInfo.PixelsPerInput * (DragType == EDragType::Duration ? NodeDuration : TaskNodeData.GetDuration());
 
 	const TSharedRef<FSlateFontMeasure> FontMeasureService = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
 	TextSize = FontMeasureService->Measure(GetNotifyText(), Font);
 	TextSize.Y = FTimelineTrack::TimelineTrackHeight * 0.75f - BXTLTTN::TextExpandSizeY * 2.0f;
 
 	WidgetX = TaskTimePositionX;
-	WidgetSize = FVector2D(FMath::Max3(TaskDurationSizeX, TextSize.X * 1.2f, BXTLTTN::ScrubSizeX * 2.0f), FTimelineTrack::TimelineTrackHeight);
+	WidgetSize = FVector2D(FMath::Max3(TaskDurationSizeX, TextSize.X * 1.2f, BXTLTTN::ScrubSizeX) + BXTLTTN::WidgetExpandSizeX, FTimelineTrack::TimelineTrackHeight);
 }
 
 #pragma endregion Parameter
@@ -342,7 +335,7 @@ void SBXTLTaskTrackNode::RefreshDragType(const FVector2D& CursorTrackPosition)
 	DragType = EDragType::None;
 
 	FVector2D NodePosition(0.0f, 0.0f);
-	FVector2D NodeSize(TaskDurationSizeX > 0.0f ? TaskDurationSizeX : WidgetSize.X, FTimelineTrack::TimelineTrackHeight);
+	FVector2D NodeSize(WidgetSize.X, FTimelineTrack::TimelineTrackHeight);
 
 	FVector2D MouseRelativePosition(CursorTrackPosition - GetWidgetPosition());
 	if (MouseRelativePosition.ComponentwiseAllGreaterThan(NodePosition) && MouseRelativePosition.ComponentwiseAllLessThan(NodePosition + NodeSize))
@@ -351,18 +344,18 @@ void SBXTLTaskTrackNode::RefreshDragType(const FVector2D& CursorTrackPosition)
 		if (TaskDurationSizeX > 0.0f)
 		{
 			// 该次拖动想要修改开始时间
-			if (MouseRelativePosition.X <= (NodePosition.X + NodeSize.X - BXTLTTN::ScrubSizeX))
+			if (MouseRelativePosition.X < (NodePosition.X + TaskDurationSizeX - BXTLTTN::ScrubSizeX))
 			{
 				DragType = EDragType::StartTime;
 			}
 			// 该次拖动想要修改时长
-			else
+			else if (MouseRelativePosition.X < (NodePosition.X + TaskDurationSizeX + BXTLTTN::ScrubSizeX))
 			{
 				DragType = EDragType::Duration;
 			}
 		}
 		// 瞬时任务默认修改开始时间
-		else
+		else if (MouseRelativePosition.X < (NodePosition.X + TextSize.X))
 		{
 			DragType = EDragType::StartTime;
 		}
@@ -371,7 +364,7 @@ void SBXTLTaskTrackNode::RefreshDragType(const FVector2D& CursorTrackPosition)
 
 bool SBXTLTaskTrackNode::BeingDragged() const
 {
-	return (DragType == EDragType::StartTime) || (DragType == EDragType::Duration);
+	return DragType == EDragType::StartTime;
 }
 
 FReply SBXTLTaskTrackNode::OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
@@ -380,13 +373,15 @@ FReply SBXTLTaskTrackNode::OnDragDetected(const FGeometry& MyGeometry, const FPo
 	{
 		RefreshDragType(LastMouseDownPosition);
 	
-		if (DragType != EDragType::None)
+		if (DragType == EDragType::StartTime)
 		{
-			NodeStartTime = TaskNodeData.GetStartTime();
-			NodeDuration = TaskNodeData.GetDuration();
 			DragIndex = GEditor->BeginTransaction(NSLOCTEXT("Node", "Drag Postion", "Drag State Node Postion"));
 
 			return StartDragTTNEvent.Execute(SharedThis(this), MouseEvent, FVector2D(MyGeometry.AbsolutePosition), false);
+		}
+		else if (DragType == EDragType::Duration)
+		{
+			return FReply::Handled();
 		}
 	}
 
@@ -402,6 +397,45 @@ void SBXTLTaskTrackNode::DragCancelled()
 
 	DragIndex = INDEX_NONE;
 	DragType = EDragType::None;
+}
+
+FReply SBXTLTaskTrackNode::OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	if (DragType == EDragType::Duration)
+	{
+		FTrackScaleInfo ScaleInfo(ViewInputMin.Get(), ViewInputMax.Get(), 0, 0, CachedAllotedGeometrySize);
+
+		float XPositionInTrack = MyGeometry.AbsolutePosition.X - CachedTrackGeometry.AbsolutePosition.X;
+		float NewDuration = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X) - TaskNodeData.GetStartTime();
+		
+		NodeDuration = NewDuration;
+
+		return FReply::Handled();
+	}
+
+	return FReply::Unhandled();
+}
+
+void SBXTLTaskTrackNode::OnMouseLeave(const FPointerEvent& MouseEvent)
+{
+	if (DragType == EDragType::Duration)
+	{
+		TaskNodeData.SetDuration(NodeDuration);
+		DragType = EDragType::None;
+	}
+}
+
+FReply SBXTLTaskTrackNode::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	if (DragType == EDragType::Duration)
+	{
+		TaskNodeData.SetDuration(NodeDuration);
+		DragType = EDragType::None;
+
+		return FReply::Handled();
+	}
+
+	return FReply::Unhandled();
 }
 
 void SBXTLTaskTrackNode::SetLastMouseDownPosition(const FVector2D& CursorPosition)

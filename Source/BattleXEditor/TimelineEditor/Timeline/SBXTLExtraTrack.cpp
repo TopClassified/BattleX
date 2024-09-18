@@ -47,9 +47,14 @@ void SBXTLExtraTrack::Tick(const FGeometry& AllottedGeometry, const double InCur
 { 
 	UpdateCachedGeometry(AllottedGeometry); 
 
-	if (!TrackNode->BeingDragged())
+	if (TrackNode.IsValid())
 	{
-		TrackNode->UpdateSizeAndPosition(AllottedGeometry);
+		TrackNode->CachedTrackGeometry = AllottedGeometry;
+
+		if (!TrackNode->BeingDragged())
+		{
+			TrackNode->UpdateSizeAndPosition(AllottedGeometry);
+		}
 	}
 }
 

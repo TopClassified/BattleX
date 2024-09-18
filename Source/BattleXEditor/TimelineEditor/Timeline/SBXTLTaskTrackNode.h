@@ -40,9 +40,6 @@ struct FBXTLTaskNodeData
 	// 设置持续时间
 	void SetDuration(float InDuration);
 
-	// 设置预览帧率
-	void SetPreviewFrameRate(float InPreviewFrameRate);
-
 private:
 	// 缓存的Task对象
 	TWeakObjectPtr<class UBXTask> CachedTask = nullptr;
@@ -135,13 +132,11 @@ private:
 
 	float TaskDurationSizeX;
 
+	float NodeDuration;
+
 	FVector2D ScreenPosition;
 
 	FVector2f TextSize;
-
-	float NodeStartTime;
-
-	float NodeDuration;
 
 	FBXTLTaskNodeData TaskNodeData;
 
@@ -172,6 +167,15 @@ public:
 	// 拖动被取消
 	void DragCancelled();
 
+	// 鼠标移动
+	FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+
+	// 鼠标离开
+	void OnMouseLeave(const FPointerEvent& MouseEvent) override;
+
+	// 鼠标案件抬起
+	FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+
 	// 设置鼠标按下时的位置
 	void SetLastMouseDownPosition(const FVector2D& CursorPosition);
 
@@ -194,6 +198,8 @@ private:
 	float TimelinePlayLength;
 
 	FVector2D LastMouseDownPosition;
+
+	FGeometry CachedTrackGeometry;
 
 	FVector2D CachedAllotedGeometrySize;
 

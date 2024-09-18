@@ -94,7 +94,10 @@ void STrackArea::OnArrangeChildren(const FGeometry& AllottedGeometry, FArrangedC
 		const FMargin Padding(0, CurChild.GetVerticalOffset(), 0, 0);
 		AlignmentArrangeResult XResult = AlignChild<Orient_Horizontal>(AllottedGeometry.GetLocalSize().X, CurChild, Padding, 1.0f, false);
 		AlignmentArrangeResult YResult = AlignChild<Orient_Vertical>(AllottedGeometry.GetLocalSize().Y, CurChild, Padding, 1.0f, false);
-		YResult.Size = FTimelineTrack::TimelineTrackHeight;
+		if (ChildIndex < Children.Num() - 1)
+		{
+			YResult.Size = FTimelineTrack::TimelineTrackHeight + 8.0f;
+		}
 
 		TempMessages.Add(Temp(ChildIndex, ChildVisibility, XResult, YResult));
 	}
