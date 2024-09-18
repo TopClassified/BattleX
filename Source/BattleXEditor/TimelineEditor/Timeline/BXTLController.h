@@ -101,6 +101,9 @@ public:
 	// 创建Task
 	class UBXTask* AddNewTask(struct FBXTLTaskGroup& InGroup, UClass* InTaskClass, float StartTime = 0.0f);
 
+	// 创建Task对应的图表节点
+	void CreateTaskGraphNode(class UBXTask* TheTask);
+
 	// 删除Task
 	void DeleteTask(class UBXTask* TheTask);
 	

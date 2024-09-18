@@ -273,6 +273,8 @@ private:
 public:
 	void SetGraphEditor(const TSharedPtr<SGraphEditor>& InGraphEditor);
 
+	void SetGraphEditorViewLocationByTask(class UBXTask* InTask);
+
 	void OnSelectedNodesChanged(const TSet<class UObject*>& NewSelection);
 
 	void OnSelectedNodesDeleted();

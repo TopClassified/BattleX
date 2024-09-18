@@ -58,11 +58,6 @@ public:
 
 	virtual ~UBXTLGraphNode();
 
-	void PreSave(class FObjectPreSaveContext ObjectSaveContext) override;
-
-protected:
-	void RefreshGraphNodeInformation();
-
 public:
 	UPROPERTY()
 	class UBXTask* CachedTask = nullptr;
@@ -104,6 +99,8 @@ public:
 	// 根据Pin信息创建Pin
 	void CreatePinByInformation(FBXTLGNodePin& InInformation);
 
+	void NodeConnectionListChanged();
+
 private:
 	UPROPERTY()
 	TArray<FBXTLGNodePin> PinInformations;
@@ -114,6 +111,8 @@ private:
 
 #pragma region Property
 public:
+	void RefreshGraphNodeInformation();
+
 	virtual FText GetNodeTitle(ENodeTitleType::Type TitleType) const override;
 
 #pragma endregion Property

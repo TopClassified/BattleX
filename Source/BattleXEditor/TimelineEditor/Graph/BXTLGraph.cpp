@@ -17,6 +17,20 @@ UBXTLGraph::~UBXTLGraph()
 
 }
 
+void UBXTLGraph::PreSave(class FObjectPreSaveContext ObjectSaveContext)
+{
+	// 刷新任务信息
+	for (int32 i = 0; i < Nodes.Num(); ++i)
+	{
+		if (UBXTLGraphNode* Node = Cast<UBXTLGraphNode>(Nodes[i]))
+		{
+			Node->RefreshGraphNodeInformation();
+		}
+	}
+
+	Super::PreSave(ObjectSaveContext);
+}
+
 void UBXTLGraph::RefreshGraph()
 {
 	UBXTLAsset* Asset = Cast<UBXTLAsset>(GetOuter());
@@ -47,9 +61,9 @@ void UBXTLGraph::RefreshGraph()
 	}
 
 	// 根据现在的数据/事件传输关系，重建节点和连接关系
-	for (int32 i = 0; i < Nodes.Num(); i++)
+	for (int32 i = 0; i < Nodes.Num(); ++i)
 	{
-		for (int32 j = i + 1; j < Nodes.Num(); j++)
+		for (int32 j = i + 1; j < Nodes.Num(); ++j)
 		{
 			UBXTLGraphNode* Node1 = Cast<UBXTLGraphNode>(Nodes[i]);
 			UBXTLGraphNode* Node2 = Cast<UBXTLGraphNode>(Nodes[j]);
@@ -60,11 +74,45 @@ void UBXTLGraph::RefreshGraph()
 			}
 		}
 	}
+
+	Modify();
 }
 
-void UBXTLGraph::GenerateGraphNodeByTask(UBXTask* InTask)
+bool UBXTLGraph::CheckTaskNodeValid(UBXTask* InTask)
 {
-	if (!InTask)
+	for (int32 i = 0; i < Nodes.Num(); ++i)
+	{
+		if (UBXTLGraphNode* Node = Cast<UBXTLGraphNode>(Nodes[i]))
+		{
+			if (Node->CachedTask == InTask)
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+UEdGraphNode* UBXTLGraph::GetGraphNodeByTask(UBXTask* InTask)
+{
+	for (int32 i = 0; i < Nodes.Num(); ++i)
+	{
+		if (UBXTLGraphNode* Node = Cast<UBXTLGraphNode>(Nodes[i]))
+		{
+			if (Node->CachedTask == InTask)
+			{
+				return Nodes[i];
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+void UBXTLGraph::GenerateGraphNodeByTask(UBXTask* InTask, float InX, float InY)
+{
+	if (!InTask || CheckTaskNodeValid(InTask))
 	{
 		return;
 	}
@@ -80,17 +128,7 @@ void UBXTLGraph::GenerateGraphNodeByTask(UBXTask* InTask)
 
 		PosY = FMath::Max(PosY, Node->NodePosY);
 	}
-	PosY += 400.0f;
-
-	GenerateGraphNodeByTask(InTask, 0.0f, PosY);
-}
-
-void UBXTLGraph::GenerateGraphNodeByTask(UBXTask* InTask, float InPosX, float InPosY)
-{
-	if (!InTask)
-	{
-		return;
-	}
+	PosY += 200.0f;
 
 	if (UBXTLGraphNode* ResultNode = NewObject<UBXTLGraphNode>(this))
 	{
@@ -103,18 +141,160 @@ void UBXTLGraph::GenerateGraphNodeByTask(UBXTask* InTask, float InPosX, float In
 		ResultNode->AllocateDefaultPins();
 		ResultNode->UpdatePins();
 
-		ResultNode->NodePosX = InPosX;
-		ResultNode->NodePosY = InPosY;
+		ResultNode->NodePosX = FMath::IsNearlyZero(InX) ? 0.0f : InX;
+		ResultNode->NodePosY = FMath::IsNearlyZero(InY) ? PosY : InY;
 
 		ResultNode->SetFlags(RF_Transactional);
+
+		Modify();
+	}
+}
+
+void UBXTLGraph::GenerateGraphNodesByTasks(TArray<UBXTask*>& InTaskList)
+{
+	if (InTaskList.Num() <= 0)
+	{
+		return;
 	}
 
-	Modify();
+	int32 NodeY = 0;
+	for (int32 i = 0; i < Nodes.Num(); ++i)
+	{
+		UEdGraphNode* Node = Nodes[i];
+		if (!Node)
+		{
+			continue;
+		}
+
+		NodeY = FMath::Max(NodeY, Node->NodePosY);
+	}
+	NodeY += 300;
+
+	int32 NodeX = 0;
+	for (int32 i = 0; i < InTaskList.Num(); ++i)
+	{
+		UBXTask* Task = InTaskList[i];
+		if (!Task)
+		{
+			continue;
+		}
+
+		bool bGenerateNode = false;
+
+		// 判断有没有必要创建逻辑节点
+		TArray<FBXTInputInfo>& CollisionInputs = Task->CollisionInputDatas;
+		for (int32 j = 0; j < CollisionInputs.Num(); ++j)
+		{
+			if (CollisionInputs[j].DataTask.IsValid())
+			{
+				bGenerateNode = true;
+				break;
+			}
+		}
+
+		if (!bGenerateNode)
+		{
+			for (int32 j = 0; j < Task->InputDatas.Num(); ++j)
+			{
+				if (Task->InputDatas[j].DataTask.IsValid())
+				{
+					bGenerateNode = true;
+					break;
+				}
+			}
+		}
+
+		if (!bGenerateNode)
+		{
+			// 自身有连接到外部的节点，需要生成自身节点
+			for (TMap<FName, FBXTEvent>::TIterator It(Task->Events); It; ++It)
+			{
+				if (It->Value.Event.Num() > 0)
+				{
+					bGenerateNode = true;
+					break;
+				}
+			}
+		}
+
+		if (!bGenerateNode)
+		{
+			// 有其他节点连接到自身，也需要生成自身节点
+			for (int32 k = 0; k < InTaskList.Num(); ++k)
+			{
+				UBXTask* OtherTask = InTaskList[k];
+				if (!OtherTask || OtherTask == Task)
+				{
+					continue;
+				}
+
+				for (TMap<FName, FBXTEvent>::TIterator It(OtherTask->Events); It; ++It)
+				{
+					if (It->Value.Event.Contains(Task))
+					{
+						bGenerateNode = true;
+						break;
+					}
+				}
+
+				if (bGenerateNode)
+				{
+					break;
+				}
+			}
+		}
+
+		if (!bGenerateNode)
+		{
+			continue;
+		}
+
+		GenerateGraphNodeByTask(InTaskList[i], NodeX, NodeY);
+
+		NodeX += 300;
+	}
+
+	RefreshGraph();
+}
+
+void UBXTLGraph::DeleteGraphNodes(TArray<UEdGraphNode*>& InNodes)
+{
+	for (TArray<UEdGraphNode*>::TIterator It(InNodes); It; ++It)
+	{
+		if (UEdGraphNode* EdNode = Cast<UEdGraphNode>(*It))
+		{
+			EdNode->DestroyNode();
+		}
+	}
+
+	RefreshGraph();
+}
+
+void UBXTLGraph::DeleteGraphNodeByTask(UBXTask* InTask)
+{
+	if (!InTask)
+	{
+		return;
+	}
+
+	for (int32 i = 0; i < Nodes.Num(); ++i)
+	{
+		if (UBXTLGraphNode* Node = Cast<UBXTLGraphNode>(Nodes[i]))
+		{
+			if (Node->CachedTask == InTask)
+			{
+				Node->DestroyNode();
+				break;
+			}
+		}
+	}
+
+	RefreshGraph();
 }
 
 void UBXTLGraph::TryAutoConnectPin(UBXTLGraphNode* Node1, UBXTLGraphNode* Node2)
 {
-	if (!Node1 || !Node1->CachedTask || !Node2 || Node2->CachedTask)
+	if (!Node1 || !Node1->CachedTask || !Node2 || !Node2->CachedTask)
 	{
 		return;
 	}

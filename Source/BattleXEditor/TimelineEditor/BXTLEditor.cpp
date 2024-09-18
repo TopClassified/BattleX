@@ -816,6 +816,22 @@ void FBXTLEditor::SetGraphEditor(const TSharedPtr<SGraphEditor>& InGraphEditor)
 	GraphEditor = InGraphEditor;
 }
 
+void FBXTLEditor::SetGraphEditorViewLocationByTask(UBXTask* InTask)
+{
+	if (!InTask || !GraphEditor.IsValid())
+	{
+		return;
+	}
+
+	if (UBXTLGraph* Graph = Cast<UBXTLGraph>(EditAsset->Graph))
+	{
+		if (UEdGraphNode* Node = Graph->GetGraphNodeByTask(InTask))
+		{
+			GraphEditor->SetViewLocation(FVector2D(Node->NodePosX - 200.0f, Node->NodePosY - 200.0f), 1.0f);
+		}
+	}
+}
+
 void FBXTLEditor::OnSelectedNodesChanged(const TSet<UObject*>& NewSelection)
 {
 	SelectedGraphNodes.Empty();
@@ -827,34 +843,23 @@ void FBXTLEditor::OnSelectedNodesChanged(const TSet<UObject*>& NewSelection)
 
 void FBXTLEditor::OnSelectedNodesDeleted()
 {
-	TArray<TWeakObjectPtr<UObject>> CurNodes;
-	CurNodes.Append(SelectedGraphNodes);
+	if (UBXTLGraph* Graph = Cast<UBXTLGraph>(EditAsset->Graph))
+	{
+		TArray<UEdGraphNode*> CurNodes;
+		for (TArray<TWeakObjectPtr<UObject>>::TIterator It(SelectedGraphNodes); It; ++It)
+		{
+			if (UEdGraphNode* Node = Cast<UEdGraphNode>(*It))
+			{
+				CurNodes.AddUnique(Node);
+			}
+		}
+
+		Graph->DeleteGraphNodes(CurNodes);
+	}
 
 	if (GraphEditor.IsValid())
 	{
-		GraphEditor->GetCurrentGraph()->Modify();
 		GraphEditor->ClearSelectionSet();
-	}
-
-	for (TArray<TWeakObjectPtr<UObject>>::TIterator It(CurNodes); It; ++It)
-	{
-		if (UEdGraphNode* EdNode = Cast<UEdGraphNode>(*It))
-		{
-			EdNode->Modify();
-
-			if (const UEdGraphSchema* Schema = EdNode->GetSchema())
-			{
-				Schema->BreakNodeLinks(*EdNode);
-			}
-
-			EdNode->DestroyNode();
-		}
-	}
-
-	// 刷新一遍逻辑图表
-	if (UBXTLGraph* Graph = Cast<UBXTLGraph>(EditAsset->Graph))
-	{
-		Graph->RefreshGraph();
 	}
 }
 
@@ -867,104 +872,7 @@ void FBXTLEditor::GenerateGraphNodes(TArray<UBXTask*> InTaskList)
 
 	if (UBXTLGraph* Graph = Cast<UBXTLGraph>(EditAsset->Graph))
 	{
-		int32 NodeY = 0;
-		for (int32 i = 0; i < Graph->Nodes.Num(); ++i)
-		{
-			UEdGraphNode* Node = Graph->Nodes[i];
-			if (!Node)
-			{
-				continue;
-			}
-
-			NodeY = FMath::Max(NodeY, Node->NodePosY);
-		}
-		NodeY += 400;
-
-		int32 NodeX = 0;
-		for (int32 i = 0; i < InTaskList.Num(); ++i)
-		{
-			UBXTask* Task = InTaskList[i];
-			if (!Task)
-			{
-				continue;
-			}
-
-			bool bGenerateNode = false;
-
-			// 判断有没有必要创建逻辑节点
-			TArray<FBXTInputInfo>& CollisionInputs = Task->CollisionInputDatas;
-			for (int32 j = 0; j < CollisionInputs.Num(); ++j)
-			{
-				if (CollisionInputs[j].DataTask.IsValid())
-				{
-					bGenerateNode = true;
-					break;
-				}
-			}
-
-			if (!bGenerateNode)
-			{
-				for (int32 j = 0; j < Task->InputDatas.Num(); ++j)
-				{
-					if (Task->InputDatas[j].DataTask.IsValid())
-					{
-						bGenerateNode = true;
-						break;
-					}
-				}
-			}
-
-			if (!bGenerateNode)
-			{
-				// 自身有连接到外部的节点，需要生成自身节点
-				for (TMap<FName, FBXTEvent>::TIterator It(Task->Events); It; ++It)
-				{
-					if (It->Value.Event.Num() > 0)
-					{
-						bGenerateNode = true;
-						break;
-					}
-				}
-			}
-
-			if (!bGenerateNode)
-			{
-				// 有其他节点连接到自身，也需要生成自身节点
-				for (int32 k = 0; k < InTaskList.Num(); ++k)
-				{
-					UBXTask* OtherTask = InTaskList[k];
-					if (!OtherTask || OtherTask == Task)
-					{
-						continue;
-					}
-
-					for (TMap<FName, FBXTEvent>::TIterator It(OtherTask->Events); It; ++It)
-					{
-						if (It->Value.Event.Contains(Task))
-						{
-							bGenerateNode = true;
-							break;
-						}
-					}
-
-					if (bGenerateNode)
-					{
-						break;
-					}
-				}
-			}
-
-			if (!bGenerateNode)
-			{
-				continue;
-			}
-
-			Graph->GenerateGraphNodeByTask(InTaskList[i], NodeX, NodeY);
-
-			NodeX += 400;
-		}
-
-		Graph->RefreshGraph();
+		Graph->GenerateGraphNodesByTasks(InTaskList);
 	}
 }
 

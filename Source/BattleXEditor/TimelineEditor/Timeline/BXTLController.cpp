@@ -22,9 +22,11 @@
 #include "BXTLTaskGroupTrack.h"
 #include "BXTLTaskTrackPanel.h"
 #include "BXTLExtraTrackPanel.h"
+#include "Graph/BXTLGraph.h"
 #include "Preview/BXTLPreviewProxy.h"
 #include "Preview/BXTLPreviewScene.h"
 
+#include "BXTask.h"
 #include "BXTLAsset.h"
 #include "BXSkillAsset.h"
 #include "BXTLEditorTemplate.h"
@@ -212,7 +214,7 @@ void FBXTLController::SetScrubPosition(FFrameTime NewScrubPosition) const
 
 float FBXTLController::GetPlayLength() const
 {
-	if (UBXTLAsset* Asset = CachedPreviewProxy->GetPreviewAsset())
+	if (UBXTLAsset* Asset = GetAsset())
 	{
 		if (Asset->Sections.IsValidIndex(SectionIndex))
 		{
@@ -289,7 +291,7 @@ void FBXTLController::ChangeTaskPosition(UBXTask* SrcTask, UBXTask* DestTask)
 		return;
 	}
 
-	UBXTLAsset* Asset = CachedPreviewProxy->GetPreviewAsset();
+	UBXTLAsset* Asset = GetAsset();
 	if (!Asset)
 	{
 		return;
@@ -350,7 +352,7 @@ void FBXTLController::ChangeTaskGroup(UBXTask* SrcTask, FBXTLTaskGroup& DestGrou
 		return;
 	}
 
-	UBXTLAsset* Asset = CachedPreviewProxy->GetPreviewAsset();
+	UBXTLAsset* Asset = GetAsset();
 	if (!Asset)
 	{
 		return;
@@ -395,7 +397,7 @@ void FBXTLController::AddNewTaskGroup(const FText& Name)
 		return;
 	}
 
-	if (UBXTLAsset* Asset = CachedPreviewProxy->GetPreviewAsset())
+	if (UBXTLAsset* Asset = GetAsset())
 	{
 		Asset->AddGroup(SectionIndex, Name);
 
@@ -412,7 +414,7 @@ void FBXTLController::DeleteTaskGroup(FBXTLTaskGroup& InGroup)
 		return;
 	}
 
-	UBXTLAsset* Asset = CachedPreviewProxy->GetPreviewAsset();
+	UBXTLAsset* Asset = GetAsset();
 	if (!Asset)
 	{
 		return;
@@ -442,7 +444,7 @@ UBXTask* FBXTLController::AddNewTask(FBXTLTaskGroup& InGroup, UClass* InTaskClas
 		return nullptr;
 	}
 
-	UBXTLAsset* Asset = CachedPreviewProxy->GetPreviewAsset();
+	UBXTLAsset* Asset = GetAsset();
 	if (!Asset)
 	{
 		return nullptr;
@@ -468,6 +470,33 @@ UBXTask* FBXTLController::AddNewTask(FBXTLTaskGroup& InGroup, UClass* InTaskClas
 	return nullptr;
 }
 
+void FBXTLController::CreateTaskGraphNode(UBXTask* TheTask)
+{
+	UBXTLAsset* Asset = GetAsset();
+	if (!Asset)
+	{
+		return;
+	}
+
+	UBXTLGraph* Graph = Cast<UBXTLGraph>(Asset->Graph);
+	if (!Graph)
+	{
+		return;
+	}
+
+	if (Graph->CheckTaskNodeValid(TheTask))
+	{
+		if (CachedEditor.IsValid())
+		{
+			CachedEditor.Pin()->SetGraphEditorViewLocationByTask(TheTask);
+		}
+	}
+	else
+	{
+		Graph->GenerateGraphNodeByTask(TheTask, 0.0f, 0.0f);
+	}
+}
+
 void FBXTLController::DeleteTask(UBXTask* TheTask)
 {
 	if (!CachedEditor.Pin()->IsStopped())
@@ -475,18 +504,24 @@ void FBXTLController::DeleteTask(UBXTask* TheTask)
 		return;
 	}
 
-	if (UBXTLAsset* Asset = CachedPreviewProxy->GetPreviewAsset())
+	UBXTLAsset* Asset = GetAsset();
+	if (!Asset)
 	{
-		int32 SectionID = -1;
-		int32 GroupID = -1;
-
-		Asset->GetSectionIDAndGroupID(TheTask, SectionID, GroupID);
-		Asset->RemoveTask(SectionID, GroupID, TheTask);
-
-		RefreshTracks();
-
-		Asset->GetPackage()->MarkPackageDirty();
+		return;
 	}
+
+	if (UBXTLGraph* Graph = Cast<UBXTLGraph>(Asset->Graph))
+	{
+		Graph->DeleteGraphNodeByTask(TheTask);
+	}
+
+	int32 SectionID = -1, GroupID = -1;
+	Asset->GetSectionIDAndGroupID(TheTask, SectionID, GroupID);
+	Asset->RemoveTask(SectionID, GroupID, TheTask);
+
+	RefreshTracks();
+
+	Asset->GetPackage()->MarkPackageDirty();
 }
 
 void FBXTLController::DeleteSelectedTasks()
@@ -496,29 +531,37 @@ void FBXTLController::DeleteSelectedTasks()
 		return;
 	}
 
-	if (UBXTLAsset* Asset = CachedPreviewProxy->GetPreviewAsset())
+	UBXTLAsset* Asset = GetAsset();
+	if (!Asset)
 	{
-		int32 SectionID = -1;
-		int32 GroupID = -1;
+		return;
+	}
 
-		TArray<UBXTask*> Tasks = GetSelectedTasks();
-		for (int32 i = 0; i < Tasks.Num(); ++i)
+	UBXTLGraph* Graph = Cast<UBXTLGraph>(Asset->Graph);
+
+	int32 SectionID = -1, GroupID = -1;
+	TArray<UBXTask*> Tasks = GetSelectedTasks();
+	for (int32 i = 0; i < Tasks.Num(); ++i)
+	{
+		if (Graph)
 		{
-			Asset->GetSectionIDAndGroupID(Tasks[i], SectionID, GroupID);
-			Asset->RemoveTask(SectionID, GroupID, Tasks[i]);
+			Graph->DeleteGraphNodeByTask(Tasks[i]);
 		}
 
-		RefreshTracks();
-
-		Asset->GetPackage()->MarkPackageDirty();
+		Asset->GetSectionIDAndGroupID(Tasks[i], SectionID, GroupID);
+		Asset->RemoveTask(SectionID, GroupID, Tasks[i]);
 	}
+
+	RefreshTracks();
+
+	Asset->GetPackage()->MarkPackageDirty();
 }
 
 int32 FBXTLController::FindGroupID(FBXTLTaskGroup& InGroup)
 {
 	int32 GroupID = -1;
 
-	UBXTLAsset* Asset = CachedPreviewProxy->GetPreviewAsset();
+	UBXTLAsset* Asset = GetAsset();
 	if (!Asset)
 	{
 		return GroupID;
@@ -556,6 +599,39 @@ void FBXTLController::CopySelectedTasks()
 	}
 
 	TArray<UBXTask*> Tasks = GetSelectedTasks();
+	Tasks.Sort
+	(
+		[this](const UBXTask& A, const UBXTask& B) 
+		{
+			if (UBXTLAsset* Asset = GetAsset())
+			{
+				if (Asset->Sections.IsValidIndex(SectionIndex))
+				{
+					FBXTLSection& Section = Asset->Sections[SectionIndex];
+
+					int32 IndexA = -1;
+					int32 IndexB = -1;
+
+					for (int32 i = 0; i < Section.TaskList.Num(); ++i)
+					{
+						if (Section.TaskList[i] == &A)
+						{
+							IndexA = i;
+						}
+
+						if (Section.TaskList[i] == &B)
+						{
+							IndexB = i;
+						}
+					}
+
+					return IndexA < IndexB;
+				}
+			}
+
+			return A.StartTime < B.StartTime;
+		}
+	);
 
 	FString CopyString;
 	CopyString += TEXT("BEGIN Copy UTask!\n");
@@ -578,7 +654,7 @@ void FBXTLController::PasteSelectedTasks(FString InPasteMsg, int32 InGroupID)
 		return;
 	}
 
-	UBXTLAsset* Asset = CachedPreviewProxy->GetPreviewAsset();
+	UBXTLAsset* Asset = GetAsset();
 	if (!Asset)
 	{
 		return;
@@ -712,7 +788,7 @@ void FBXTLController::InternalExportSelectedTaskTemplate()
 {
 	TArray<UBXTask*> Tasks = GetSelectedTasks();
 
-	UBXTLAsset* Asset = CachedPreviewProxy->GetPreviewAsset();
+	UBXTLAsset* Asset = GetAsset();
 	if (!Asset)
 	{
 		return;
@@ -780,7 +856,7 @@ void FBXTLController::ImportTaskTemplate(FName InTemplateName, int32 InGroupID)
 		return;
 	}
 
-	UBXTLAsset* Asset = CachedPreviewProxy->GetPreviewAsset();
+	UBXTLAsset* Asset = GetAsset();
 	if (!Asset)
 	{
 		return;
@@ -845,7 +921,7 @@ void FBXTLController::ImportTaskTemplate(FName InTemplateName, int32 InGroupID)
 #pragma region Callback
 void FBXTLController::ReceiveAutoOptimizeDone(UBXTLAsset* Asset)
 {
-	if (CachedPreviewProxy->GetPreviewAsset() == Asset)
+	if (GetAsset() == Asset)
 	{
 		RefreshTracks();
 	}

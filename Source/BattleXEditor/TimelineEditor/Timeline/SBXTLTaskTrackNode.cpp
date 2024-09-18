@@ -179,14 +179,12 @@ int32 SBXTLTaskTrackNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allot
 			AllottedGeometry.ToPaintGeometry(FVector2f(2.0f, BoxSize), FSlateLayoutTransform(FVector2f(0.0f, BoxHeightPosition))),
 			StyleInfo, ESlateDrawEffect::None, BoxColor
 		);
-		
-		FSlateDrawElement::MakeRotatedBox
+
+		FSlateDrawElement::MakeBox
 		(
-			OutDrawElements, LayerId, 
-			AllottedGeometry.ToPaintGeometry(FVector2f(TextSize.Y, TextSize.Y),
-			FSlateLayoutTransform(FVector2f(0.0f, BoxHeightPosition * 2.0f))),
-			StyleInfo, ESlateDrawEffect::None, UE_HALF_PI * 0.5f, TOptional<FVector2f>(), 
-			FSlateDrawElement::RelativeToElement, BoxColor
+			OutDrawElements, LayerId,
+			AllottedGeometry.ToPaintGeometry(FVector2f(BoxSize * 0.75f, BoxSize * 0.5f), FSlateLayoutTransform(FVector2f(0.0f, BoxHeightPosition))),
+			StyleInfo, ESlateDrawEffect::None, BoxColor
 		);
 	}
 

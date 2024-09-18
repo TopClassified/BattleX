@@ -168,7 +168,7 @@ void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, con
 			int32 FindIndex = SrcTasks.Find(Cast<UBXTask>(Template.DataTask.Get()));
 			if (FindIndex >= 0)
 			{
-				NewInfo.DataTask = SrcTasks[FindIndex];
+				NewInfo.DataTask = DestTasks[FindIndex];
 			}
 		}
 
@@ -179,13 +179,20 @@ void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, con
 			const FBXTInputInfo& Template = SrcTask->InputDatas[j];
 
 			// 无脑拷贝所有数据
-			FBXTInputInfo& NewInfo = DestTask->CollisionInputDatas.Add_GetRef(Template);
+			FBXTInputInfo& NewInfo = DestTask->InputDatas.Add_GetRef(Template);
 
 			int32 FindIndex = SrcTasks.Find(Cast<UBXTask>(Template.DataTask.Get()));
 			if (FindIndex >= 0)
 			{
-				NewInfo.DataTask = SrcTasks[FindIndex];
+				NewInfo.DataTask = DestTasks[FindIndex];
 			}
+		}
+
+		// 修复OutputDatas
+		DestTask->OutputDatas.Empty();
+		for (int32 j = 0; j < SrcTask->OutputDatas.Num(); ++j)
+		{
+			DestTask->OutputDatas.Add(SrcTask->OutputDatas[j]);
 		}
 
 		// 修复EventTaskMap

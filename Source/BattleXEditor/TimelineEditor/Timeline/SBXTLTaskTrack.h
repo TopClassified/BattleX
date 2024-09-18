@@ -94,6 +94,8 @@ private:
 
 	void AddNewTaskMenu(FMenuBuilder& MenuBuilder);
 
+	void CreateGraphNode();
+
 	void CreateNewTaskNodeAtCursor(UClass* NotifyClass);
 
 	void CopyTaskMenu();

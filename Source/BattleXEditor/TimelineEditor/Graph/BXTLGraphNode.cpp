@@ -23,124 +23,6 @@ UBXTLGraphNode::~UBXTLGraphNode()
 
 }
 
-void UBXTLGraphNode::PreSave(FObjectPreSaveContext ObjectSaveContext)
-{
-	Super::PreSave(ObjectSaveContext);
-
-	RefreshGraphNodeInformation();
-}
-
-void UBXTLGraphNode::RefreshGraphNodeInformation()
-{
-	if (!CachedTask)
-	{
-		return;
-	}
-
-	UBXTLAsset* Asset = Cast<UBXTLAsset>(CachedTask->GetOuter());
-	if (!Asset)
-	{
-		return;
-	}
-
-	for (int32 i = 0; i < Pins.Num(); ++i)
-	{
-		UEdGraphPin* CurPin = Pins[i];
-		if (!CurPin)
-		{
-			continue;
-		}
-
-		FBXTLGNodePin* CurPinInfo = GetPinInformation(CurPin);
-		if (!CurPinInfo)
-		{
-			continue;
-		}
-
-		// 更新Task事件触发列表
-		if (CurPinInfo->PinType == 1)
-		{
-			if (FBXTEvent* Events = CachedTask->Events.Find(CurPinInfo->ExtraName))
-			{
-				Events->Event.Reset();
-
-				for (int32 j = 0; j < CurPin->LinkedTo.Num(); ++j)
-				{
-					UEdGraphPin* TarPin = CurPin->LinkedTo[j];
-					if (!TarPin)
-					{
-						continue;
-					}
-
-					if (UBXTLGraphNode* NextNode = Cast<UBXTLGraphNode>(TarPin->GetOwningNode()))
-					{
-						Events->Event.Add(NextNode->CachedTask, FCString::Atof(*TarPin->DefaultValue));
-					}
-				}
-			}
-		}
-		// 更新碰撞信息列表
-		else if (CurPinInfo->PinType == 2)
-		{
-			TArray<FBXTInputInfo>& CollisionInfos = CachedTask->CollisionInputDatas;
-			for (int32 j = 0; j < CollisionInfos.Num(); ++j)
-			{
-				FBXTInputInfo& Info = CollisionInfos[j];
-				if (Info.GetUniqueID() == CurPinInfo->UniqueID)
-				{
-					if (CurPin->LinkedTo.Num() > 0)
-					{
-						if (UBXTLGraphNode* TargetNode = Cast<UBXTLGraphNode>(CurPin->LinkedTo[0]->GetOwningNode()))
-						{
-							if (FBXTLGNodePin* TargetPin = TargetNode->GetPinInformation(CurPin->LinkedTo[0]))
-							{
-								Info.DataDesc = TargetPin->ExtraName;
-								Info.DataTask = TargetNode->CachedTask;
-							}
-						}
-					}
-					else
-					{
-						Info.DataDesc = NAME_None;
-						Info.DataTask = nullptr;
-					}
-
-					break;
-				}
-			}
-		}
-		// 更新输入信息列表
-		else if (CurPinInfo->PinType == 3)
-		{
-			for (int32 j = 0; j < CachedTask->InputDatas.Num(); ++j)
-			{
-				FBXTInputInfo& Info = CachedTask->InputDatas[j];
-				if (Info.GetUniqueID() == CurPinInfo->UniqueID)
-				{
-					if (CurPin->LinkedTo.Num() > 0)
-					{
-						if (UBXTLGraphNode* TargetNode = Cast<UBXTLGraphNode>(CurPin->LinkedTo[0]->GetOwningNode()))
-						{
-							if (FBXTLGNodePin* TargetPin = TargetNode->GetPinInformation(CurPin->LinkedTo[0]))
-							{
-								Info.DataDesc = TargetPin->ExtraName;
-								Info.DataTask = TargetNode->CachedTask;
-							}
-						}
-					}
-					else
-					{
-						Info.DataDesc = NAME_None;
-						Info.DataTask = nullptr;
-					}
-
-					break;
-				}
-			}
-		}
-	}
-}
-
 #pragma endregion Important
 
 
@@ -203,8 +85,6 @@ void UBXTLGraphNode::UpdatePins()
 
 		PinInformations.Empty();
 		PinInformations.Append(NewPinInformationList);
-
-		RefreshGraphNodeInformation();
 	}
 }
 
@@ -378,13 +258,17 @@ UEdGraphPin* UBXTLGraphNode::GetPinByName(FName InExtraName)
 
 void UBXTLGraphNode::CreatePinByInformation(FBXTLGNodePin& InInformation)
 {
-	FString Pin1(TEXT("Graph")), Pin2(TEXT("Node"));
+	FName Pin1(TEXT("Graph")), Pin2(TEXT("Node"));
 
 	EEdGraphPinDirection CurPinDir;
-	if (InInformation.PinType == 1)
+	if (InInformation.PinType == 0)
 	{
 		Pin1 = TEXT("real");
 		Pin2 = TEXT("float");
+		CurPinDir = EEdGraphPinDirection::EGPD_Input;
+	}
+	else if (InInformation.PinType == 1)
+	{
 		CurPinDir = EEdGraphPinDirection::EGPD_Output;
 	}
 	else if (InInformation.PinType == 4)
@@ -402,9 +286,9 @@ void UBXTLGraphNode::CreatePinByInformation(FBXTLGNodePin& InInformation)
 		PinName = GetPinNameFromTagName(PinName);
 	}
 
-	if (UEdGraphPin* NewPin = CreatePin(CurPinDir, *Pin1, *Pin2, PinName))
+	if (UEdGraphPin* NewPin = CreatePin(CurPinDir, Pin1, Pin2, PinName))
 	{
-		if (InInformation.PinType == 1)
+		if (InInformation.PinType == 0)
 		{
 			NewPin->GetSchema()->TrySetDefaultValue(*NewPin, *LexToString(0.0f));
 		}
@@ -413,11 +297,127 @@ void UBXTLGraphNode::CreatePinByInformation(FBXTLGNodePin& InInformation)
 	}
 }
 
+void UBXTLGraphNode::NodeConnectionListChanged()
+{
+	RefreshGraphNodeInformation();
+}
+
 #pragma endregion Pin
 
 
 
 #pragma region Property
+void UBXTLGraphNode::RefreshGraphNodeInformation()
+{
+	if (!CachedTask)
+	{
+		return;
+	}
+
+	UBXTLAsset* Asset = Cast<UBXTLAsset>(CachedTask->GetOuter());
+	if (!Asset)
+	{
+		return;
+	}
+
+	for (int32 i = 0; i < Pins.Num(); ++i)
+	{
+		UEdGraphPin* CurPin = Pins[i];
+		if (!CurPin)
+		{
+			continue;
+		}
+
+		FBXTLGNodePin* CurPinInfo = GetPinInformation(CurPin);
+		if (!CurPinInfo)
+		{
+			continue;
+		}
+
+		// 更新Task事件触发列表
+		if (CurPinInfo->PinType == 1)
+		{
+			if (FBXTEvent* Events = CachedTask->Events.Find(CurPinInfo->ExtraName))
+			{
+				Events->Event.Reset();
+
+				for (int32 j = 0; j < CurPin->LinkedTo.Num(); ++j)
+				{
+					UEdGraphPin* TarPin = CurPin->LinkedTo[j];
+					if (!TarPin)
+					{
+						continue;
+					}
+
+					if (UBXTLGraphNode* NextNode = Cast<UBXTLGraphNode>(TarPin->GetOwningNode()))
+					{
+						Events->Event.Add(NextNode->CachedTask, FCString::Atof(*TarPin->DefaultValue));
+					}
+				}
+			}
+		}
+		// 更新碰撞信息列表
+		else if (CurPinInfo->PinType == 2)
+		{
+			TArray<FBXTInputInfo>& CollisionInfos = CachedTask->CollisionInputDatas;
+			for (int32 j = 0; j < CollisionInfos.Num(); ++j)
+			{
+				FBXTInputInfo& Info = CollisionInfos[j];
+				if (Info.GetUniqueID() == CurPinInfo->UniqueID)
+				{
+					if (CurPin->LinkedTo.Num() > 0)
+					{
+						if (UBXTLGraphNode* TargetNode = Cast<UBXTLGraphNode>(CurPin->LinkedTo[0]->GetOwningNode()))
+						{
+							if (FBXTLGNodePin* TargetPin = TargetNode->GetPinInformation(CurPin->LinkedTo[0]))
+							{
+								Info.DataDesc = TargetPin->ExtraName;
+								Info.DataTask = TargetNode->CachedTask;
+							}
+						}
+					}
+					else
+					{
+						Info.DataDesc = NAME_None;
+						Info.DataTask = nullptr;
+					}
+
+					break;
+				}
+			}
+		}
+		// 更新输入信息列表
+		else if (CurPinInfo->PinType == 3)
+		{
+			for (int32 j = 0; j < CachedTask->InputDatas.Num(); ++j)
+			{
+				FBXTInputInfo& Info = CachedTask->InputDatas[j];
+				if (Info.GetUniqueID() == CurPinInfo->UniqueID)
+				{
+					if (CurPin->LinkedTo.Num() > 0)
+					{
+						if (UBXTLGraphNode* TargetNode = Cast<UBXTLGraphNode>(CurPin->LinkedTo[0]->GetOwningNode()))
+						{
+							if (FBXTLGNodePin* TargetPin = TargetNode->GetPinInformation(CurPin->LinkedTo[0]))
+							{
+								Info.DataDesc = TargetPin->ExtraName;
+								Info.DataTask = TargetNode->CachedTask;
+							}
+						}
+					}
+					else
+					{
+						Info.DataDesc = NAME_None;
+						Info.DataTask = nullptr;
+					}
+
+					break;
+				}
+			}
+		}
+	}
+}
+
 FText UBXTLGraphNode::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
 	if (!CachedTask)

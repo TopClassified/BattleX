@@ -102,13 +102,19 @@ TSharedPtr<SWidget> SBXTLTaskTrack::SummonContextMenu(const FGeometry& MyGeometr
 		);
 		MenuBuilder.AddMenuEntry
 		(
+			NSLOCTEXT("CreateGraphNodeMenu", "CreateGraphNodeMenuAddNotify", "Create Graph Node"),
+			NSLOCTEXT("CreateGraphNodeMenu", "CreateGraphNodeMenuAddNotifyToolTip", "Create Graph Node"),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateSP(this, &SBXTLTaskTrack::CreateGraphNode)),
+			NAME_None,
+			EUserInterfaceActionType::Button
+		);
+		MenuBuilder.AddMenuEntry
+		(
 			NSLOCTEXT("DeleteTaskSubMenu", "DeleteTaskSubMenuAddNotify", "Delete Tasks"),
 			NSLOCTEXT("DeleteTaskSubMenu", "DeleteTaskSubMenuAddNotifyToolTip", "Delete Tasks"),
 			FSlateIcon(),
-			FUIAction
-			(
-				FExecuteAction::CreateSP(this, &SBXTLTaskTrack::DeleteSelectedTask)
-			),
+			FUIAction(FExecuteAction::CreateSP(this, &SBXTLTaskTrack::DeleteSelectedTask)),
 			NAME_None,
 			EUserInterfaceActionType::Button
 		);
@@ -117,10 +123,7 @@ TSharedPtr<SWidget> SBXTLTaskTrack::SummonContextMenu(const FGeometry& MyGeometr
 			NSLOCTEXT("CopyTaskSubMenu", "CopyTaskSubMenuAddNotify", "Copy Tasks"),
 			NSLOCTEXT("CopyTaskSubMenu", "CopyTaskSubMenuAddNotifyToolTip", "Copy Selected Tasks"),
 			FSlateIcon(),
-			FUIAction
-			(
-				FExecuteAction::CreateSP(this, &SBXTLTaskTrack::CopyTaskMenu)
-			),
+			FUIAction(FExecuteAction::CreateSP(this, &SBXTLTaskTrack::CopyTaskMenu)),
 			NAME_None,
 			EUserInterfaceActionType::Button
 		);
@@ -129,10 +132,7 @@ TSharedPtr<SWidget> SBXTLTaskTrack::SummonContextMenu(const FGeometry& MyGeometr
 			NSLOCTEXT("PasteTaskSubMenu", "PasteTaskSubMenuAddNotify", "Paste Tasks"),
 			NSLOCTEXT("PasteTaskSubMenu", "PasteTaskSubMenuAddNotifyToolTip", "Paste Selected Tasks into a New Group"),
 			FSlateIcon(),
-			FUIAction
-			(
-				FExecuteAction::CreateSP(this, &SBXTLTaskTrack::PasteTaskMenu)
-			),
+			FUIAction(FExecuteAction::CreateSP(this, &SBXTLTaskTrack::PasteTaskMenu)),
 			NAME_None,
 			EUserInterfaceActionType::Button
 		);
@@ -141,10 +141,7 @@ TSharedPtr<SWidget> SBXTLTaskTrack::SummonContextMenu(const FGeometry& MyGeometr
 			NSLOCTEXT("ExportTaskTemplateSubMenu", "ExportTaskTemplateSubMenuAddNotify", "Export Tasks To Template"),
 			NSLOCTEXT("ExportTaskTemplateSubMenu", "ExportTaskTemplateSubMenuAddNotifyToolTip", "Export Selected Tasks To Template"),
 			FSlateIcon(),
-			FUIAction
-			(
-				FExecuteAction::CreateSP(this, &SBXTLTaskTrack::ExportTemplateMenu)
-			),
+			FUIAction(FExecuteAction::CreateSP(this, &SBXTLTaskTrack::ExportTemplateMenu)),
 			NAME_None,
 			EUserInterfaceActionType::Button
 		);
@@ -166,6 +163,21 @@ TSharedPtr<SWidget> SBXTLTaskTrack::SummonContextMenu(const FGeometry& MyGeometr
 void SBXTLTaskTrack::AddNewTaskMenu(FMenuBuilder& MenuBuilder)
 {
 	FBXTLEditorUtilities::MakeNewTaskPicker(MenuBuilder, FOnClassPicked::CreateSP(this, &SBXTLTaskTrack::CreateNewTaskNodeAtCursor));
+}
+
+void SBXTLTaskTrack::CreateGraphNode()
+{
+	if (!Controller.IsValid())
+	{
+		return;
+	}
+
+	if (!CachedTask.IsValid())
+	{
+		return;
+	}
+
+	Controller.Pin()->CreateTaskGraphNode(CachedTask.Get());
 }
 
 void SBXTLTaskTrack::CreateNewTaskNodeAtCursor(UClass* NotifyClass)
