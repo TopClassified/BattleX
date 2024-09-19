@@ -28,8 +28,8 @@ void SBXTLExtraTrack::Construct(const FArguments& InArgs)
 	InputMin = InArgs._InputMin;
 	InputMax = InArgs._InputMax;
 	TimelinePlayLength = InArgs._TimelinePlayLength.Get();
-	SetInputViewRangeEvent = InArgs._OnSetInputViewRange;
-	RefreshPanelEvent = InArgs._OnRefreshPanel;
+	SetInputViewRangeEvent = InArgs._SetInputViewRangeEvent;
+	RefreshPanelEvent = InArgs._RefreshPanelEvent;
 
 	this->ChildSlot
 	[
@@ -77,8 +77,8 @@ void SBXTLExtraTrack::UpdateLayout()
 	.ViewInputMin(ViewInputMin)
 	.ViewInputMax(ViewInputMax)
 	.TimelinePlayLength(TimelinePlayLength)
-	.OnRefreshPanel(RefreshPanelEvent)
-	.OnStartDragNode(this, &SBXTLExtraTrack::OnNotifyNodeDragStarted, 0);
+	.RefreshPanelEvent(RefreshPanelEvent)
+	.DragETNEvent(this, &SBXTLExtraTrack::OnNodeDragged, 0);
 
 	NodeSlots->AddSlot()
 	.Padding(TAttribute<FMargin>::Create(TAttribute<FMargin>::FGetter::CreateSP(this, &SBXTLExtraTrack::GetNotifyTrackPadding)))
@@ -170,7 +170,12 @@ FMargin SBXTLExtraTrack::GetNotifyTrackPadding() const
 	return FMargin(LeftMargin, 0, RightMargin, 0);
 }
 
-FReply SBXTLExtraTrack::OnNotifyNodeDragStarted(TSharedRef<SBXTLExtraTrackNode> NotifyNode, const FPointerEvent& MouseEvent, const FVector2D& ScreenNodePosition, const bool bDragOnMarker, int32 NotifyIndex)
+#pragma endregion Widget
+
+
+
+#pragma region Callback
+FReply SBXTLExtraTrack::OnNodeDragged(TSharedRef<SBXTLExtraTrackNode> NotifyNode, const FPointerEvent& MouseEvent, const FVector2D& ScreenNodePosition, const bool bDragOnMarker, int32 NotifyIndex)
 {
 	if (!bDragOnMarker)
 	{
@@ -214,6 +219,6 @@ FReply SBXTLExtraTrack::OnNotifyNodeDragStarted(TSharedRef<SBXTLExtraTrackNode> 
 	}
 }
 
-#pragma endregion Widget
+#pragma endregion Callback
 
 #undef LOCTEXT_NAMESPACE

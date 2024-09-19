@@ -89,6 +89,12 @@ public:
 	// 改变Task轨道位置
 	void ChangeTaskPosition(class UBXTask* SrcTask, class UBXTask* DestTask);
 
+	// 根据Task获取Group索引
+	int32 GetTaskGroupIndex(class UBXTask* TheTask) const;
+
+	// 根据Task获取Group
+	struct FBXTLTaskGroup* GetTaskGroup(class UBXTask* TheTask) const;
+
 	// 改变Task所属的Group
 	void ChangeTaskGroup(class UBXTask* SrcTask, struct FBXTLTaskGroup& DestGroupData);
 
@@ -126,6 +132,8 @@ public:
 	void ImportTaskTemplate(FName InTemplateName, int32 InGroupID);
 
 private:
+	static FString PasteHead;
+
 	// 根据Group指针查询GroupID
 	int32 FindGroupID(struct FBXTLTaskGroup& InGroup);
 

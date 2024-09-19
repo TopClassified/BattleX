@@ -163,7 +163,7 @@ void FBXTLEditor::Tick(float DeltaTime)
 	}
 
 	// 检查是否要刷新时间轴
-	bool bNeedRefreshSection = false;
+	bool bNeedRefreshPanel = false;
 	if (PreviewProxy->IsPlaying())
 	{
 		PreviewSectionsToShow.Reset();
@@ -173,18 +173,18 @@ void FBXTLEditor::Tick(float DeltaTime)
 		{
 			if (!SectionsToShow.Contains(PreviewSectionsToShow[i]))
 			{
-				bNeedRefreshSection = true;
+				bNeedRefreshPanel = true;
 				break;
 			}
 		}
 
-		if (!bNeedRefreshSection)
+		if (!bNeedRefreshPanel)
 		{
 			for (int32 i = 0; i < SectionsToShow.Num(); ++i)
 			{
 				if (!PreviewSectionsToShow.Contains(SectionsToShow[i]))
 				{
-					bNeedRefreshSection = true;
+					bNeedRefreshPanel = true;
 					break;
 				}
 			}
@@ -199,18 +199,18 @@ void FBXTLEditor::Tick(float DeltaTime)
 		{
 			if (!SectionsToShow.Contains(EditSectionsToShow[i]))
 			{
-				bNeedRefreshSection = true;
+				bNeedRefreshPanel = true;
 				break;
 			}
 		}
 
-		if (!bNeedRefreshSection)
+		if (!bNeedRefreshPanel)
 		{
 			for (int32 i = 0; i < SectionsToShow.Num(); ++i)
 			{
 				if (!EditSectionsToShow.Contains(SectionsToShow[i]))
 				{
-					bNeedRefreshSection = true;
+					bNeedRefreshPanel = true;
 					break;
 				}
 			}
@@ -219,9 +219,9 @@ void FBXTLEditor::Tick(float DeltaTime)
 		SectionsToShow.Reset();
 		SectionsToShow.Append(EditSectionsToShow);
 	}
-	if (bNeedRefreshSection)
+	if (bNeedRefreshPanel)
 	{
-		OnRefreshSections.Broadcast();
+		RefreshPanelEvent.Broadcast();
 	}
 }
 
@@ -751,45 +751,44 @@ TArray<UBXTask*> FBXTLEditor::GetTaskSelection()
 
 void FBXTLEditor::SetTaskSelection(TArray<UBXTask*> InSelection, bool bIsOverride)
 {
-	if (IsPlaying() && !InSelection.IsEmpty())
+	if (IsPlaying())
 	{
+		TaskSelection.TaskList.Empty();
 		return;
 	}
 
-	if (EditAsset.IsValid())
-	{
-		if (bIsOverride)
-		{
-			TaskSelection.TaskList.Empty();
-		}
-
-		if (InSelection.Num() > 0)
-		{
-			if (TaskSelection.TaskList.Num() > 0)
-			{
-				EditAsset->GetSectionIDAndGroupID(TaskSelection.TaskList[0].Get(), TaskSelection.SectionID, TaskSelection.GroupID);
-			}
-			else
-			{
-				EditAsset->GetSectionIDAndGroupID(InSelection[0], TaskSelection.SectionID, TaskSelection.GroupID);
-			}
-
-			for (int32 i = 0; i < InSelection.Num(); ++i)
-			{
-				int32 CurSectionID = -1;
-				int32 CurGroupID = -1;
-				EditAsset->GetSectionIDAndGroupID(InSelection[i], CurSectionID, CurGroupID);
-
-				if (CurSectionID == TaskSelection.SectionID && CurGroupID == TaskSelection.GroupID)
-				{
-					TaskSelection.TaskList.AddUnique(InSelection[i]);
-				}
-			}
-		}
-	}
-	else
+	if (!EditAsset.IsValid())
 	{
 		TaskSelection.TaskList.Empty();
+		return;
+	}
+
+	if (bIsOverride)
+	{
+		TaskSelection.TaskList.Empty();
+	}
+
+	if (InSelection.Num() > 0)
+	{
+		if (TaskSelection.TaskList.Num() > 0)
+		{
+			EditAsset->GetSectionIDAndGroupID(TaskSelection.TaskList[0].Get(), TaskSelection.SectionID, TaskSelection.GroupID);
+		}
+		else
+		{
+			EditAsset->GetSectionIDAndGroupID(InSelection[0], TaskSelection.SectionID, TaskSelection.GroupID);
+		}
+
+		int32 SectionID = -1, GroupID = -1;
+		for (int32 i = 0; i < InSelection.Num(); ++i)
+		{
+			EditAsset->GetSectionIDAndGroupID(InSelection[i], SectionID, GroupID);
+
+			if (SectionID == TaskSelection.SectionID)
+			{
+				TaskSelection.TaskList.AddUnique(InSelection[i]);
+			}
+		}
 	}
 
 	TArray<UBXTask*> CurTaskList = GetTaskSelection();
@@ -802,8 +801,23 @@ void FBXTLEditor::SetTaskSelection(TArray<UBXTask*> InSelection, bool bIsOverrid
 		ShowObjectDetail(nullptr);
 	}
 
+	if (CurTaskList.Num() > 0)
+	{
+		// 清理图表的选中信息
+		if (GraphEditor.IsValid())
+		{
+			GraphEditor->ClearSelectionSet();
+		}
+
+		// 图表自动跳转到对应位置
+		if (CurTaskList.Num() == 1)
+		{
+			SetGraphEditorViewLocationByTask(CurTaskList[0]);
+		}
+	}
+
 	// 广播事件
-	OnTaskSelectionChanged.Broadcast(CurTaskList);
+	TaskSelectedEvent.Broadcast(CurTaskList);
 }
 
 #pragma endregion Core
@@ -838,6 +852,16 @@ void FBXTLEditor::OnSelectedNodesChanged(const TSet<UObject*>& NewSelection)
 	for (UObject* SelectionEntry : NewSelection)
 	{
 		SelectedGraphNodes.Add(SelectionEntry);
+	}
+
+	if (SelectedGraphNodes.Num() > 0)
+	{
+		SetTaskSelection({}, true);
+
+		if (UBXTLGraphNode* Node = Cast<UBXTLGraphNode>(SelectedGraphNodes[0]))
+		{
+			ShowObjectDetail(Node->CachedTask);
+		}
 	}
 }
 

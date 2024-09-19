@@ -198,12 +198,12 @@ FText SBXTLAssetSection::GetSectionDuration() const
 
 
 
-void SBXTLAssetTimelineTab::Construct(const FArguments& InArgs, const TSharedPtr<FBXTLEditor>& InAssetEditorToolkit)
+void SBXTLAssetTimelineTab::Construct(const FArguments& InArgs, const TSharedPtr<FBXTLEditor>& InEditor)
 {
-	CachedEditor = InAssetEditorToolkit;
+	CachedEditor = InEditor;
 	if (CachedEditor.IsValid())
 	{
-		CachedEditor.Pin()->OnRefreshSections.AddRaw(this, &SBXTLAssetTimelineTab::RefreshSections);
+		CachedEditor.Pin()->RefreshPanelEvent.AddRaw(this, &SBXTLAssetTimelineTab::OnRefreshPanel);
 	}
 
 	VerticalBox = SNew(SVerticalBox).Visibility(EVisibility::SelfHitTestInvisible)
@@ -238,7 +238,7 @@ SBXTLAssetTimelineTab::~SBXTLAssetTimelineTab()
 {
 	if (CachedEditor.IsValid())
 	{
-		CachedEditor.Pin()->OnRefreshSections.RemoveAll(this);
+		CachedEditor.Pin()->RefreshPanelEvent.RemoveAll(this);
 	}
 }
 
@@ -300,10 +300,10 @@ void SBXTLAssetTimelineTab::ResetSections()
 		SectionWidgets.Add(NewSection);
 	}
 
-	RefreshSections();
+	OnRefreshPanel();
 }
 
-void SBXTLAssetTimelineTab::RefreshSections()
+void SBXTLAssetTimelineTab::OnRefreshPanel()
 {
 	ScrollBox->ClearChildren();
 

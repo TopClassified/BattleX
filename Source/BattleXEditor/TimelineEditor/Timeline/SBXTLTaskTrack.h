@@ -26,13 +26,15 @@ public:
 		, _ViewInputMax()
 		, _TimelinePlayLength()
 		, _TrackIndex()
-		, _OnSetInputViewRange()
-		, _OnRefreshPanel()
-		, _OnSelectNode()
-		, _OnDeselectAllNodes()
-		, _OnDeleteTask()
-		, _OnAddNewTask()
-		, _OnCopyTasks()
+		, _SetInputViewRangeEvent()
+		, _RefreshPanelEvent()
+		, _SelectNodeEvent()
+		, _DeselectNodesEvent()
+		, _AddTaskEvent()
+		, _DeleteTaskEvent()
+		, _CopyTasksEvent()
+		, _PasteTasksEvent()
+		, _ExportTemplateEvent()
 	{}
 	SLATE_ARGUMENT(class UBXTask*, Task)
 	SLATE_ARGUMENT(TWeakPtr<class FBXTLController> , Controller)
@@ -44,15 +46,15 @@ public:
 	SLATE_ATTRIBUTE(double, FrameRate)
 	SLATE_ARGUMENT(int32, TrackIndex)
 
-	SLATE_EVENT(FOnSetInputViewRange, OnSetInputViewRange)
-	SLATE_EVENT(FBXTLRefreshPanel, OnRefreshPanel)
-	SLATE_EVENT(FBXTLSelectNode, OnSelectNode)
-	SLATE_EVENT(FBXTLDeselectNodes, OnDeselectAllNodes)
-	SLATE_EVENT(FBXTLDeleteTask, OnDeleteTask)
-	SLATE_EVENT(FBXTLAddTask, OnAddNewTask)
-	SLATE_EVENT(FBXTLCopyTask, OnCopyTasks)
-	SLATE_EVENT(FBXTLPasteTask, OnPasteTasks)
-	SLATE_EVENT(FBXTLExportTemplate, OnExportTemplate)
+	SLATE_EVENT(FOnSetInputViewRange, SetInputViewRangeEvent)
+	SLATE_EVENT(FBXTLESlateRefreshPanel, RefreshPanelEvent)
+	SLATE_EVENT(FBXTLESlateSelectNode, SelectNodeEvent)
+	SLATE_EVENT(FBXTLESlateDeselectNodes, DeselectNodesEvent)
+	SLATE_EVENT(FBXTLESlateAddTask, AddTaskEvent)
+	SLATE_EVENT(FBXTLESlateDeleteTask, DeleteTaskEvent)
+	SLATE_EVENT(FBXTLESlateCopyTask, CopyTasksEvent)
+	SLATE_EVENT(FBXTLESlatePasteTask, PasteTasksEvent)
+	SLATE_EVENT(FBXTLESlateExportTemplate, ExportTemplateEvent)
 
 	SLATE_END_ARGS()
 
@@ -146,8 +148,6 @@ private:
 
 	FMargin GetNotifyTrackPadding() const;
 
-	FReply OnNotifyNodeDragStarted(TSharedRef<SBXTLTaskTrackNode> NotifyNode, const FPointerEvent& MouseEvent, const FVector2D& ScreenNodePosition, const bool bDragOnMarker, int32 NotifyIndex);
-
 private:
 	TAttribute<float> ViewInputMin;
 
@@ -167,27 +167,33 @@ private:
 
 
 
+#pragma region Callback
+public:
+	FReply OnNodeDragged(TSharedRef<SBXTLTaskTrackNode> NotifyNode, const FPointerEvent& MouseEvent, const FVector2D& ScreenNodePosition, const bool bDragOnMarker, int32 NotifyIndex);
+
+#pragma endregion Callback
+
+
+
 #pragma region Event
 private:
 	FOnSetInputViewRange SetInputViewRangeEvent;
 
-	FBXTLRefreshPanel RefreshPanelEvent;
+	FBXTLESlateRefreshPanel RefreshPanelEvent;
 
-	FBXTLSelectNode SelectNodeEvent;
+	FBXTLESlateSelectNode SelectNodeEvent;
 
-	FBXTLDeselectNodes DeselectNodesEvent;
+	FBXTLESlateDeselectNodes DeselectNodesEvent;
 
-	FBXTLDeleteTask DeleteTaskEvent;
+	FBXTLESlateAddTask AddTaskEvent;
 
-	FBXTLAddTask AddTaskEvent;
+	FBXTLESlateDeleteTask DeleteTaskEvent;
 
-	FBXTLStartDragTTN StartDragTTNEvent;
+	FBXTLESlateCopyTask CopyTaskEvent;
 
-	FBXTLCopyTask CopyTaskEvent;
+	FBXTLESlatePasteTask PasteTaskEvent;
 
-	FBXTLPasteTask PasteTaskEvent;
-
-	FBXTLExportTemplate ExportTemplateEvent;
+	FBXTLESlateExportTemplate ExportTemplateEvent;
 
 #pragma endregion Event
 

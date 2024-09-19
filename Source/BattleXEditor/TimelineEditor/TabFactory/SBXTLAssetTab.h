@@ -57,13 +57,13 @@ public:
 	SLATE_END_ARGS()
 
 public:
-	void Construct(const FArguments& InArgs, const TSharedPtr<FBXTLEditor>& InAssetEditorToolkit);
+	void Construct(const FArguments& InArgs, const TSharedPtr<FBXTLEditor>& InEditor);
 
 	virtual ~SBXTLAssetTimelineTab();
 
 	void ResetSections();
 
-	void RefreshSections();
+	void OnRefreshPanel();
 
 	FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 

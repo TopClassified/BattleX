@@ -22,7 +22,7 @@ FBXTLPreviewProxy::FBXTLPreviewProxy(UBXTLAsset* InAsset, const TSharedPtr<FBXTL
 {
 	if (CachedEditor.IsValid())
 	{
-		CachedEditor.Pin()->OnTaskSelectionChanged.AddRaw(this, &FBXTLPreviewProxy::OnTaskSelectionChanged);
+		CachedEditor.Pin()->TaskSelectedEvent.AddRaw(this, &FBXTLPreviewProxy::OnTaskSelected);
 	}
 }
 
@@ -61,7 +61,7 @@ void FBXTLPreviewProxy::Finish()
 
 	if (CachedEditor.IsValid())
 	{
-		CachedEditor.Pin()->OnTaskSelectionChanged.RemoveAll(this);
+		CachedEditor.Pin()->TaskSelectedEvent.RemoveAll(this);
 	}
 }
 
@@ -204,7 +204,7 @@ void FBXTLPreviewProxy::Play()
 
 	if (CachedEditor.IsValid())
 	{
-		CachedEditor.Pin()->OnPreviewStateChanged.Broadcast(bPlaying, bPause);
+		CachedEditor.Pin()->PreviewChangedEvent.Broadcast(bPlaying, bPause);
 	}
 }
 
@@ -219,7 +219,7 @@ void FBXTLPreviewProxy::Pause()
 
 	if (CachedEditor.IsValid())
 	{
-		CachedEditor.Pin()->OnPreviewStateChanged.Broadcast(bPlaying, bPause);
+		CachedEditor.Pin()->PreviewChangedEvent.Broadcast(bPlaying, bPause);
 	}
 }
 
@@ -237,7 +237,7 @@ void FBXTLPreviewProxy::Resume()
 	if (CachedEditor.IsValid())
 	{
 		CachedEditor.Pin()->SetTaskSelection(TArray<UBXTask*>{});
-		CachedEditor.Pin()->OnPreviewStateChanged.Broadcast(bPlaying, bPause);
+		CachedEditor.Pin()->PreviewChangedEvent.Broadcast(bPlaying, bPause);
 	}
 }
 
@@ -251,7 +251,7 @@ void FBXTLPreviewProxy::Stop()
 	if (CachedEditor.IsValid())
 	{
 		CachedEditor.Pin()->SetTaskSelection(TArray<UBXTask*>{});
-		CachedEditor.Pin()->OnPreviewStateChanged.Broadcast(bPlaying, bPause);
+		CachedEditor.Pin()->PreviewChangedEvent.Broadcast(bPlaying, bPause);
 	}
 
 	if (TimelineRunTimeDataID <= 0)
@@ -326,7 +326,7 @@ void FBXTLPreviewProxy::OnObjectMoved(UObject* InObject)
 	Data->Task->RefreshDataByPreviewObject(InObject, *Data);
 }
 
-void FBXTLPreviewProxy::OnTaskSelectionChanged(TArray<UBXTask*>& SelectTaskList)
+void FBXTLPreviewProxy::OnTaskSelected(TArray<UBXTask*>& SelectTaskList)
 {
 	if (SelectTaskList.Num() <= 0 || !CachedAsset.IsValid())
 	{

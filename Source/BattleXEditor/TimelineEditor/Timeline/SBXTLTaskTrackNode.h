@@ -57,14 +57,14 @@ class SBXTLTaskTrackNode : public SLeafWidget
 public:
 	friend class SBXTLTaskTrack;
 
-	SLATE_BEGIN_ARGS(SBXTLTaskTrackNode) :_ViewInputMin(), _ViewInputMax(), _OnRefreshPanel(), _OnStartDragTTN() {}
+	SLATE_BEGIN_ARGS(SBXTLTaskTrackNode) :_ViewInputMin(), _ViewInputMax(), _RefreshPanelEvent(), _DragTTNEvent() {}
 	SLATE_ARGUMENT(class UBXTask*, Task)
 	SLATE_ARGUMENT(TWeakPtr<class FBXTLController>, Controller)
 	SLATE_ATTRIBUTE(float, ViewInputMin)
 	SLATE_ATTRIBUTE(float, ViewInputMax)
 	SLATE_ATTRIBUTE(float, TimelinePlayLength)
-	SLATE_EVENT(FBXTLRefreshPanel, OnRefreshPanel)
-	SLATE_EVENT(FBXTLStartDragTTN, OnStartDragTTN)
+	SLATE_EVENT(FBXTLESlateRefreshPanel, RefreshPanelEvent)
+	SLATE_EVENT(FBXTLESlateDragTTN, DragTTNEvent)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& Declaration);
@@ -209,7 +209,7 @@ private:
 
 #pragma region Callback
 public:
-	void OnEditorTaskSelectionChanged(TArray<class UBXTask*>& InTaskSelection);
+	void OnTaskSelected(TArray<class UBXTask*>& InTaskSelection);
 
 #pragma endregion Callback
 
@@ -217,9 +217,9 @@ public:
 
 #pragma region Event
 private:
-	FBXTLRefreshPanel RefreshPanelEvent;
+	FBXTLESlateRefreshPanel RefreshPanelEvent;
 
-	FBXTLStartDragTTN StartDragTTNEvent;
+	FBXTLESlateDragTTN DragTTNEvent;
 
 #pragma endregion Event
 

@@ -168,7 +168,13 @@ void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, con
 			int32 FindIndex = SrcTasks.Find(Cast<UBXTask>(Template.DataTask.Get()));
 			if (FindIndex >= 0)
 			{
+				NewInfo.DataDesc = Template.DataDesc;
 				NewInfo.DataTask = DestTasks[FindIndex];
+			}
+			else
+			{
+				NewInfo.DataDesc = NAME_None;
+				NewInfo.DataTask = nullptr;
 			}
 		}
 
@@ -184,7 +190,13 @@ void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, con
 			int32 FindIndex = SrcTasks.Find(Cast<UBXTask>(Template.DataTask.Get()));
 			if (FindIndex >= 0)
 			{
+				NewInfo.DataDesc = Template.DataDesc;
 				NewInfo.DataTask = DestTasks[FindIndex];
+			}
+			else
+			{
+				NewInfo.DataDesc = NAME_None;
+				NewInfo.DataTask = nullptr;
 			}
 		}
 

@@ -68,10 +68,8 @@ public:
 
 	static TSharedRef<FBXTLTaskTrackNodeDragDropOp> New
 	(
-		TArray<TSharedPtr<SBXTLTaskTrackNode>> NotifyNodes, TSharedPtr<SWidget> Decorator,
-		const TArray<TSharedPtr<SBXTLTaskTrack>>& NotifyTracks, float InViewPlayLength,
-		const FVector2D& CursorPosition, const FVector2D& SelectionScreenPosition,
-		const FVector2D& SelectionSize, float& CurrentDragXPosition, FBXTLRefreshPanel& RefreshPanel
+		TArray<TSharedPtr<SBXTLTaskTrackNode>> NotifyNodes, TSharedPtr<SWidget> Decorator, const TArray<TSharedPtr<SBXTLTaskTrack>>& NotifyTracks, float InViewPlayLength, 
+		const FVector2D& CursorPosition, const FVector2D& SelectionScreenPosition, const FVector2D& SelectionSize, float& CurrentDragXPosition, FBXTLESlateRefreshPanel& RefreshPanelEvent
 	);
 	
 	void OnDrop(bool bDropWasHandled, const FPointerEvent& MouseEvent) override;
@@ -105,7 +103,7 @@ public:
 	float SelectionTimeLength;
 	float CurrentDragXPosition;
 
-	FBXTLRefreshPanel RefreshPanelEvent;
+	FBXTLESlateRefreshPanel RefreshPanelEvent;
 
 };
 
@@ -127,10 +125,8 @@ public:
 
 	static TSharedRef<FBXTLExtraTrackNodeDragDropOp> New
 	(
-		TArray<TSharedPtr<SBXTLExtraTrackNode>> NotifyNodes, TSharedPtr<SWidget> Decorator,
-		const TArray<TSharedPtr<SBXTLExtraTrack>>& NotifyTracks, float InViewPlayLength,
-		const FVector2D& CursorPosition, const FVector2D& SelectionScreenPosition,
-		const FVector2D& SelectionSize, float& CurrentDragXPosition, FBXTLRefreshPanel& RefreshPanel
+		TArray<TSharedPtr<SBXTLExtraTrackNode>> NotifyNodes, TSharedPtr<SWidget> Decorator, const TArray<TSharedPtr<SBXTLExtraTrack>>& NotifyTracks, float InViewPlayLength, 
+		const FVector2D& CursorPosition, const FVector2D& SelectionScreenPosition, const FVector2D& SelectionSize, float& CurrentDragXPosition, FBXTLESlateRefreshPanel& RefreshPanelEvent
 	);
 
 	void OnDrop(bool bDropWasHandled, const FPointerEvent& MouseEvent) override;
@@ -164,6 +160,6 @@ public:
 	float SelectionTimeLength;
 	float CurrentDragXPosition;
 
-	FBXTLRefreshPanel RefreshPanelEvent;
+	FBXTLESlateRefreshPanel RefreshPanelEvent;
 
 };

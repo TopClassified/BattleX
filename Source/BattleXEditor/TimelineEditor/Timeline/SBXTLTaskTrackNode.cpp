@@ -108,8 +108,8 @@ void SBXTLTaskTrackNode::Construct(const FArguments& InArgs)
 
 	TaskNodeData.SetTaskNodeData(InArgs._Task);
 	Controller = InArgs._Controller;
-	RefreshPanelEvent = InArgs._OnRefreshPanel;
-	StartDragTTNEvent = InArgs._OnStartDragTTN;
+	RefreshPanelEvent = InArgs._RefreshPanelEvent;
+	DragTTNEvent = InArgs._DragTTNEvent;
 	ViewInputMin = InArgs._ViewInputMin;
 	ViewInputMax = InArgs._ViewInputMax;
 	TimelinePlayLength = InArgs._TimelinePlayLength.Get();
@@ -119,7 +119,7 @@ void SBXTLTaskTrackNode::Construct(const FArguments& InArgs)
 	// 注册事件
 	if (Controller.IsValid() && Controller.Pin()->GetEditor().IsValid())
 	{
-		Controller.Pin()->GetEditor().Pin()->OnTaskSelectionChanged.AddRaw(this, &SBXTLTaskTrackNode::OnEditorTaskSelectionChanged);
+		Controller.Pin()->GetEditor().Pin()->TaskSelectedEvent.AddRaw(this, &SBXTLTaskTrackNode::OnTaskSelected);
 	}
 }
 
@@ -128,7 +128,7 @@ SBXTLTaskTrackNode::~SBXTLTaskTrackNode()
 	// 注销事件
 	if (Controller.IsValid() && Controller.Pin()->GetEditor().IsValid())
 	{
-		Controller.Pin()->GetEditor().Pin()->OnTaskSelectionChanged.RemoveAll(this);
+		Controller.Pin()->GetEditor().Pin()->TaskSelectedEvent.RemoveAll(this);
 	}
 }
 
@@ -375,7 +375,7 @@ FReply SBXTLTaskTrackNode::OnDragDetected(const FGeometry& MyGeometry, const FPo
 		{
 			DragIndex = GEditor->BeginTransaction(NSLOCTEXT("Node", "Drag Postion", "Drag State Node Postion"));
 
-			return StartDragTTNEvent.Execute(SharedThis(this), MouseEvent, FVector2D(MyGeometry.AbsolutePosition), false);
+			return DragTTNEvent.Execute(SharedThis(this), MouseEvent, FVector2D(MyGeometry.AbsolutePosition), false);
 		}
 		else if (DragType == EDragType::Duration)
 		{
@@ -464,7 +464,7 @@ FCursorReply SBXTLTaskTrackNode::OnCursorQuery(const FGeometry& MyGeometry, cons
 
 
 #pragma region Callback
-void SBXTLTaskTrackNode::OnEditorTaskSelectionChanged(TArray<UBXTask*>& InTaskSelection)
+void SBXTLTaskTrackNode::OnTaskSelected(TArray<UBXTask*>& InTaskSelection)
 {
 	if (InTaskSelection.Contains(TaskNodeData.GetTask()))
 	{

@@ -61,7 +61,7 @@ FBXTLEditorViewportClient::FBXTLEditorViewportClient
 
 	if (CachedEditor.IsValid())
 	{
-		CachedEditor.Pin()->OnPreviewStateChanged.AddRaw(this, &FBXTLEditorViewportClient::OnPreviewStateChanged);
+		CachedEditor.Pin()->PreviewChangedEvent.AddRaw(this, &FBXTLEditorViewportClient::OnPreviewStateChanged);
 	}
 }
 
@@ -69,7 +69,7 @@ FBXTLEditorViewportClient::~FBXTLEditorViewportClient()
 {
 	if (CachedEditor.IsValid())
 	{
-		CachedEditor.Pin()->OnPreviewStateChanged.RemoveAll(this);
+		CachedEditor.Pin()->PreviewChangedEvent.RemoveAll(this);
 	}
 }
 

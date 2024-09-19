@@ -82,7 +82,7 @@ private:
 public:
 	void OnObjectMoved(UObject* InObject);
 
-	void OnTaskSelectionChanged(TArray<class UBXTask*>& SelectTaskList);
+	void OnTaskSelected(TArray<class UBXTask*>& SelectTaskList);
 
 #pragma endregion Callback
 	

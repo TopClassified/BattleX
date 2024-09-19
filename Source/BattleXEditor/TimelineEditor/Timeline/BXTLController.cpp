@@ -261,6 +261,8 @@ void FBXTLController::ChangeCtrlState(bool bPress)
 
 
 #pragma region Task
+FString FBXTLController::PasteHead = TEXT("BEGIN Copy UTask!\n");
+
 void FBXTLController::ClearTaskSelection()
 {
 	CachedEditor.Pin()->SetTaskSelection(TArray<UBXTask*>{});
@@ -343,6 +345,38 @@ void FBXTLController::ChangeTaskPosition(UBXTask* SrcTask, UBXTask* DestTask)
 	RefreshTracks();
 
 	Asset->GetPackage()->MarkPackageDirty();
+}
+
+int32 FBXTLController::GetTaskGroupIndex(UBXTask* TheTask) const
+{
+	int32 SectionID = -1, GroupID = -1;
+
+	UBXTLAsset* Asset = GetAsset();
+	if (!Asset)
+	{
+		return GroupID;
+	}
+
+	Asset->GetSectionIDAndGroupID(TheTask, SectionID, GroupID);
+
+	return GroupID;
+}
+
+FBXTLTaskGroup* FBXTLController::GetTaskGroup(UBXTask* TheTask) const
+{
+	UBXTLAsset* Asset = GetAsset();
+	if (!Asset)
+	{
+		return nullptr;
+	}
+
+	int32 SectionID = -1, GroupID = -1;
+	if (Asset->GetSectionIDAndGroupID(TheTask, SectionID, GroupID))
+	{
+		return &(Asset->Sections[SectionID].Groups[GroupID]);
+	}
+
+	return nullptr;
 }
 
 void FBXTLController::ChangeTaskGroup(UBXTask* SrcTask, FBXTLTaskGroup& DestGroupData)
@@ -599,6 +633,14 @@ void FBXTLController::CopySelectedTasks()
 	}
 
 	TArray<UBXTask*> Tasks = GetSelectedTasks();
+
+	if (Tasks.Num() <= 0)
+	{
+		FText DialogText = LOCTEXT("提示", "请先选中Task再复制");
+		FMessageDialog::Open(EAppMsgType::Ok, DialogText);
+		return;
+	}
+	
 	Tasks.Sort
 	(
 		[this](const UBXTask& A, const UBXTask& B) 
@@ -649,6 +691,14 @@ void FBXTLController::CopySelectedTasks()
 
 void FBXTLController::PasteSelectedTasks(FString InPasteMsg, int32 InGroupID)
 {
+	if (!InPasteMsg.Contains(FBXTLController::PasteHead))
+	{
+		FText DialogText = LOCTEXT("提示", "目前没有复制任何Task");
+		FMessageDialog::Open(EAppMsgType::Ok, DialogText);
+		return;
+	}
+	InPasteMsg = InPasteMsg.Replace(*FBXTLController::PasteHead, TEXT(""));
+
 	if (!CachedEditor.Pin()->IsStopped())
 	{
 		return;
@@ -718,6 +768,13 @@ void FBXTLController::PasteSelectedTasks(FString InPasteMsg, int32 InGroupID)
 
 void FBXTLController::ExportSelectedTaskTemplate()
 {
+	if (GetSelectedTasks().Num() <= 0)
+	{
+		FText DialogText = LOCTEXT("提示", "请先选中Task");
+		FMessageDialog::Open(EAppMsgType::Ok, DialogText);
+		return;
+	}
+
 	//创建模板命名弹窗
 	TemplateNameWindow = SNew(SWindow)
 		.AutoCenter(EAutoCenter::PreferredWorkArea)

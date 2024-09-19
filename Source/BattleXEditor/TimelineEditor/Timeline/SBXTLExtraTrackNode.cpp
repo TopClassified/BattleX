@@ -38,8 +38,8 @@ void SBXTLExtraTrackNode::Construct(const FArguments& InArgs)
 	ViewInputMin = InArgs._ViewInputMin;
 	ViewInputMax = InArgs._ViewInputMax;
 	TimelinePlayLength = InArgs._TimelinePlayLength.Get();
-	RefreshPanelEvent = InArgs._OnRefreshPanel;
-	StartDragETNEvent = InArgs._OnStartDragNode;
+	RefreshPanelEvent = InArgs._RefreshPanelEvent;
+	DragETNEvent = InArgs._DragETNEvent;
 
 	SetClipping(EWidgetClipping::ClipToBounds);
 }
@@ -330,7 +330,7 @@ FReply SBXTLExtraTrackNode::OnDragDetected(const FGeometry& MyGeometry, const FP
 		{
 			DragIndex = GEditor->BeginTransaction(NSLOCTEXT("Node", "Drag Postion", "Drag State Node Postion"));
 
-			return StartDragETNEvent.Execute(SharedThis(this), MouseEvent, FVector2D(MyGeometry.AbsolutePosition), false);
+			return DragETNEvent.Execute(SharedThis(this), MouseEvent, FVector2D(MyGeometry.AbsolutePosition), false);
 		}
 	}
 

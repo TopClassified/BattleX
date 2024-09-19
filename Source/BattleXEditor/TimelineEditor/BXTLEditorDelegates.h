@@ -4,41 +4,43 @@
 
 
 
-// 刷新面板
-DECLARE_DELEGATE(FBXTLRefreshPanel);
+// 面板刷新事件
+DECLARE_DELEGATE(FBXTLESlateRefreshPanel);
 
-// 选取节点
-DECLARE_DELEGATE(FBXTLSelectNode);
+// 面板选取节点事件
+DECLARE_DELEGATE(FBXTLESlateSelectNode);
 
-// 取消选取所有节点
-DECLARE_DELEGATE(FBXTLDeselectNodes);
+// 面板取消选取所有节点事件
+DECLARE_DELEGATE(FBXTLESlateDeselectNodes);
 
-// 添加Task
-DECLARE_DELEGATE_TwoParams(FBXTLAddTask, UClass*, float)
+// 面板添加任务事件
+DECLARE_DELEGATE_TwoParams(FBXTLESlateAddTask, UClass*, float)
 
-// 删除Task
-DECLARE_DELEGATE(FBXTLDeleteTask);
+// 面板删除任务事件
+DECLARE_DELEGATE(FBXTLESlateDeleteTask);
 
-// 拷贝Task
-DECLARE_DELEGATE(FBXTLCopyTask);
+// 面板拷贝任务事件
+DECLARE_DELEGATE(FBXTLESlateCopyTask);
 
-// 粘贴Task
-DECLARE_DELEGATE(FBXTLPasteTask);
+// 面板粘贴任务事件
+DECLARE_DELEGATE(FBXTLESlatePasteTask);
 
-// 导出Task模板
-DECLARE_DELEGATE(FBXTLExportTemplate);
+// 面板导出任务模板事件
+DECLARE_DELEGATE(FBXTLESlateExportTemplate);
 
-// 刷新时间轴
-DECLARE_MULTICAST_DELEGATE(FBXTLRefreshSections);
+// 面板拖拽任务节点事件
+DECLARE_DELEGATE_RetVal_FourParams(FReply, FBXTLESlateDragTTN, TSharedRef<class SBXTLTaskTrackNode>, const FPointerEvent&, const FVector2D&, const bool)
 
-// 开始拖拽Task节点
-DECLARE_DELEGATE_RetVal_FourParams(FReply, FBXTLStartDragTTN, TSharedRef<class SBXTLTaskTrackNode>, const FPointerEvent&, const FVector2D&, const bool)
+// 面板拖拽额外节点事件
+DECLARE_DELEGATE_RetVal_FourParams(FReply, FBXTLESlateDragETN, TSharedRef<class SBXTLExtraTrackNode>, const FPointerEvent&, const FVector2D&, const bool)
 
-// 开始拖拽额外节点
-DECLARE_DELEGATE_RetVal_FourParams(FReply, FBXTLStartDragETN, TSharedRef<class SBXTLExtraTrackNode>, const FPointerEvent&, const FVector2D&, const bool)
 
-// 预览状态改变事件
-DECLARE_MULTICAST_DELEGATE_TwoParams(FBXTLPreviewStateChanged, bool, bool);
 
-// Task选取发生改变
-DECLARE_MULTICAST_DELEGATE_OneParam(FBXTLTaskSelectionChanged, TArray<class UBXTask*>&);
+// 逻辑刷新面板事件
+DECLARE_MULTICAST_DELEGATE(FBXTLELogicRefreshPanel);
+
+// 逻辑改变预览状态事件
+DECLARE_MULTICAST_DELEGATE_TwoParams(FBXTLELogicPreviewChanged, bool, bool);
+
+// 逻辑改变选取任务事件
+DECLARE_MULTICAST_DELEGATE_OneParam(FBXTLELogicTaskSelected, TArray<class UBXTask*>&);

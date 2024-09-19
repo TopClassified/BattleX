@@ -23,7 +23,7 @@ class SBXTLExtraTrack : public SCompoundWidget
 {
 #pragma region Important
 public:
-	SLATE_BEGIN_ARGS(SBXTLExtraTrack) : _ViewInputMin(), _ViewInputMax(), _TimelinePlayLength(), _OnSetInputViewRange(), _OnRefreshPanel() {}
+	SLATE_BEGIN_ARGS(SBXTLExtraTrack) : _ViewInputMin(), _ViewInputMax(), _TimelinePlayLength(), _SetInputViewRangeEvent(), _RefreshPanelEvent() {}
 	SLATE_ARGUMENT(class UBXTLAsset*, Asset)
 	SLATE_ARGUMENT(int32, SectionIndex)
 	SLATE_ARGUMENT(EBXTLExtraType, TrackType)
@@ -33,8 +33,8 @@ public:
 	SLATE_ATTRIBUTE(float, InputMax)
 	SLATE_ATTRIBUTE(float, TimelinePlayLength)
 	SLATE_ATTRIBUTE(double, FrameRate)
-	SLATE_EVENT(FOnSetInputViewRange, OnSetInputViewRange)
-	SLATE_EVENT(FBXTLRefreshPanel, OnRefreshPanel)
+	SLATE_EVENT(FOnSetInputViewRange, SetInputViewRangeEvent)
+	SLATE_EVENT(FBXTLESlateRefreshPanel, RefreshPanelEvent)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
@@ -91,8 +91,6 @@ public:
 
 	FMargin GetNotifyTrackPadding() const;
 
-	FReply OnNotifyNodeDragStarted(TSharedRef<SBXTLExtraTrackNode> NotifyNode, const FPointerEvent& MouseEvent, const FVector2D& ScreenNodePosition, const bool bDragOnMarker, int32 NotifyIndex);
-
 	float CalculateDraggedNodePos() const { return CurrentDragXPosition; }
 
 private:
@@ -118,27 +116,35 @@ private:
 
 
 
+#pragma region Callback
+public:
+	FReply OnNodeDragged(TSharedRef<SBXTLExtraTrackNode> NotifyNode, const FPointerEvent& MouseEvent, const FVector2D& ScreenNodePosition, const bool bDragOnMarker, int32 NotifyIndex);
+
+#pragma endregion Callback
+
+
+
 #pragma region Event
 private:
 	FOnSetInputViewRange SetInputViewRangeEvent;
 
-	FBXTLRefreshPanel RefreshPanelEvent;
+	FBXTLESlateRefreshPanel RefreshPanelEvent;
 
-	FBXTLSelectNode SelectNodeEvent;
+	FBXTLESlateSelectNode SelectNodeEvent;
 
-	FBXTLDeselectNodes DeselectNodesEvent;
+	FBXTLESlateDeselectNodes DeselectNodesEvent;
 
-	FBXTLDeleteTask DeleteTaskEvent;
+	FBXTLESlateAddTask AddTaskEvent;
 
-	FBXTLAddTask AddTaskEvent;
+	FBXTLESlateDeleteTask DeleteTaskEvent;
 
-	FBXTLStartDragETN StartDragETNEvent;
+	FBXTLESlateCopyTask CopyTaskEvent;
 
-	FBXTLCopyTask CopyTaskEvent;
+	FBXTLESlatePasteTask PasteTaskEvent;
 
-	FBXTLPasteTask PasteTaskEvent;
+	FBXTLESlateDragETN DragETNEvent;
 
-	FBXTLExportTemplate ExportTemplateEvent;
+	FBXTLESlateExportTemplate ExportTemplateEvent;
 
 #pragma endregion Event
 

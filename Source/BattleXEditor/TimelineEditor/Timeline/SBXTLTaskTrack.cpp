@@ -27,15 +27,15 @@ void SBXTLTaskTrack::Construct(const FArguments& InArgs)
 	InputMax = InArgs._InputMax;
 	TrackIndex = InArgs._TrackIndex;
 	TimelinePlayLength = InArgs._TimelinePlayLength.Get();
-	SetInputViewRangeEvent = InArgs._OnSetInputViewRange;
-	RefreshPanelEvent = InArgs._OnRefreshPanel;
-	SelectNodeEvent = InArgs._OnSelectNode;
-	DeselectNodesEvent = InArgs._OnDeselectAllNodes;
-	DeleteTaskEvent = InArgs._OnDeleteTask;
-	AddTaskEvent = InArgs._OnAddNewTask;
-	CopyTaskEvent = InArgs._OnCopyTasks;
-	PasteTaskEvent = InArgs._OnPasteTasks;
-	ExportTemplateEvent = InArgs._OnExportTemplate;
+	SetInputViewRangeEvent = InArgs._SetInputViewRangeEvent;
+	RefreshPanelEvent = InArgs._RefreshPanelEvent;
+	SelectNodeEvent = InArgs._SelectNodeEvent;
+	DeselectNodesEvent = InArgs._DeselectNodesEvent;
+	AddTaskEvent = InArgs._AddTaskEvent;
+	DeleteTaskEvent = InArgs._DeleteTaskEvent;
+	CopyTaskEvent = InArgs._CopyTasksEvent;
+	PasteTaskEvent = InArgs._PasteTasksEvent;
+	ExportTemplateEvent = InArgs._ExportTemplateEvent;
 
 	this->ChildSlot[SAssignNew(TrackArea, SOverlay)];
 
@@ -75,8 +75,8 @@ void SBXTLTaskTrack::UpdateLayout()
 	.ViewInputMin(ViewInputMin)
 	.ViewInputMax(ViewInputMax)
 	.TimelinePlayLength(TimelinePlayLength)
-	.OnRefreshPanel(RefreshPanelEvent)
-	.OnStartDragTTN(this, &SBXTLTaskTrack::OnNotifyNodeDragStarted, 0);
+	.RefreshPanelEvent(RefreshPanelEvent)
+	.DragTTNEvent(this, &SBXTLTaskTrack::OnNodeDragged, 0);
 
 	TrackArea->ClearChildren();
 	TrackArea->AddSlot().Padding(TAttribute<FMargin>::Create(TAttribute<FMargin>::FGetter::CreateSP(this, &SBXTLTaskTrack::GetNotifyTrackPadding)))[TaskNode->AsShared()];
@@ -355,7 +355,12 @@ FMargin SBXTLTaskTrack::GetNotifyTrackPadding() const
 	return FMargin(LeftMargin, 0, RightMargin, 0);
 }
 
-FReply SBXTLTaskTrack::OnNotifyNodeDragStarted(TSharedRef<SBXTLTaskTrackNode> NotifyNode, const FPointerEvent& MouseEvent, const FVector2D& ScreenNodePosition, const bool bDragOnMarker, int32 NotifyIndex)
+#pragma endregion Widget
+
+
+
+#pragma region Callback
+FReply SBXTLTaskTrack::OnNodeDragged(TSharedRef<SBXTLTaskTrackNode> NotifyNode, const FPointerEvent& MouseEvent, const FVector2D& ScreenNodePosition, const bool bDragOnMarker, int32 NotifyIndex)
 {
 	if (!bDragOnMarker)
 	{
@@ -399,6 +404,6 @@ FReply SBXTLTaskTrack::OnNotifyNodeDragStarted(TSharedRef<SBXTLTaskTrackNode> No
 	}
 }
 
-#pragma endregion Widget
+#pragma endregion Callback
 
 #undef LOCTEXT_NAMESPACE

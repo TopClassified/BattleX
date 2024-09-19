@@ -20,6 +20,7 @@
 
 TIMELINE_IMPLEMENT_TRACK(FBXTLTaskGroupTrack);
 
+#pragma region Important
 FBXTLTaskGroupTrack::FBXTLTaskGroupTrack
 (
 	const TSharedRef<FBXTLController>& InController, FBXTLTaskGroup& InGroupData,
@@ -48,7 +49,7 @@ TSharedRef<SWidget> FBXTLTaskGroupTrack::GenerateContainerWidgetForOutliner(cons
 		.IsReadOnly(false)
 		.Text(this, &FBXTLTaskGroupTrack::GetLabel)
 		.IsSelected(FIsSelected::CreateLambda([]() { return false; }))
-		.OnTextCommitted(this, &FBXTLTaskGroupTrack::OnCommitCurveName)
+		.OnTextCommitted(this, &FBXTLTaskGroupTrack::OnCommitName)
 		.HighlightText(InRow->GetHighlightText())
 	];
 
@@ -59,7 +60,7 @@ TSharedRef<SWidget> FBXTLTaskGroupTrack::GenerateContainerWidgetForOutliner(cons
 	.VAlign(VAlign_Center)
 	.Padding(OutlinerRightPadding, 1.0f)
 	[
-		FBXTLEditorUtilities::MakeTrackButton(LOCTEXT("BXTLTaskGroupTrack", "Group Menu"),FOnGetContent::CreateSP(this, &FBXTLTaskGroupTrack::BuildGroupSubMenu))
+		FBXTLEditorUtilities::MakeTrackButton(LOCTEXT("BXTLTaskGroupTrack", "Group Menu"),FOnGetContent::CreateSP(this, &FBXTLTaskGroupTrack::OnBuildSubMenu))
 	];
 
 	TSharedRef<SWidget> Outliner = SNew(SBXTLTaskGroupTrackOutliner, GetEditorTimelineController(), *GroupData).MainWidget(OutlinerWidget);
@@ -67,7 +68,54 @@ TSharedRef<SWidget> FBXTLTaskGroupTrack::GenerateContainerWidgetForOutliner(cons
 	return Outliner;
 }
 
-TSharedRef<SWidget> FBXTLTaskGroupTrack::BuildGroupSubMenu()
+bool FBXTLTaskGroupTrack::CanRename() const
+{
+	return true;
+}
+
+FText FBXTLTaskGroupTrack::GetLabel() const
+{
+	return GroupData->Name;
+}
+
+int32 FBXTLTaskGroupTrack::GetGroupIndex() const
+{
+	if (FBXTLController* TC = StaticCast<FBXTLController*>(TimelineController.Pin().Get()))
+	{
+		UBXTLAsset* Asset = TC->GetAsset();
+		if (!Asset)
+		{
+			return -1;
+		}
+
+		int32 GroupID = -1;
+		for (int32 i = 0; i < Asset->Sections.Num(); ++i)
+		{
+			const FBXTLSection& Section = Asset->Sections[i];
+			for (int32 j = 0; j < Section.Groups.Num(); ++i)
+			{
+				if (&(Section.Groups[j]) == GroupData)
+				{
+					return i;
+				}
+			}
+		}
+	}
+
+	return -1;
+}
+
+#pragma endregion Important
+
+
+
+#pragma region Callback
+void FBXTLTaskGroupTrack::OnCommitName(const FText& InText, ETextCommit::Type CommitInfo)
+{
+	GroupData->Name = InText;
+}
+
+TSharedRef<SWidget> FBXTLTaskGroupTrack::OnBuildSubMenu()
 {
 	FMenuBuilder MenuBuilder(true, nullptr);
 
@@ -78,7 +126,7 @@ TSharedRef<SWidget> FBXTLTaskGroupTrack::BuildGroupSubMenu()
 			LOCTEXT("Action_NewGroup_Lable", "New Group"),
 			LOCTEXT("Action_NewGroup_Tooltip", "Add a new task group"),
 			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateSP(this, &FBXTLTaskGroupTrack::AddTaskGroup)),
+			FUIAction(FExecuteAction::CreateSP(this, &FBXTLTaskGroupTrack::OnAddGroup)),
 			NAME_None,
 			EUserInterfaceActionType::Button
 		);
@@ -88,7 +136,7 @@ TSharedRef<SWidget> FBXTLTaskGroupTrack::BuildGroupSubMenu()
 			LOCTEXT("Action_DeleteGroup_Lable", "Delete Group"),
 			LOCTEXT("Action_DeleteGroup_Tooltip", "Delete group"),
 			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateSP(this, &FBXTLTaskGroupTrack::DeleteTaskGroup)),
+			FUIAction(FExecuteAction::CreateSP(this, &FBXTLTaskGroupTrack::OnDeleteGroup)),
 			NAME_None,
 			EUserInterfaceActionType::Button
 		);
@@ -101,14 +149,14 @@ TSharedRef<SWidget> FBXTLTaskGroupTrack::BuildGroupSubMenu()
 		(
 			LOCTEXT("Action_AddTaskTrack_Lable", "Add Task Track"),
 			LOCTEXT("Action_AddTaskTrack_Tooltip", "Add A New Task Track"),
-			FNewMenuDelegate::CreateRaw( this, &FBXTLTaskGroupTrack::FillNewTaskMenu)
+			FNewMenuDelegate::CreateRaw(this, &FBXTLTaskGroupTrack::OnFillTaskMenu)
 		);
 		MenuBuilder.AddMenuEntry
 		(
 			LOCTEXT("Action_PasteTasks_Lable", "Paste Tasks"),
 			LOCTEXT("Action_PasteTasks_Tooltip", "Paste Tasks"),
 			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateSP(this, &FBXTLTaskGroupTrack::PasteTasks)),
+			FUIAction(FExecuteAction::CreateSP(this, &FBXTLTaskGroupTrack::OnPasteTasks)),
 			NAME_None,
 			EUserInterfaceActionType::Button
 		);
@@ -116,7 +164,7 @@ TSharedRef<SWidget> FBXTLTaskGroupTrack::BuildGroupSubMenu()
 		(
 			LOCTEXT("Action_AddTaskTemplate_Lable", "Add Task Template"),
 			LOCTEXT("Action_AddTaskTemplate_Tooltip", "Add A New Task Template"),
-			FNewMenuDelegate::CreateRaw(this, &FBXTLTaskGroupTrack::FillNewTaskTemplateMenu)
+			FNewMenuDelegate::CreateRaw(this, &FBXTLTaskGroupTrack::OnFillTaskTemplateMenu)
 		);
 	}
 	MenuBuilder.EndSection();
@@ -124,7 +172,17 @@ TSharedRef<SWidget> FBXTLTaskGroupTrack::BuildGroupSubMenu()
 	return MenuBuilder.MakeWidget();
 }
 
-void FBXTLTaskGroupTrack::AddNewTask(UClass* InTaskClass)
+void FBXTLTaskGroupTrack::OnFillTaskMenu(class FMenuBuilder& MenuBuilder)
+{
+	FBXTLEditorUtilities::MakeNewTaskPicker(MenuBuilder, FOnClassPicked::CreateSP(this, &FBXTLTaskGroupTrack::OnAddTask));
+}
+
+void FBXTLTaskGroupTrack::OnFillTaskTemplateMenu(class FMenuBuilder& MenuBuilder)
+{
+	FBXTLEditorUtilities::MakeNewTaskTemplatePicker(MenuBuilder, FAddTaskGroupTemplateDelegate::CreateSP(this, &FBXTLTaskGroupTrack::OnAddTaskTemplate));
+}
+
+void FBXTLTaskGroupTrack::OnAddTask(UClass* InTaskClass)
 {
 	if (FBXTLController* TC = StaticCast<FBXTLController*>(TimelineController.Pin().Get()))
 	{
@@ -132,49 +190,18 @@ void FBXTLTaskGroupTrack::AddNewTask(UClass* InTaskClass)
 	}
 }
 
-void FBXTLTaskGroupTrack::PasteTasks()
+void FBXTLTaskGroupTrack::OnPasteTasks()
 {
 	if (FBXTLController* TC = StaticCast<FBXTLController*>(TimelineController.Pin().Get()))
 	{
-		UBXTLAsset* Asset = TC->GetAsset();
-		if (!Asset)
-		{
-			return;
-		}
-
-		FString SubString = TEXT("BEGIN Copy UTask!\n");
-
 		FString PasteString;
 		FPlatformApplicationMisc::ClipboardPaste(PasteString);
-		if (PasteString.Contains(SubString))
-		{
-			PasteString = PasteString.Replace(*SubString, TEXT(""));
 
-			int32 GroupID = -1;
-			for (int32 i = 0; i < Asset->Sections.Num(); ++i)
-			{
-				const FBXTLSection& Section = Asset->Sections[i];
-				for (int32 j = 0; j < Section.Groups.Num(); ++i)
-				{
-					if (&(Section.Groups[j]) == GroupData)
-					{
-						GroupID = i;
-						break;
-					}
-				}
-
-				if (GroupID > 0)
-				{
-					break;
-				}
-			}
-
-			TC->PasteSelectedTasks(PasteString, GroupID);
-		}
+		TC->PasteSelectedTasks(PasteString, GetGroupIndex());
 	}
 }
 
-void FBXTLTaskGroupTrack::AddTaskGroup()
+void FBXTLTaskGroupTrack::OnAddGroup()
 {
 	if (FBXTLController* TC = StaticCast<FBXTLController*>(TimelineController.Pin().Get()))
 	{
@@ -182,7 +209,7 @@ void FBXTLTaskGroupTrack::AddTaskGroup()
 	}
 }
 
-void FBXTLTaskGroupTrack::DeleteTaskGroup()
+void FBXTLTaskGroupTrack::OnDeleteGroup()
 {
 	if (FBXTLController* TC = StaticCast<FBXTLController*>(TimelineController.Pin().Get()))
 	{
@@ -190,57 +217,14 @@ void FBXTLTaskGroupTrack::DeleteTaskGroup()
 	}
 }
 
-void FBXTLTaskGroupTrack::FillNewTaskMenu(class FMenuBuilder& MenuBuilder)
-{
-	FBXTLEditorUtilities::MakeNewTaskPicker(MenuBuilder, FOnClassPicked::CreateSP(this, &FBXTLTaskGroupTrack::AddNewTask));
-}
-
-void FBXTLTaskGroupTrack::FillNewTaskTemplateMenu(class FMenuBuilder& MenuBuilder)
-{
-	FBXTLEditorUtilities::MakeNewTaskTemplatePicker(MenuBuilder, FAddTaskGroupTemplateDelegate::CreateSP(this, &FBXTLTaskGroupTrack::AddTaskTemplate));
-}
-
-FText FBXTLTaskGroupTrack::GetLabel() const
-{
-	return GroupData->Name;
-}
-
-void FBXTLTaskGroupTrack::OnCommitCurveName(const FText& InText, ETextCommit::Type CommitInfo)
-{
-	GroupData->Name = InText;
-}
-
-void FBXTLTaskGroupTrack::AddTaskTemplate(FName TemplateName)
+void FBXTLTaskGroupTrack::OnAddTaskTemplate(FName TemplateName)
 {
 	if (FBXTLController* TC = StaticCast<FBXTLController*>(TimelineController.Pin().Get()))
 	{
-		UBXTLAsset* Asset = TC->GetAsset();
-		if (!Asset)
-		{
-			return;
-		}
-
-		int32 GroupID = -1;
-		for (int32 i = 0; i < Asset->Sections.Num(); ++i)
-		{
-			const FBXTLSection& Section = Asset->Sections[i];
-			for (int32 j = 0; j < Section.Groups.Num(); ++i)
-			{
-				if (&(Section.Groups[j]) == GroupData)
-				{
-					GroupID = i;
-					break;
-				}
-			}
-
-			if (GroupID > 0)
-			{
-				break;
-			}
-		}
-
-		TC->ImportTaskTemplate(TemplateName, GroupID);
+		TC->ImportTaskTemplate(TemplateName, GetGroupIndex());
 	}
 }
+
+#pragma endregion Callback
 
 #undef LOCTEXT_NAMESPACE

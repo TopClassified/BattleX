@@ -22,15 +22,15 @@ class SBXTLExtraTrackNode : public SLeafWidget
 public:
 	friend class SBXTLExtraTrack;
 
-	SLATE_BEGIN_ARGS(SBXTLExtraTrackNode) :_ViewInputMin(), _ViewInputMax(), _OnRefreshPanel(), _OnStartDragNode() {}
+	SLATE_BEGIN_ARGS(SBXTLExtraTrackNode) :_ViewInputMin(), _ViewInputMax(), _RefreshPanelEvent(), _DragETNEvent() {}
 	SLATE_ARGUMENT(class UBXTLAsset*, Asset)
 	SLATE_ARGUMENT(int32, SectionIndex)
 	SLATE_ARGUMENT(EBXTLExtraType, NodeType)
 	SLATE_ATTRIBUTE(float, ViewInputMin)
 	SLATE_ATTRIBUTE(float, ViewInputMax)
 	SLATE_ATTRIBUTE(float, TimelinePlayLength)
-	SLATE_EVENT(FBXTLRefreshPanel, OnRefreshPanel)
-	SLATE_EVENT(FBXTLStartDragETN, OnStartDragNode)
+	SLATE_EVENT(FBXTLESlateRefreshPanel, RefreshPanelEvent)
+	SLATE_EVENT(FBXTLESlateDragETN, DragETNEvent)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& Declaration);
@@ -181,9 +181,9 @@ private:
 
 #pragma region Event
 private:
-	FBXTLRefreshPanel RefreshPanelEvent;
+	FBXTLESlateRefreshPanel RefreshPanelEvent;
 
-	FBXTLStartDragETN StartDragETNEvent;
+	FBXTLESlateDragETN DragETNEvent;
 
 #pragma endregion Event
 

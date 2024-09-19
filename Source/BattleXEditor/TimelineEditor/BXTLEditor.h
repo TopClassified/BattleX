@@ -292,11 +292,11 @@ private:
 
 #pragma region Event
 public:
-	FBXTLRefreshSections OnRefreshSections;
+	FBXTLELogicRefreshPanel RefreshPanelEvent;
 
-	FBXTLPreviewStateChanged OnPreviewStateChanged;
+	FBXTLELogicPreviewChanged PreviewChangedEvent;
 	
-	FBXTLTaskSelectionChanged OnTaskSelectionChanged;
+	FBXTLELogicTaskSelected TaskSelectedEvent;
 
 #pragma endregion Event
 

@@ -9,10 +9,9 @@ class FBXTLTaskTrackPanel : public FTimelineTrack
 {
 	TIMELINE_DECLARE_TRACK(FBXTLTaskTrackPanel, FTimelineTrack);
 
+#pragma region Important
 public:
 	FBXTLTaskTrackPanel(const TSharedRef<class FBXTLController>& InController, class UBXTask* InTask, const FText& InDisplayName, const FText& InToolTipText);
-
-	void UpdateLayout();
 
 	// 绘制Task时间轨道
 	TSharedRef<SWidget> GenerateContainerWidgetForTimeline() override;
@@ -21,25 +20,7 @@ public:
 	TSharedRef<SWidget> GenerateContainerWidgetForOutliner(const TSharedRef<SOutlinerItem>& InRow) override;
 
 private:
-	void OnCommitTrackName(const FText& InText, ETextCommit::Type CommitInfo);
-
-	void RefreshOutlinerWidget();
-
-	void InputViewRangeChanged(float ViewMin, float ViewMax);
-
-	void OnSelectTask();
-
-	void OnDeselectAllTask();
-
-	void RemoveSelectedTasks();
-
-	void AddNewTask(UClass* InTaskClass, float InStartTime);
-
-	void CopySelectedTasks();
-
-	void PasteSelectedTasks();
-
-	void ExportTaskTemplate();
+	void RefreshOutlinerPanel();
 
 private:
 	TWeakPtr<FBXTLController> Controller = nullptr;
@@ -47,5 +28,33 @@ private:
 	TWeakObjectPtr<class UBXTask> CachedTask = nullptr;
 
 	TSharedPtr<class SBXTLTaskTrack> TrackWidget = nullptr;
+
+#pragma endregion Important
+
+
+
+#pragma region Callback
+protected:
+	void OnRefreshPanel();
+
+	void OnCommitTrackName(const FText& InText, ETextCommit::Type CommitInfo);
+
+	void OnInputViewRangeChanged(float ViewMin, float ViewMax);
+
+	void OnSelectTask();
+
+	void OnDeselectTasks();
+
+	void OnAddTask(UClass* InTaskClass, float InStartTime);
+
+	void OnDeleteTasks();
+
+	void OnCopyTasks();
+
+	void OnPasteTasks();
+
+	void OnExportTaskTemplate();
+
+#pragma endregion Callback
 	
 };

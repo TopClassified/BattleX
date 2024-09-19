@@ -23,6 +23,7 @@
 
 TIMELINE_IMPLEMENT_TRACK(FBXTLTaskTrackPanel);
 
+#pragma region Important
 FBXTLTaskTrackPanel::FBXTLTaskTrackPanel
 (
 	const TSharedRef<FBXTLController>& InController, UBXTask* InTask,
@@ -32,18 +33,6 @@ FBXTLTaskTrackPanel::FBXTLTaskTrackPanel
 	Controller = InController;
 
 	SetHeight(FTimelineTrack::TimelineTrackHeight);
-}
-
-void FBXTLTaskTrackPanel::UpdateLayout()
-{
-	SetHeight(FTimelineTrack::TimelineTrackHeight);
-
-	RefreshOutlinerWidget();
-
-	if (TrackWidget.IsValid())
-	{
-		TrackWidget->UpdateLayout();
-	}
 }
 
 TSharedRef<SWidget> FBXTLTaskTrackPanel::GenerateContainerWidgetForTimeline()
@@ -59,15 +48,15 @@ TSharedRef<SWidget> FBXTLTaskTrackPanel::GenerateContainerWidgetForTimeline()
 			.ViewInputMax(this, &FBXTLTaskTrackPanel::GetViewMaxInput)
 			.TimelinePlayLength(GetEditorTimelineController()->GetPlayLength())
 			.FrameRate(GetEditorTimelineController()->GetFrameRate())
-			.OnSetInputViewRange(this, &FBXTLTaskTrackPanel::InputViewRangeChanged)
-			.OnRefreshPanel(this, &FBXTLTaskTrackPanel::UpdateLayout)
-			.OnSelectNode(this, &FBXTLTaskTrackPanel::OnSelectTask)
-			.OnDeselectAllNodes(this, &FBXTLTaskTrackPanel::OnDeselectAllTask)
-			.OnDeleteTask(this, &FBXTLTaskTrackPanel::RemoveSelectedTasks)
-			.OnAddNewTask(this, &FBXTLTaskTrackPanel::AddNewTask)
-			.OnCopyTasks(this, &FBXTLTaskTrackPanel::CopySelectedTasks)
-			.OnPasteTasks(this, &FBXTLTaskTrackPanel::PasteSelectedTasks)
-			.OnExportTemplate(this, &FBXTLTaskTrackPanel::ExportTaskTemplate);
+			.RefreshPanelEvent(this, &FBXTLTaskTrackPanel::OnRefreshPanel)
+			.SetInputViewRangeEvent(this, &FBXTLTaskTrackPanel::OnInputViewRangeChanged)
+			.SelectNodeEvent(this, &FBXTLTaskTrackPanel::OnSelectTask)
+			.DeselectNodesEvent(this, &FBXTLTaskTrackPanel::OnDeselectTasks)
+			.AddTaskEvent(this, &FBXTLTaskTrackPanel::OnAddTask)
+			.DeleteTaskEvent(this, &FBXTLTaskTrackPanel::OnDeleteTasks)
+			.CopyTasksEvent(this, &FBXTLTaskTrackPanel::OnCopyTasks)
+			.PasteTasksEvent(this, &FBXTLTaskTrackPanel::OnPasteTasks)
+			.ExportTemplateEvent(this, &FBXTLTaskTrackPanel::OnExportTaskTemplate);
 	}
 
 	return TrackWidget.ToSharedRef();
@@ -93,6 +82,28 @@ TSharedRef<SWidget> FBXTLTaskTrackPanel::GenerateContainerWidgetForOutliner(cons
 	return TaskTrackPanel;
 }
 
+void FBXTLTaskTrackPanel::RefreshOutlinerPanel()
+{
+	
+}
+
+#pragma endregion Important
+
+
+
+#pragma region Callback
+void FBXTLTaskTrackPanel::OnRefreshPanel()
+{
+	SetHeight(FTimelineTrack::TimelineTrackHeight);
+
+	RefreshOutlinerPanel();
+
+	if (TrackWidget.IsValid())
+	{
+		TrackWidget->UpdateLayout();
+	}
+}
+
 void FBXTLTaskTrackPanel::OnCommitTrackName(const FText& InText, ETextCommit::Type CommitInfo)
 {
 	FText TrimText = FText::TrimPrecedingAndTrailing(InText);
@@ -101,17 +112,12 @@ void FBXTLTaskTrackPanel::OnCommitTrackName(const FText& InText, ETextCommit::Ty
 		TC->ChangeTaskName(CachedTask.Get(), TrimText);
 	}
 
-	this->UpdateLayout();
+	this->OnRefreshPanel();
 }
 
-void FBXTLTaskTrackPanel::RefreshOutlinerWidget()
+void FBXTLTaskTrackPanel::OnInputViewRangeChanged(float ViewMin, float ViewMax)
 {
-	
-}
 
-void FBXTLTaskTrackPanel::InputViewRangeChanged(float ViewMin, float ViewMax)
-{
-	
 }
 
 void FBXTLTaskTrackPanel::OnSelectTask()
@@ -125,7 +131,7 @@ void FBXTLTaskTrackPanel::OnSelectTask()
 	}
 }
 
-void FBXTLTaskTrackPanel::OnDeselectAllTask()
+void FBXTLTaskTrackPanel::OnDeselectTasks()
 {
 	if (FBXTLController* TC = static_cast<FBXTLController*>(TimelineController.Pin().Get()))
 	{
@@ -133,7 +139,23 @@ void FBXTLTaskTrackPanel::OnDeselectAllTask()
 	}
 }
 
-void FBXTLTaskTrackPanel::RemoveSelectedTasks()
+void FBXTLTaskTrackPanel::OnAddTask(UClass* InTaskClass, float InStartTime)
+{
+	if (!CachedTask.IsValid())
+	{
+		return;
+	}
+
+	if (FBXTLController* TC = static_cast<FBXTLController*>(TimelineController.Pin().Get()))
+	{
+		if (FBXTLTaskGroup* Group = TC->GetTaskGroup(CachedTask.Get()))
+		{
+			TC->AddNewTask(*Group, InTaskClass, InStartTime);
+		}
+	}
+}
+
+void FBXTLTaskTrackPanel::OnDeleteTasks()
 {
 	if (FBXTLController* TC = static_cast<FBXTLController*>(TimelineController.Pin().Get()))
 	{
@@ -141,90 +163,32 @@ void FBXTLTaskTrackPanel::RemoveSelectedTasks()
 	}
 }
 
-void FBXTLTaskTrackPanel::AddNewTask(UClass* InTaskClass, float InStartTime)
+void FBXTLTaskTrackPanel::OnCopyTasks()
 {
 	if (FBXTLController* TC = static_cast<FBXTLController*>(TimelineController.Pin().Get()))
 	{
-		if (CachedTask.IsValid())
-		{
-			if (UBXTLAsset* Asset = Cast<UBXTLAsset>(CachedTask->GetOuter()))
-			{
-				int32 SectionID = -1;
-				int32 GroupID = -1;
-
-				if (Asset->GetSectionIDAndGroupID(CachedTask.Get(), SectionID, GroupID))
-				{
-					TC->AddNewTask(Asset->Sections[SectionID].Groups[GroupID], InTaskClass, InStartTime);
-				}
-			}
-		}
-	}
-}
-
-void FBXTLTaskTrackPanel::CopySelectedTasks()
-{
-	if (FBXTLController* TC = static_cast<FBXTLController*>(TimelineController.Pin().Get()))
-	{
-		if (TC->GetSelectedTasks().Num() == 0)
-		{
-			if (TC->GetSelectedTasks().Num() == 0)
-			{
-				FText DialogText = LOCTEXT("提示", "请先选中Task再复制");
-				FMessageDialog::Open(EAppMsgType::Ok, DialogText);
-				return;
-			}
-		}
-
 		TC->CopySelectedTasks();
 	}
 }
 
-void FBXTLTaskTrackPanel::PasteSelectedTasks()
+void FBXTLTaskTrackPanel::OnPasteTasks()
 {
 	if (FBXTLController* TC = static_cast<FBXTLController*>(TimelineController.Pin().Get()))
 	{
-		FString SubString = TEXT("BEGIN Copy UTask!\n");
-
 		FString PasteString;
 		FPlatformApplicationMisc::ClipboardPaste(PasteString);
-		if (PasteString.Contains(SubString))
-		{
-			PasteString = PasteString.Replace(*SubString, TEXT(""));
 
-			int32 GroupID = -1;
-			if (CachedTask.IsValid() && TC->GetAsset())
-			{
-				int32 SectionID;
-				TC->GetAsset()->GetSectionIDAndGroupID(CachedTask.Get(), SectionID, GroupID);
-			}
-
-			TC->PasteSelectedTasks(PasteString, GroupID);
-		}
-		else
-		{
-			FText DialogText = LOCTEXT("提示", "目前没有复制任何Task");
-			FMessageDialog::Open(EAppMsgType::Ok, DialogText);
-		}
+		TC->PasteSelectedTasks(PasteString, TC->GetTaskGroupIndex(CachedTask.Get()));
 	}
 }
 
-void FBXTLTaskTrackPanel::ExportTaskTemplate()
+void FBXTLTaskTrackPanel::OnExportTaskTemplate()
 {
 	if (FBXTLController* TC = static_cast<FBXTLController*>(TimelineController.Pin().Get()))
 	{
-		if (TC->GetSelectedTasks().Num() == 0)
-		{
-			TC = static_cast<FBXTLController*>(TimelineController.Pin().Get());
-			if (TC->GetSelectedTasks().Num() == 0)
-			{
-				FText DialogText = LOCTEXT("提示", "请先选中Task");
-				FMessageDialog::Open(EAppMsgType::Ok, DialogText);
-				return;
-			}
-		}
-
 		TC->ExportSelectedTaskTemplate();
 	}
 }
+#pragma endregion Callback
 
 #undef LOCTEXT_NAMESPACE

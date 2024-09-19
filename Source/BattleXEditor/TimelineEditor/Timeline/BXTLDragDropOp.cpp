@@ -77,15 +77,13 @@ FBXTLTaskTrackNodeDragDropOp::FBXTLTaskTrackNodeDragDropOp(float& InCurrentDragX
 
 TSharedRef<FBXTLTaskTrackNodeDragDropOp> FBXTLTaskTrackNodeDragDropOp::New
 (
-	TArray<TSharedPtr<SBXTLTaskTrackNode>> NotifyNodes, TSharedPtr<SWidget> Decorator, 
-	const TArray<TSharedPtr<SBXTLTaskTrack>>& NotifyTracks, float InViewPlayLength, 
-	const FVector2D& CursorPosition, const FVector2D& SelectionScreenPosition, 
-	const FVector2D& SelectionSize, float& CurrentDragXPosition, FBXTLRefreshPanel& RefreshPanel
+	TArray<TSharedPtr<SBXTLTaskTrackNode>> NotifyNodes, TSharedPtr<SWidget> Decorator, const TArray<TSharedPtr<SBXTLTaskTrack>>& NotifyTracks, float InViewPlayLength, 
+	const FVector2D& CursorPosition, const FVector2D& SelectionScreenPosition, const FVector2D& SelectionSize, float& CurrentDragXPosition, FBXTLESlateRefreshPanel& RefreshPanelEvent
 )
 {
 	TSharedRef<FBXTLTaskTrackNodeDragDropOp> Operation = MakeShareable(new FBXTLTaskTrackNodeDragDropOp(CurrentDragXPosition));
 	Operation->ViewPlayLength = MAX_FLT;
-	Operation->RefreshPanelEvent = RefreshPanel;
+	Operation->RefreshPanelEvent = RefreshPanelEvent;
 	Operation->NodeGroupPosition = SelectionScreenPosition;
 	Operation->NodeGroupSize = SelectionSize;
 	Operation->DragOffset = SelectionScreenPosition - CursorPosition;
@@ -247,15 +245,13 @@ FBXTLExtraTrackNodeDragDropOp::FBXTLExtraTrackNodeDragDropOp(float& InCurrentDra
 
 TSharedRef<FBXTLExtraTrackNodeDragDropOp> FBXTLExtraTrackNodeDragDropOp::New
 (
-	TArray<TSharedPtr<SBXTLExtraTrackNode>> NotifyNodes, TSharedPtr<SWidget> Decorator,
-	const TArray<TSharedPtr<SBXTLExtraTrack>>& NotifyTracks, float InViewPlayLength,
-	const FVector2D& CursorPosition, const FVector2D& SelectionScreenPosition,
-	const FVector2D& SelectionSize, float& CurrentDragXPosition, FBXTLRefreshPanel& RefreshPanel
+	TArray<TSharedPtr<SBXTLExtraTrackNode>> NotifyNodes, TSharedPtr<SWidget> Decorator, const TArray<TSharedPtr<SBXTLExtraTrack>>& NotifyTracks, float InViewPlayLength,
+	const FVector2D& CursorPosition, const FVector2D& SelectionScreenPosition, const FVector2D& SelectionSize, float& CurrentDragXPosition, FBXTLESlateRefreshPanel& RefreshPanelEvent
 )
 {
 	TSharedRef<FBXTLExtraTrackNodeDragDropOp> Operation = MakeShareable(new FBXTLExtraTrackNodeDragDropOp(CurrentDragXPosition));
 	Operation->ViewPlayLength = MAX_FLT;
-	Operation->RefreshPanelEvent = RefreshPanel;
+	Operation->RefreshPanelEvent = RefreshPanelEvent;
 	Operation->NodeGroupPosition = SelectionScreenPosition;
 	Operation->NodeGroupSize = SelectionSize;
 	Operation->DragOffset = SelectionScreenPosition - CursorPosition;
