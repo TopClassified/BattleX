@@ -71,6 +71,7 @@ public class BattleXEditor : ModuleRules
                 "KismetWidgets",
                 "EditorWidgets",
                 "SequencerCore",
+                "BlueprintGraph",
                 "SequencerWidgets",
 
                 "StructUtils",

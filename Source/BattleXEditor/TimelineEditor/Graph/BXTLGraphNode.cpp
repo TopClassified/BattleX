@@ -7,6 +7,7 @@
 #include "BXTLAsset.h"
 
 #include "SBXTLGraphNode.h"
+#include "BXTLGraphTransitionNode.h"
 
 
 
@@ -43,49 +44,86 @@ void UBXTLGraphNode::AllocateDefaultPins()
 
 void UBXTLGraphNode::UpdatePins()
 {
-	if (CachedTask)
+	if (!CachedTask)
 	{
-		TArray<FBXTLGNodePin> NewPinInformationList;
-		RefreshPinInformationList(NewPinInformationList);
+		return;
+	}
 
-		// 第一次循环，将目前没有，之前已有的删除
-		for (int32 i = 0; i < PinInformations.Num(); ++i)
+	TArray<FBXTLGNodePin> NewPinInformationList;
+	RefreshPinInformationList(NewPinInformationList);
+
+	// 第一次循环，将目前没有，之前已有的删除
+	for (int32 i = 0; i < PinInformations.Num(); ++i)
+	{
+		int32 Index = NewPinInformationList.Find(PinInformations[i]);
+		if (Index >= 0)
 		{
-			int32 Index = NewPinInformationList.Find(PinInformations[i]);
-			if (Index >= 0)
-			{
-				NewPinInformationList[Index].PinGUIDName = PinInformations[i].PinGUIDName;
-			}
-			else
-			{
-				FGuid CurGuid;
-				FGuid::Parse(PinInformations[i].PinGUIDName.ToString(), CurGuid);
+			NewPinInformationList[Index].PinGUIDName = PinInformations[i].PinGUIDName;
+		}
+		else
+		{
+			FGuid CurGuid;
+			FGuid::Parse(PinInformations[i].PinGUIDName.ToString(), CurGuid);
 
-				UEdGraphPin* CurPin = GetPinByGUID(CurGuid);
-				if (CurPin)
+			UEdGraphPin* CurPin = GetPinByGUID(CurGuid);
+			if (CurPin)
+			{
+				RemovePin(CurPin);
+			}
+		}
+	}
+
+	// 第二次循环，将目前已有，之前没有的添加
+	for (int32 i = 0; i < NewPinInformationList.Num(); ++i)
+	{
+		int32 Index = PinInformations.Find(NewPinInformationList[i]);
+		if (Index >= 0)
+		{
+			NewPinInformationList[i].PinGUIDName = PinInformations[Index].PinGUIDName;
+		}
+		else
+		{
+			CreatePinByInformation(NewPinInformationList[i]);
+		}
+	}
+
+	PinInformations.Empty();
+	PinInformations.Append(NewPinInformationList);
+
+	// Pin排序
+	Pins.Sort
+	(
+		[this](const UEdGraphPin& A, const UEdGraphPin& B)
+		{
+			int32 IndexA = -1;
+			int32 IndexB = -1;
+
+			FGuid InfoGuid;
+			for (int32 i = 0; i < PinInformations.Num(); ++i)
+			{
+				FGuid::Parse(PinInformations[i].PinGUIDName.ToString(), InfoGuid);
+
+				if (A.PinId == InfoGuid)
 				{
-					RemovePin(CurPin);
+					IndexA = i;
+					break;
 				}
 			}
-		}
 
-		// 第二次循环，将目前已有，之前没有的添加
-		for (int32 i = 0; i < NewPinInformationList.Num(); ++i)
-		{
-			int32 Index = PinInformations.Find(NewPinInformationList[i]);
-			if (Index >= 0)
+			for (int32 i = 0; i < PinInformations.Num(); ++i)
 			{
-				NewPinInformationList[i].PinGUIDName = PinInformations[Index].PinGUIDName;
-			}
-			else
-			{
-				CreatePinByInformation(NewPinInformationList[i]);
-			}
-		}
+				FGuid::Parse(PinInformations[i].PinGUIDName.ToString(), InfoGuid);
 
-		PinInformations.Empty();
-		PinInformations.Append(NewPinInformationList);
-	}
+				if (B.PinId == InfoGuid)
+				{
+					IndexB = i;
+					break;
+				}
+			}
+
+			return IndexA < IndexB;
+		}
+	);
 }
 
 FLinearColor UBXTLGraphNode::GetPinColor(const UEdGraphPin* InPin)
@@ -193,7 +231,9 @@ void UBXTLGraphNode::RefreshPinInformationList(TArray<FBXTLGNodePin>& InPinInfor
 	InPinInformationList.Empty();
 
 	FBXTLGNodePin PinInfo;
+
 	PinInfo.PinType = 0;
+	PinInfo.UniqueID = 0;
 	PinInfo.ExtraName = TEXT("Exe");
 	InPinInformationList.Add(PinInfo);
 
@@ -263,8 +303,8 @@ void UBXTLGraphNode::CreatePinByInformation(FBXTLGNodePin& InInformation)
 	EEdGraphPinDirection CurPinDir;
 	if (InInformation.PinType == 0)
 	{
-		Pin1 = TEXT("real");
-		Pin2 = TEXT("float");
+		Pin1 = UEdGraphSchema_K2::PC_Real;
+		Pin2 = UEdGraphSchema_K2::PC_Float;
 		CurPinDir = EEdGraphPinDirection::EGPD_Input;
 	}
 	else if (InInformation.PinType == 1)
@@ -349,9 +389,17 @@ void UBXTLGraphNode::RefreshGraphNodeInformation()
 						continue;
 					}
 
-					if (UBXTLGraphNode* NextNode = Cast<UBXTLGraphNode>(TarPin->GetOwningNode()))
+					if (UBXTLGraphTransitionNode* TransitionNode = Cast<UBXTLGraphTransitionNode>(TarPin->GetOwningNode()))
 					{
-						Events->Event.Add(NextNode->CachedTask, FCString::Atof(*TarPin->DefaultValue));
+						if (UBXTLGraphNode* TaskNode = Cast<UBXTLGraphNode>(TransitionNode->GetLinkTargetNode()))
+						{
+							Events->Event.Add(TaskNode->CachedTask, TransitionNode->Delay);
+
+							if (TaskNode->CachedTask->TriggerTypes == 0)
+							{
+								TaskNode->CachedTask->StartTime = CachedTask->StartTime + TransitionNode->Delay;
+							}
+						}
 					}
 				}
 			}
@@ -416,6 +464,8 @@ void UBXTLGraphNode::RefreshGraphNodeInformation()
 			}
 		}
 	}
+
+	Asset->MarkPackageDirty();
 }
 
 FText UBXTLGraphNode::GetNodeTitle(ENodeTitleType::Type TitleType) const

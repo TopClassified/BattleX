@@ -5,6 +5,7 @@
 
 #include "BXTLAsset.h"
 #include "BXTLGraphNode.h"
+#include "BXTLGraphTransitionNode.h"
 
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Framework/Commands/GenericCommands.h"
@@ -184,7 +185,7 @@ const FPinConnectionResponse UBXTLGraphSchema::CanCreateConnection(const UEdGrap
 	{
 		if (OutputInfo->PinType == 1)
 		{
-			return FPinConnectionResponse(CONNECT_RESPONSE_MAKE, LOCTEXT("Connect Sucess", "Add Task Event To Start New Task!"));
+			return FPinConnectionResponse(CONNECT_RESPONSE_MAKE_WITH_CONVERSION_NODE, LOCTEXT("Connect Sucess", "Add Task Event To Start New Task!"));
 		}
 		else
 		{
@@ -238,9 +239,88 @@ FConnectionDrawingPolicy* UBXTLGraphSchema::CreateConnectionDrawingPolicy(int32 
 	return new FBXTLGConnectionDrawingPolicy(InBackLayerID, InFrontLayerID, InZoomFactor, InClippingRect, InDrawElements);
 }
 
+bool UBXTLGraphSchema::CreateAutomaticConversionNodeAndConnections(UEdGraphPin* A, UEdGraphPin* B) const
+{
+	UBXTLGraphNode* NodeA = Cast<UBXTLGraphNode>(A->GetOwningNode());
+	UBXTLGraphNode* NodeB = Cast<UBXTLGraphNode>(B->GetOwningNode());
+
+	UEdGraph* Graph = NodeA->GetGraph();
+	if (!Graph)
+	{
+		return Super::CreateAutomaticConversionNodeAndConnections(A, B);
+	}
+
+	if (!NodeA || !NodeB)
+	{
+		return Super::CreateAutomaticConversionNodeAndConnections(A, B);
+	}
+
+	int32 PinAType = -1;
+	if (FBXTLGNodePin* PinAInfo = NodeA->GetPinInformation(A))
+	{
+		PinAType = PinAInfo->PinType;
+	}
+
+	int32 PinBType = -1;
+	if (FBXTLGNodePin* PinBInfo = NodeB->GetPinInformation(B))
+	{
+		PinBType = PinBInfo->PinType;
+	}
+
+	if (PinAType != 1 || PinBType != 0)
+	{
+		return Super::CreateAutomaticConversionNodeAndConnections(A, B);
+	}
+
+	if (UBXTLGraphTransitionNode* TransitNode = NewObject<UBXTLGraphTransitionNode>(NodeA->GetGraph()))
+	{
+		Graph->AddNode(TransitNode, true, false);
+
+		TransitNode->CreateNewGuid();
+		TransitNode->PostPlacedNewNode();
+		TransitNode->AllocateDefaultPins();
+		TransitNode->AutowireNewNode(A);
+		TransitNode->SetFlags(RF_Transactional);
+		TransitNode->NodePosX = (NodeA->NodePosX + NodeB->NodePosX) * 0.5f;
+		TransitNode->NodePosY = (NodeA->NodePosY + NodeB->NodePosY) * 0.5f;
+		
+		if (A->Direction == EGPD_Output)
+		{
+			TransitNode->CreateConnections(A, B);
+		}
+		else
+		{
+			TransitNode->CreateConnections(B, A);
+		}
+	}
+
+	return true;
+}
+
 FLinearColor UBXTLGraphSchema::GetPinTypeColor(const FEdGraphPinType& PinType) const
 {
 	return FColor::White;
+}
+
+void UBXTLGraphSchema::BreakSinglePinLink(UEdGraphPin* SourcePin, UEdGraphPin* TargetPin) const
+{
+	Super::BreakSinglePinLink(SourcePin, TargetPin);
+
+	if (SourcePin)
+	{
+		if (UBXTLGraphTransitionNode* TransitNode = Cast<UBXTLGraphTransitionNode>(SourcePin->GetOwningNode()))
+		{
+			TransitNode->DestroyNode();
+		}
+	}
+
+	if (TargetPin)
+	{
+		if (UBXTLGraphTransitionNode* TransitNode = Cast<UBXTLGraphTransitionNode>(TargetPin->GetOwningNode()))
+		{
+			TransitNode->DestroyNode();
+		}
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

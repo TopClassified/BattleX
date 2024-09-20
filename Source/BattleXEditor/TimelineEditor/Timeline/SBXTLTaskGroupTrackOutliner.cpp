@@ -22,10 +22,7 @@ void SBXTLTaskGroupTrackOutliner::Construct(const FArguments& InArgs, const TSha
 
 	TSharedPtr<SWidget> MainWidget = InArgs._MainWidget;
 
-	this->ChildSlot
-	[
-		MainWidget.ToSharedRef()
-	];
+	this->ChildSlot[MainWidget.ToSharedRef()];
 }
 
 FReply SBXTLTaskGroupTrackOutliner::OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent)

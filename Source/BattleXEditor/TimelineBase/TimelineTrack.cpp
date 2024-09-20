@@ -116,7 +116,7 @@ TSharedRef<SWidget> FTimelineTrack::GenerateContainerWidgetForOutliner(const TSh
 
 	if(bIsHeaderTrack)
 	{
-		OuterBorder->SetBorderBackgroundColor(FAppStyle::GetColor("Timeline.Outliner.HeaderColor"));
+		OuterBorder->SetBorderBackgroundColor(FAppStyle::GetColor("AnimTimeline.Outliner.HeaderColor"));
 	}
 
 	return Widget;
@@ -127,7 +127,7 @@ TSharedRef<SWidget> FTimelineTrack::GenerateStandardOutlinerWidget(const TShared
 	TSharedRef<SWidget> Widget = SAssignNew(OutOuterBorder, SBorder)
 		.ToolTipText(this, &FTimelineTrack::GetToolTipText)
 		.BorderImage(FAppStyle::GetBrush("Sequencer.Section.BackgroundTint"))
-		.BorderBackgroundColor(FAppStyle::GetColor("Timeline.Outliner.ItemColor"))
+		.BorderBackgroundColor(FAppStyle::GetColor("AnimTimeline.Outliner.ItemColor"))
 		[
 			SAssignNew(OutInnerHorizontalBox, SHorizontalBox)
 			+SHorizontalBox::Slot()
@@ -148,7 +148,7 @@ TSharedRef<SWidget> FTimelineTrack::GenerateStandardOutlinerWidget(const TShared
 		.FillWidth(1.0f)
 		[
 			SNew(STextBlock)
-			.TextStyle(&FAppStyle::Get().GetWidgetStyle<FTextBlockStyle>("Timeline.Outliner.Label"))
+			.TextStyle(&FAppStyle::Get().GetWidgetStyle<FTextBlockStyle>("AnimTimeline.Outliner.Label"))
 			.Text(this, &FTimelineTrack::GetLabel)
 			.HighlightText(InRow->GetHighlightText())
 		];

@@ -15,24 +15,28 @@ UBXTask::UBXTask()
 
 #pragma region Editor
 #if WITH_EDITOR
-void UBXTask::SetDisplayName(FText InText)
+void UBXTask::AlignTimeProperty(float InAlign)
 {
-	DisplayName = InText;
+	StartTime = UBXFunctionLibrary::AlignTime(StartTime, InAlign);
+	Duration = UBXFunctionLibrary::AlignTime(Duration, InAlign);
+
+	for (TMap<FName, FBXTEvent>::TIterator It(Events); It; ++It)
+	{
+		for (TMap<TSoftObjectPtr<class UBXTask>, float>::TIterator It2(It->Value.Event); It2; ++It2)
+		{
+			It2->Value = UBXFunctionLibrary::AlignTime(It2->Value, InAlign);
+		}
+	}
 }
 
 FText UBXTask::GetDisplayName() const
 {
-	if (DisplayName.IsEmpty())
-	{
-		FString Name = this->GetName();
-		Name = Name.Replace(TEXT("BP_BXT_"), TEXT(""));
-		Name = Name.Replace(TEXT("_C"), TEXT(""));
-		Name = Name.Replace(TEXT("_"), TEXT(":"));
+	FString Name = this->GetName();
+	Name = Name.Replace(TEXT("BP_BXT_"), TEXT(""));
+	Name = Name.Replace(TEXT("_C"), TEXT(""));
+	Name = Name.Replace(TEXT("_"), TEXT(":"));
 
-		return FText::FromString(Name);
-	}
-
-	return DisplayName;
+	return FText::FromString(Name);
 }
 
 FText UBXTask::GetAnnotation() const

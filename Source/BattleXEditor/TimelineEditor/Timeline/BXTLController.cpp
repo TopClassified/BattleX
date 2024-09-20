@@ -273,14 +273,6 @@ void FBXTLController::ChangeTaskSelection(const TArray<UBXTask*>& Tasks)
 	CachedEditor.Pin()->SetTaskSelection(Tasks, !bPressCtrl);
 }
 
-void FBXTLController::ChangeTaskName(UBXTask* TheTask, const FText& NewName)
-{
-	if (TheTask)
-	{
-		TheTask->SetDisplayName(NewName);
-	}
-}
-
 void FBXTLController::ChangeTaskPosition(UBXTask* SrcTask, UBXTask* DestTask)
 {
 	if (!CachedEditor.Pin()->IsStopped())
@@ -659,11 +651,16 @@ void FBXTLController::CopySelectedTasks()
 						if (Section.TaskList[i] == &A)
 						{
 							IndexA = i;
+							break;
 						}
+					}
 
+					for (int32 i = 0; i < Section.TaskList.Num(); ++i)
+					{
 						if (Section.TaskList[i] == &B)
 						{
 							IndexB = i;
+							break;
 						}
 					}
 

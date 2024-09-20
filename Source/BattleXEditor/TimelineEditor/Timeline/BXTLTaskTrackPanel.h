@@ -37,8 +37,6 @@ private:
 protected:
 	void OnRefreshPanel();
 
-	void OnCommitTrackName(const FText& InText, ETextCommit::Type CommitInfo);
-
 	void OnInputViewRangeChanged(float ViewMin, float ViewMax);
 
 	void OnSelectTask();

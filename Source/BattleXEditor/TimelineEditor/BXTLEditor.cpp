@@ -25,6 +25,8 @@
 #include "Graph/BXTLGraphNode.h"
 #include "Graph/SBXTLGraphNode.h"
 #include "Graph/BXTLGraphSchema.h"
+#include "Graph/BXTLGraphTransitionNode.h"
+#include "Graph/SBXTLGraphTransitionNode.h"
 #include "Preview/BXTLPreviewProxy.h"
 #include "Preview/BXTLPreviewScene.h"
 #include "Preview/BXTLPreviewGameMode.h"
@@ -60,6 +62,11 @@ class FBXTLGraphNodeFactory : public FGraphPanelNodeFactory
 		if (UBXTLGraphNode* GraphNode = Cast<UBXTLGraphNode>(Node))
 		{
 			return SNew(SBXTLGraphNode, GraphNode);
+		}
+
+		if (UBXTLGraphTransitionNode* GraphNode = Cast<UBXTLGraphTransitionNode>(Node))
+		{
+			return SNew(SBXTLGraphTransitionNode, GraphNode);
 		}
 
 		return nullptr;
@@ -159,6 +166,11 @@ void FBXTLEditor::Tick(float DeltaTime)
 		if (EditAsset.IsValid())
 		{
 			EditAsset->AlignTimeProperty(Setting->PreviewTickRate);
+		}
+
+		if (UBXTLGraph* Graph = Cast<UBXTLGraph>(EditAsset->Graph))
+		{
+			Graph->AlignTimeProperty(Setting->PreviewTickRate);
 		}
 	}
 

@@ -83,9 +83,6 @@ public:
 	// 选中Task
 	void ChangeTaskSelection(const TArray<class UBXTask*>& Tasks);
 
-	// 改变Task的名称
-	void ChangeTaskName(class UBXTask* TheTask, const FText& NewName);
-
 	// 改变Task轨道位置
 	void ChangeTaskPosition(class UBXTask* SrcTask, class UBXTask* DestTask);
 

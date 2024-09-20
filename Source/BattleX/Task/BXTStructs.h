@@ -23,6 +23,69 @@ struct FBXTEvent
 	GENERATED_USTRUCT_BODY()
 
 public:
+	FBXTEvent()
+	{
+#if WITH_EDITOR
+		UniqueID = UBXFunctionLibrary::GetUniqueID();
+#endif
+	}
+
+	FBXTEvent(const FBXTEvent& InOther)
+	{
+#if WITH_EDITOR
+		UniqueID = UBXFunctionLibrary::GetUniqueID();
+#endif
+		bMulticast = InOther.bMulticast;
+		Event.Append(InOther.Event);
+	}
+
+	FBXTEvent(FBXTEvent&& InOther)
+	{
+#if WITH_EDITOR
+		UniqueID = UBXFunctionLibrary::GetUniqueID();
+#endif
+		bMulticast = InOther.bMulticast;
+		Event.Reset();
+		Event.Append(InOther.Event);
+		InOther.Event.Reset();
+	}
+
+	FBXTEvent& operator=(const FBXTEvent& InOther)
+	{
+		if (this != &InOther)
+		{
+#if WITH_EDITOR
+			UniqueID = UBXFunctionLibrary::GetUniqueID();
+#endif
+			bMulticast = InOther.bMulticast;
+			Event.Append(InOther.Event);
+		}
+
+		return *this;
+	}
+
+	FBXTEvent& operator=(FBXTEvent&& InOther)
+	{
+		if (this != &InOther)
+		{
+#if WITH_EDITOR
+			UniqueID = UBXFunctionLibrary::GetUniqueID();
+#endif
+			bMulticast = InOther.bMulticast;
+			Event.Reset();
+			Event.Append(InOther.Event);
+			InOther.Event.Reset();
+		}
+
+		return *this;
+	}
+
+#if WITH_EDITOR
+public:
+	int64 GetUniqueID() const { return UniqueID; }
+#endif
+
+public:
 	// 需要进行网络广播
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	bool bMulticast = false;
@@ -30,6 +93,12 @@ public:
 	// 触发事件，延迟触发时间
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadWrite)
 	TMap<TSoftObjectPtr<class UBXTask>, float> Event;
+
+#if WITH_EDITORONLY_DATA
+private:
+	UPROPERTY()
+	int64 UniqueID = 0;
+#endif
 
 };
 

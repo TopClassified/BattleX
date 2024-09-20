@@ -52,7 +52,7 @@ void SBXTLAssetSection::Construct(const FArguments& InArgs, const TSharedPtr<FBX
 				[
 					SNew(SInlineEditableTextBlock)
 					.IsReadOnly(true)
-					.Text_Lambda([this]() { return this->GetSectionName(); })
+					.Text(this, &SBXTLAssetSection::GetSectionName)
 					.IsSelected(FIsSelected::CreateLambda([]() { return false; }))
 					.OnTextCommitted(this, &SBXTLAssetSection::ChangeSectionName)
 				]
@@ -74,7 +74,7 @@ void SBXTLAssetSection::Construct(const FArguments& InArgs, const TSharedPtr<FBX
 				.AutoWidth()
 				[
 					SNew(SEditableTextBox)
-					.Text_Lambda([this]() { return this->GetSectionLoopTime(); })
+					.Text(this, &SBXTLAssetSection::GetSectionLoopTime)
 					.OnTextCommitted(this, &SBXTLAssetSection::ChangeSectionLoopTime)
 				]
 
@@ -95,7 +95,7 @@ void SBXTLAssetSection::Construct(const FArguments& InArgs, const TSharedPtr<FBX
 				.AutoWidth()
 				[
 					SNew(SEditableTextBox)
-					.Text_Lambda([this]() { return this->GetSectionDuration(); })
+					.Text(this, &SBXTLAssetSection::GetSectionDuration)
 					.OnTextCommitted(this, &SBXTLAssetSection::ChangeSectionDuration)
 				]
 			]

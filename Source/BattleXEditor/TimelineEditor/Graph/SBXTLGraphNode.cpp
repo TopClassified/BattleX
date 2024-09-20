@@ -1,6 +1,7 @@
 #include "SBXTLGraphNode.h"
 
 #include "SGraphPin.h"
+#include "NodeFactory.h"
 
 #include "BXTLGraphNode.h"
 

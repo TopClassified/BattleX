@@ -86,7 +86,6 @@ TSharedRef<SWidget> CreateTabBody(const FWorkflowTabSpawnInfo& Info) const
 	InEvents.OnSelectionChanged = SGraphEditor::FOnSelectionChanged::CreateSP(Editor.Get(), &FBXTLEditor::OnSelectedNodesChanged);
 
 	TSharedPtr<SGraphEditor> NewViewPort;
-
 	SAssignNew(NewViewPort, SGraphEditor)
 	.IsEditable(true)
 	.Appearance(AppearanceInfo)
@@ -114,6 +113,7 @@ FBXTLEditorMode::FBXTLEditorMode(const FName& InModeName, TSharedRef<FBXTLEditor
 	(
 		FTabManager::NewPrimaryArea()
 		->SetOrientation(Orient_Vertical)
+		// 上
 		->Split
 		(
 			FTabManager::NewSplitter()
@@ -123,51 +123,48 @@ FBXTLEditorMode::FBXTLEditorMode(const FName& InModeName, TSharedRef<FBXTLEditor
 			->Split
 			(
 				FTabManager::NewStack()
-				->SetSizeCoefficient(0.2f)
-				->SetHideTabWell(false)
+				->SetSizeCoefficient(0.15f)
+				->SetHideTabWell(true)
 				->AddTab(BXTLEditorTabs::AssetDetails, ETabState::OpenedTab)
 			)
 			// 中
 			->Split
 			(
-				FTabManager::NewSplitter()
-				->SetSizeCoefficient(0.6f)
-				->SetOrientation(Orient_Vertical)
-				->Split
-				(
-					FTabManager::NewStack()
-					->SetSizeCoefficient(0.6f)
-					->SetHideTabWell(true)
-					->AddTab(BXTLEditorTabs::Viewport, ETabState::OpenedTab)
-				)
-				->Split
-				(
-					FTabManager::NewStack()
-					->SetSizeCoefficient(0.6f)
-					->SetHideTabWell(true)
-					->AddTab(BXTLEditorTabs::Timeline, ETabState::OpenedTab)
-				)
+				FTabManager::NewStack()
+				->SetSizeCoefficient(0.7f)
+				->SetHideTabWell(true)
+				->AddTab(BXTLEditorTabs::Viewport, ETabState::OpenedTab)
 			)
 			// 右
 			->Split
 			(
-				FTabManager::NewSplitter()
-				->SetSizeCoefficient(0.2f)
-				->SetOrientation(Orient_Vertical)
-				->Split
-				(
-					FTabManager::NewStack()
-					->SetSizeCoefficient(0.5f)
-					->SetHideTabWell(false)
-					->AddTab(BXTLEditorTabs::TaskDetails, ETabState::OpenedTab)
-				)
-				->Split
-				(
-					FTabManager::NewStack()
-					->SetSizeCoefficient(0.5f)
-					->SetHideTabWell(false)
-					->AddTab(BXTLEditorTabs::Graph, ETabState::OpenedTab)
-				)
+				FTabManager::NewStack()
+				->SetSizeCoefficient(0.15f)
+				->SetHideTabWell(true)
+				->AddTab(BXTLEditorTabs::TaskDetails, ETabState::OpenedTab)
+			)
+		)
+		// 下
+		->Split
+		(
+			FTabManager::NewSplitter()
+			->SetSizeCoefficient(0.6f)
+			->SetOrientation(Orient_Horizontal)
+			// 左
+			->Split
+			(
+				FTabManager::NewStack()
+				->SetSizeCoefficient(0.3f)
+				->SetHideTabWell(true)
+				->AddTab(BXTLEditorTabs::Graph, ETabState::OpenedTab)
+			)
+			// 右
+			->Split
+			(
+				FTabManager::NewStack()
+				->SetSizeCoefficient(0.7f)
+				->SetHideTabWell(true)
+				->AddTab(BXTLEditorTabs::Timeline, ETabState::OpenedTab)
 			)
 		)
 	);

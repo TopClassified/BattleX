@@ -2,8 +2,10 @@
 #include "EdGraph/EdGraphSchema.h"
 
 #include "BXTLAsset.h"
+#include "BXFunctionLibrary.h"
 
 #include "BXTLGraphNode.h"
+#include "BXTLGraphTransitionNode.h"
 
 
 
@@ -348,6 +350,17 @@ void UBXTLGraph::TryAutoConnectPin(UBXTLGraphNode* Node1, UBXTLGraphNode* Node2)
 			{
 				GetSchema()->TryCreateConnection(Pin1, Pin2);
 			}
+		}
+	}
+}
+
+void UBXTLGraph::AlignTimeProperty(float InAlign)
+{
+	for (int32 i = 0; i < Nodes.Num(); ++i)
+	{
+		if (UBXTLGraphTransitionNode* Node = Cast<UBXTLGraphTransitionNode>(Nodes[i]))
+		{
+			Node->Delay = UBXFunctionLibrary::AlignTime(Node->Delay, InAlign);
 		}
 	}
 }

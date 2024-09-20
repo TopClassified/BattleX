@@ -76,7 +76,6 @@ TSharedRef<SWidget> FBXTLTaskTrackPanel::GenerateContainerWidgetForOutliner(cons
 			SNew(SInlineEditableTextBlock)
 			.Text_Lambda([this]() { return DisplayName; })
 			.IsSelected(FIsSelected::CreateLambda([]() { return false; }))
-			.OnTextCommitted(this, &FBXTLTaskTrackPanel::OnCommitTrackName)
 		);
 
 	return TaskTrackPanel;
@@ -102,17 +101,6 @@ void FBXTLTaskTrackPanel::OnRefreshPanel()
 	{
 		TrackWidget->UpdateLayout();
 	}
-}
-
-void FBXTLTaskTrackPanel::OnCommitTrackName(const FText& InText, ETextCommit::Type CommitInfo)
-{
-	FText TrimText = FText::TrimPrecedingAndTrailing(InText);
-	if (FBXTLController* TC = static_cast<FBXTLController*>(TimelineController.Pin().Get()))
-	{
-		TC->ChangeTaskName(CachedTask.Get(), TrimText);
-	}
-
-	this->OnRefreshPanel();
 }
 
 void FBXTLTaskTrackPanel::OnInputViewRangeChanged(float ViewMin, float ViewMax)

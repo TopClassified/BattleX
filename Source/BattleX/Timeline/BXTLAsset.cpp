@@ -154,8 +154,7 @@ void UBXTLAsset::AlignTimeProperty(float InAlign)
 
 		for (TArray<UBXTask*>::TIterator It2(It->TaskList); It2; ++It2)
 		{
-			(*It2)->StartTime = UBXFunctionLibrary::AlignTime((*It2)->StartTime, InAlign);
-			(*It2)->Duration = UBXFunctionLibrary::AlignTime((*It2)->Duration, InAlign);
+			(*It2)->AlignTimeProperty(InAlign);
 		}
 	}
 }

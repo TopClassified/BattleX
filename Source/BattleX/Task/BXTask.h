@@ -91,10 +91,6 @@ public:
 #pragma region Editor
 #if WITH_EDITORONLY_DATA
 protected:
-	// 编辑器显示名称
-	UPROPERTY(EditDefaultsOnly, Category = "Editor")
-	FText DisplayName;
-
 	// 编辑器注释
 	UPROPERTY(EditDefaultsOnly, Category = "Editor")
 	FText Annotation;
@@ -102,7 +98,7 @@ protected:
 
 #if WITH_EDITOR
 public:
-	virtual void SetDisplayName(FText InText);
+	virtual void AlignTimeProperty(float InAlign);
 
 	virtual FText GetDisplayName() const;
 

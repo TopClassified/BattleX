@@ -36,7 +36,7 @@ TSharedRef<SWidget> FBXTLTaskGroupTrack::GenerateContainerWidgetForOutliner(cons
 	TSharedPtr<SHorizontalBox> InnerHorizontalBox;
 	TSharedRef<SWidget> OutlinerWidget = GenerateStandardOutlinerWidget(InRow, false, OuterBorder, InnerHorizontalBox);
 
-	OuterBorder->SetBorderBackgroundColor(FAppStyle::GetColor("Timeline.Outliner.HeaderColor"));
+	OuterBorder->SetBorderBackgroundColor(FAppStyle::GetColor("AnimTimeline.Outliner.HeaderColor"));
 
 	// Group的名称
 	InnerHorizontalBox->AddSlot()

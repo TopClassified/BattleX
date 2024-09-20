@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "EdGraph/EdGraph.h"
 
+#include "BXTLEditor.h"
+
 #include "BXTask.h"
 
 #include "BXTLGraph.generated.h"
@@ -44,5 +46,8 @@ public:
 
 	// 尝试根据Task信息连接将Node1的pin连接上Node2
 	void TryAutoConnectPin(class UBXTLGraphNode* Node1, class UBXTLGraphNode* Node2);
+
+	// 对齐时间
+	void AlignTimeProperty(float InAlign);
 
 };
