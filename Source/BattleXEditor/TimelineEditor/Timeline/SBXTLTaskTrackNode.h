@@ -40,6 +40,15 @@ struct FBXTLTaskNodeData
 	// 设置持续时间
 	void SetDuration(float InDuration);
 
+	// 由时间轴触发
+	bool CheckTriggerByTimeline() const;
+
+	// 由其他Task触发
+	bool CheckTriggerByOtherTask() const;
+
+	// 依赖其他Task的数据
+	bool CheckInputDataByOtherTask() const;
+
 private:
 	// 缓存的Task对象
 	TWeakObjectPtr<class UBXTask> CachedTask = nullptr;
@@ -127,6 +136,8 @@ private:
 	bool bSelected;
 
 	FSlateFontInfo Font;
+
+	FSlateFontInfo SubFont;
 
 	float TaskTimePositionX;
 

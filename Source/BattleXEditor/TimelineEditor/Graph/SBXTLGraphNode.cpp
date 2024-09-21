@@ -37,4 +37,9 @@ void SBXTLGraphNode::UpdateGraphNode()
 	}
 }
 
+bool SBXTLGraphNode::IsNameReadOnly() const
+{
+	return true;
+}
+
 #undef LOCTEXT_NAMESPACE

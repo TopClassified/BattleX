@@ -21,14 +21,7 @@ UBXTLGraph::~UBXTLGraph()
 
 void UBXTLGraph::PreSave(class FObjectPreSaveContext ObjectSaveContext)
 {
-	// 刷新任务信息
-	for (int32 i = 0; i < Nodes.Num(); ++i)
-	{
-		if (UBXTLGraphNode* Node = Cast<UBXTLGraphNode>(Nodes[i]))
-		{
-			Node->RefreshGraphNodeInformation();
-		}
-	}
+	RefreshGraphInformation();
 
 	Super::PreSave(ObjectSaveContext);
 }
@@ -74,6 +67,31 @@ void UBXTLGraph::RefreshGraph()
 				TryAutoConnectPin(Node1, Node2);
 				TryAutoConnectPin(Node2, Node1);
 			}
+		}
+	}
+
+	RefreshGraphInformation();
+}
+
+void UBXTLGraph::RefreshGraphInformation()
+{
+	for (int32 i = 0; i < Nodes.Num(); ++i)
+	{
+		if (UBXTLGraphNode* Node = Cast<UBXTLGraphNode>(Nodes[i]))
+		{
+			if (Node->CachedTask)
+			{
+				Node->CachedTask->TriggeredByList.Reset();
+			}
+		}
+	}
+
+	// 刷新任务信息
+	for (int32 i = 0; i < Nodes.Num(); ++i)
+	{
+		if (UBXTLGraphNode* Node = Cast<UBXTLGraphNode>(Nodes[i]))
+		{
+			Node->RefreshGraphNodeInformation();
 		}
 	}
 
@@ -147,8 +165,6 @@ void UBXTLGraph::GenerateGraphNodeByTask(UBXTask* InTask, float InX, float InY)
 		ResultNode->NodePosY = FMath::IsNearlyZero(InY) ? PosY : InY;
 
 		ResultNode->SetFlags(RF_Transactional);
-
-		Modify();
 	}
 }
 

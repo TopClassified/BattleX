@@ -141,7 +141,7 @@ void FBXTLController::RefreshTracks()
 				continue;
 			}
 
-			TSharedRef<FBXTLTaskTrackPanel> NewTrack = MakeShareable(new FBXTLTaskTrackPanel(SharedThis(this), Task, Task->GetDisplayName(), LOCTEXT("Task_Tooltip", "Task")));
+			TSharedRef<FBXTLTaskTrackPanel> NewTrack = MakeShareable(new FBXTLTaskTrackPanel(SharedThis(this), Task, LOCTEXT("Task_Tooltip", "Task")));
 			NewTrack->GenerateContainerWidgetForTimeline();
 			NewTrackGroup->AddChild(NewTrack);
 		}

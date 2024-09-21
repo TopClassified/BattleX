@@ -16,7 +16,7 @@
 #pragma region Important
 UBXTLGraphNode::UBXTLGraphNode()
 {
-	bCanRenameNode = false;
+	bCanRenameNode = true;
 }
 
 UBXTLGraphNode::~UBXTLGraphNode()
@@ -360,6 +360,7 @@ void UBXTLGraphNode::RefreshGraphNodeInformation()
 		return;
 	}
 
+	TArray<TSoftObjectPtr<UBXTask>> OldKeys;
 	for (int32 i = 0; i < Pins.Num(); ++i)
 	{
 		UEdGraphPin* CurPin = Pins[i];
@@ -379,6 +380,14 @@ void UBXTLGraphNode::RefreshGraphNodeInformation()
 		{
 			if (FBXTEvent* Events = CachedTask->Events.Find(CurPinInfo->ExtraName))
 			{
+				for (TMap<TSoftObjectPtr<UBXTask>, float>::TIterator It(Events->Event); It; ++It)
+				{
+					if (UBXTask* Task = It->Key.LoadSynchronous())
+					{
+						Task->TriggeredByList.Remove(CachedTask);
+					}
+				}
+
 				Events->Event.Reset();
 
 				for (int32 j = 0; j < CurPin->LinkedTo.Num(); ++j)
@@ -389,17 +398,23 @@ void UBXTLGraphNode::RefreshGraphNodeInformation()
 						continue;
 					}
 
-					if (UBXTLGraphTransitionNode* TransitionNode = Cast<UBXTLGraphTransitionNode>(TarPin->GetOwningNode()))
+					UBXTLGraphTransitionNode* TransitionNode = Cast<UBXTLGraphTransitionNode>(TarPin->GetOwningNode());
+					if (!TransitionNode)
 					{
-						if (UBXTLGraphNode* TaskNode = Cast<UBXTLGraphNode>(TransitionNode->GetLinkTargetNode()))
-						{
-							Events->Event.Add(TaskNode->CachedTask, TransitionNode->Delay);
+						continue;
+					}
 
-							if (TaskNode->CachedTask->TriggerTypes == 0)
-							{
-								TaskNode->CachedTask->StartTime = CachedTask->StartTime + TransitionNode->Delay;
-							}
-						}
+					UBXTLGraphNode* TaskNode = Cast<UBXTLGraphNode>(TransitionNode->GetLinkTargetNode());
+					if (!TaskNode)
+					{
+						continue;
+					}
+
+					// 添加事件
+					if (TaskNode->CachedTask)
+					{
+						Events->Event.Add(TaskNode->CachedTask, TransitionNode->Delay);
+						TaskNode->CachedTask->TriggeredByList.AddUnique(CachedTask);
 					}
 				}
 			}
@@ -465,7 +480,7 @@ void UBXTLGraphNode::RefreshGraphNodeInformation()
 		}
 	}
 
-	Asset->MarkPackageDirty();
+	Modify();
 }
 
 FText UBXTLGraphNode::GetNodeTitle(ENodeTitleType::Type TitleType) const

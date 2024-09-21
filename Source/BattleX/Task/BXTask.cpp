@@ -17,7 +17,16 @@ UBXTask::UBXTask()
 #if WITH_EDITOR
 void UBXTask::AlignTimeProperty(float InAlign)
 {
+	if ((TriggerTypes & 1) <= 0)
+	{
+		StartTime = 0.0f;
+	}
 	StartTime = UBXFunctionLibrary::AlignTime(StartTime, InAlign);
+
+	if (LifeType == EBXTLifeType::L_Instant)
+	{
+		Duration = 0.1f;
+	}
 	Duration = UBXFunctionLibrary::AlignTime(Duration, InAlign);
 
 	for (TMap<FName, FBXTEvent>::TIterator It(Events); It; ++It)
@@ -34,7 +43,11 @@ FText UBXTask::GetDisplayName() const
 	FString Name = this->GetName();
 	Name = Name.Replace(TEXT("BP_BXT_"), TEXT(""));
 	Name = Name.Replace(TEXT("_C"), TEXT(""));
-	Name = Name.Replace(TEXT("_"), TEXT(":"));
+
+	if (!DisplayName.IsEmpty())
+	{
+		Name = Name + TEXT("  ") + DisplayName.ToString();
+	}
 
 	return FText::FromString(Name);
 }

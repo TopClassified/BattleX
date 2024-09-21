@@ -26,9 +26,8 @@ TIMELINE_IMPLEMENT_TRACK(FBXTLTaskTrackPanel);
 #pragma region Important
 FBXTLTaskTrackPanel::FBXTLTaskTrackPanel
 (
-	const TSharedRef<FBXTLController>& InController, UBXTask* InTask,
-	const FText& InDisplayName, const FText& InToolTipText
-) : FTimelineTrack(InController, InDisplayName, InToolTipText), CachedTask(InTask)
+	const TSharedRef<FBXTLController>& InController, UBXTask* InTask, const FText& InToolTipText
+) : FTimelineTrack(InController, InTask->GetDisplayName(), InToolTipText), CachedTask(InTask)
 {
 	Controller = InController;
 
@@ -73,9 +72,8 @@ TSharedRef<SWidget> FBXTLTaskTrackPanel::GenerateContainerWidgetForOutliner(cons
 		.TrackPanelArea(OuterBorder)
 		.InlineEditableTextBlock
 		(
-			SNew(SInlineEditableTextBlock)
-			.Text_Lambda([this]() { return DisplayName; })
-			.IsSelected(FIsSelected::CreateLambda([]() { return false; }))
+			SNew(STextBlock)
+			.Text_Lambda([this]() { return CachedTask.IsValid() ? CachedTask->GetDisplayName() : DisplayName; })
 		);
 
 	return TaskTrackPanel;

@@ -161,16 +161,19 @@ void FBXTLEditor::Tick(float DeltaTime)
 	PreviewProxy->Tick(DeltaTime);
 
 	// 对齐时间属性
-	if (const UBXTLEditorSettings* Setting = GetDefault<UBXTLEditorSettings>())
+	int64 CurrentTS = UBXFunctionLibrary::GetUtcMillisecond();
+	if (CurrentTS - AlignTimePropertyTS > 125 && EditAsset.IsValid())
 	{
-		if (EditAsset.IsValid())
-		{
-			EditAsset->AlignTimeProperty(Setting->PreviewTickRate);
-		}
+		AlignTimePropertyTS = CurrentTS;
 
-		if (UBXTLGraph* Graph = Cast<UBXTLGraph>(EditAsset->Graph))
+		if (const UBXTLEditorSettings* Setting = GetDefault<UBXTLEditorSettings>())
 		{
-			Graph->AlignTimeProperty(Setting->PreviewTickRate);
+			if (UBXTLGraph* Graph = Cast<UBXTLGraph>(EditAsset->Graph))
+			{
+				Graph->AlignTimeProperty(Setting->PreviewTickRate);
+			}
+
+			EditAsset->AlignTimeProperty(Setting->PreviewTickRate);
 		}
 	}
 
@@ -853,7 +856,7 @@ void FBXTLEditor::SetGraphEditorViewLocationByTask(UBXTask* InTask)
 	{
 		if (UEdGraphNode* Node = Graph->GetGraphNodeByTask(InTask))
 		{
-			GraphEditor->SetViewLocation(FVector2D(Node->NodePosX - 200.0f, Node->NodePosY - 200.0f), 1.0f);
+			GraphEditor->SetViewLocation(FVector2D(Node->NodePosX - 100.0f, Node->NodePosY - 100.0f), 1.0f);
 		}
 	}
 }

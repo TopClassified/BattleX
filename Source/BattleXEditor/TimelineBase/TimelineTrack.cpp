@@ -17,7 +17,8 @@
 #define LOCTEXT_NAMESPACE "FTimelineTrack"
 
 const float FTimelineTrack::OutlinerRightPadding = 10.0f;
-const float FTimelineTrack::TimelineTrackHeight = 32.0f;
+const float FTimelineTrack::TimelineTrackHeight = 42.0f;
+const float FTimelineTrack::TimelineTrackNodeHeight = 24.0f;
 const float FTimelineTrack::TimelineSubTrackHeight = 16.0f;
 
 TIMELINE_IMPLEMENT_TRACK(FTimelineTrack);

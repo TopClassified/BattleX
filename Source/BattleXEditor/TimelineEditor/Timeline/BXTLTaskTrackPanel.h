@@ -11,7 +11,7 @@ class FBXTLTaskTrackPanel : public FTimelineTrack
 
 #pragma region Important
 public:
-	FBXTLTaskTrackPanel(const TSharedRef<class FBXTLController>& InController, class UBXTask* InTask, const FText& InDisplayName, const FText& InToolTipText);
+	FBXTLTaskTrackPanel(const TSharedRef<class FBXTLController>& InController, class UBXTask* InTask, const FText& InToolTipText);
 
 	// 绘制Task时间轨道
 	TSharedRef<SWidget> GenerateContainerWidgetForTimeline() override;

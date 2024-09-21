@@ -26,6 +26,9 @@ public:
 	// 刷新图表
 	void RefreshGraph();
 
+	// 刷新图表信息
+	void RefreshGraphInformation();
+
 	// 检查Task节点是否合法
 	bool CheckTaskNodeValid(UBXTask* InTask);
 

@@ -148,6 +148,9 @@ private:
 	// 工具栏
 	TSharedPtr<class FBXTLEditorToolbar> EditorToolbar;
 
+	// 刷新时间属性时间戳
+	int64 AlignTimePropertyTS = 0;
+
 #pragma endregion Editor
 
 

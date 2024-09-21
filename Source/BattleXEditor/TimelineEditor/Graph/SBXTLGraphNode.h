@@ -15,4 +15,6 @@ public:
 
 	void UpdateGraphNode() override;
 
+	bool IsNameReadOnly() const override;
+
 };

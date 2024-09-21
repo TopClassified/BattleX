@@ -90,10 +90,18 @@ public:
 
 #pragma region Editor
 #if WITH_EDITORONLY_DATA
-protected:
+public:
+	// 编辑器名称
+	UPROPERTY(EditDefaultsOnly, Category = "Editor")
+	FText DisplayName;
+
 	// 编辑器注释
 	UPROPERTY(EditDefaultsOnly, Category = "Editor")
 	FText Annotation;
+
+	// 被哪些任务触发
+	UPROPERTY(VisibleDefaultsOnly, Category = "Event")
+	TArray<TSoftObjectPtr<UBXTask>> TriggeredByList;
 #endif
 
 #if WITH_EDITOR

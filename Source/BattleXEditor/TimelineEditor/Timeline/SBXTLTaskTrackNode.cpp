@@ -85,6 +85,60 @@ void FBXTLTaskNodeData::SetDuration(float InDuration)
 	}
 }
 
+bool FBXTLTaskNodeData::CheckTriggerByTimeline() const
+{
+	if (CachedTask.IsValid())
+	{
+		return (CachedTask->TriggerTypes & 1) > 0;
+	}
+
+	return false;
+}
+
+bool FBXTLTaskNodeData::CheckTriggerByOtherTask() const
+{
+	if (!CachedTask.IsValid())
+	{
+		return false;
+	}
+
+	for (TArray<TSoftObjectPtr<UBXTask>>::TIterator It(CachedTask->TriggeredByList); It; ++It)
+	{
+		if (It->Get())
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool FBXTLTaskNodeData::CheckInputDataByOtherTask() const
+{
+	if (!CachedTask.IsValid())
+	{
+		return false;
+	}
+
+	for (TArray<FBXTInputInfo>::TIterator It(CachedTask->CollisionInputDatas); It; ++It)
+	{
+		if (It->DataTask.Get())
+		{
+			return true;
+		}
+	}
+
+	for (TArray<FBXTInputInfo>::TIterator It(CachedTask->InputDatas); It; ++It)
+	{
+		if (It->DataTask.Get())
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 
 
 
@@ -94,14 +148,15 @@ void FBXTLTaskNodeData::SetDuration(float InDuration)
 namespace BXTLTTN
 {
 	const float ScrubSizeX = 10.0f;
+	const float NodePadding = 2.0f;
 	const float TextOffsetX = 4.0f;
-	const float TextExpandSizeY = 4.0f;
 	const float WidgetExpandSizeX = 200.0f;
 }
 
 void SBXTLTaskTrackNode::Construct(const FArguments& InArgs)
 {
 	Font = FCoreStyle::GetDefaultFontStyle("Regular", 10);
+	SubFont = FCoreStyle::GetDefaultFontStyle("Regular", 6);
 	bSelected = false;
 	DragIndex = INDEX_NONE;
 	DragType = EDragType::None;
@@ -156,40 +211,56 @@ int32 SBXTLTaskTrackNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allot
 		BoxColor = FLinearColor(0.73f, 0.36f, 0.0f);
 	}
 
-	float BoxHeightPosition = FTimelineTrack::TimelineTrackHeight * 0.125f;
+	const FSlateBrush* StyleInfo = FAppStyle::GetBrush(TEXT("SpecialEditableTextImageNormal"));
+
+	bool bTriggered = TaskNodeData.CheckTriggerByOtherTask();
+	bool bInputData = TaskNodeData.CheckInputDataByOtherTask();
+
+	// 绘制被触发标记
+	FText Sign1Text = FText::FromString(TEXT("T"));
+	FVector2f Sign1TextSize = FVector2f(8.0f, 8.0f);
+	if (bTriggered)
+	{
+		FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(Sign1TextSize, FSlateLayoutTransform(FVector2f(1.0f, BXTLTTN::NodePadding))), Sign1Text, SubFont, ESlateDrawEffect::None, FLinearColor::Black);
+	}
+	FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(FVector2f(Sign1TextSize.X, Sign1TextSize.Y), FSlateLayoutTransform(FVector2f(0.0f, BXTLTTN::NodePadding))), StyleInfo, ESlateDrawEffect::None, bTriggered ? FLinearColor::White : FLinearColor::Gray);
+	// 绘制输入数据标记
+	FText Sign2Text = FText::FromString(TEXT("D"));
+	FVector2f Sign2TextSize = FVector2f(8.0f, 8.0f);
+	if (bInputData)
+	{
+		FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(Sign2TextSize, FSlateLayoutTransform(FVector2f(Sign1TextSize.X + BXTLTTN::NodePadding + 1.0f, BXTLTTN::NodePadding))), Sign2Text, SubFont, ESlateDrawEffect::None, FLinearColor::Black);
+	}
+	FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(FVector2f(Sign2TextSize.X, Sign1TextSize.Y), FSlateLayoutTransform(FVector2f(Sign1TextSize.X + BXTLTTN::NodePadding, BXTLTTN::NodePadding))), StyleInfo, ESlateDrawEffect::None, bInputData ? FLinearColor::Yellow : FLinearColor::Gray);
 
 	// 持续任务
 	if (TaskDurationSizeX > 0.0f)
 	{
-		FVector2f DurationBoxSize = FVector2f(TaskDurationSizeX, TextSize.Y + BXTLTTN::TextExpandSizeY * 2.0f);
-		FVector2f DurationBoxPosition = FVector2f(0.0f, BoxHeightPosition);
+		FVector2f DurationBoxSize = FVector2f(TaskDurationSizeX, FTimelineTrack::TimelineTrackNodeHeight);
+		FVector2f DurationBoxPosition = FVector2f(0.0f, Sign1TextSize.Y + BXTLTTN::NodePadding * 2.0f);
 
-		const FSlateBrush* StyleInfo = FAppStyle::GetBrush(TEXT("SpecialEditableTextImageNormal"));
 		FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(DurationBoxSize, FSlateLayoutTransform(DurationBoxPosition)), StyleInfo, ESlateDrawEffect::None, BoxColor);
 	}
 	// 瞬时任务
 	else
 	{
-		float BoxSize = TextSize.Y + BXTLTTN::TextExpandSizeY * 2.0f;
-		const FSlateBrush* StyleInfo = FAppStyle::GetBrush(TEXT("SpecialEditableTextImageNormal"));
-
 		FSlateDrawElement::MakeBox
 		(
 			OutDrawElements, LayerId, 
-			AllottedGeometry.ToPaintGeometry(FVector2f(2.0f, BoxSize), FSlateLayoutTransform(FVector2f(0.0f, BoxHeightPosition))),
+			AllottedGeometry.ToPaintGeometry(FVector2f(2.0f, FTimelineTrack::TimelineTrackNodeHeight), FSlateLayoutTransform(FVector2f(0.0f, Sign1TextSize.Y + BXTLTTN::NodePadding * 2.0f))),
 			StyleInfo, ESlateDrawEffect::None, BoxColor
 		);
 
 		FSlateDrawElement::MakeBox
 		(
 			OutDrawElements, LayerId,
-			AllottedGeometry.ToPaintGeometry(FVector2f(BoxSize * 0.75f, BoxSize * 0.5f), FSlateLayoutTransform(FVector2f(0.0f, BoxHeightPosition))),
+			AllottedGeometry.ToPaintGeometry(FVector2f(FTimelineTrack::TimelineTrackNodeHeight * 0.75f, FTimelineTrack::TimelineTrackNodeHeight * 0.5f), FSlateLayoutTransform(FVector2f(0.0f, Sign1TextSize.Y + BXTLTTN::NodePadding * 2.0f))),
 			StyleInfo, ESlateDrawEffect::None, BoxColor
 		);
 	}
 
 	// 文字
-	FVector2f TextPosition(BXTLTTN::TextOffsetX, FTimelineTrack::TimelineTrackHeight * 0.5f - TextSize.Y * 0.5f);
+	FVector2f TextPosition(BXTLTTN::TextOffsetX, (FTimelineTrack::TimelineTrackNodeHeight - TextSize.Y) * 0.5f + Sign1TextSize.Y + BXTLTTN::NodePadding * 2.0f);
 	FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(TextSize, FSlateLayoutTransform(TextPosition)), Text, Font, ESlateDrawEffect::None, FLinearColor::White);
 
 	return TextLayerID;
@@ -293,7 +364,6 @@ void SBXTLTaskTrackNode::UpdateSizeAndPosition(const FGeometry& AllottedGeometry
 
 	const TSharedRef<FSlateFontMeasure> FontMeasureService = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
 	TextSize = FontMeasureService->Measure(GetNotifyText(), Font);
-	TextSize.Y = FTimelineTrack::TimelineTrackHeight * 0.75f - BXTLTTN::TextExpandSizeY * 2.0f;
 
 	WidgetX = TaskTimePositionX;
 	WidgetSize = FVector2D(FMath::Max3(TaskDurationSizeX, TextSize.X * 1.2f, BXTLTTN::ScrubSizeX) + BXTLTTN::WidgetExpandSizeX, FTimelineTrack::TimelineTrackHeight);
@@ -331,6 +401,11 @@ bool SBXTLTaskTrackNode::SupportsKeyboardFocus() const
 void SBXTLTaskTrackNode::RefreshDragType(const FVector2D& CursorTrackPosition)
 {
 	DragType = EDragType::None;
+
+	if (!TaskNodeData.CheckTriggerByTimeline())
+	{
+		return;
+	}
 
 	FVector2D NodePosition(0.0f, 0.0f);
 	FVector2D NodeSize(WidgetSize.X, FTimelineTrack::TimelineTrackHeight);

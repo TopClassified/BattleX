@@ -219,6 +219,10 @@ public:
 
 	static const float TimelineTrackHeight;
 
+	static const float TimelineTrackNodeHeight;
+
+	static const float TimelineSignNodeHeight;
+
 	static const float TimelineSubTrackHeight;
 
 protected:
