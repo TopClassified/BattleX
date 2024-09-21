@@ -218,18 +218,18 @@ int32 SBXTLTaskTrackNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allot
 
 	// 绘制被触发标记
 	FText Sign1Text = FText::FromString(TEXT("T"));
-	FVector2f Sign1TextSize = FVector2f(8.0f, 8.0f);
+	FVector2f Sign1TextSize = FVector2f(11.0f, 11.0f);
 	if (bTriggered)
 	{
-		FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(Sign1TextSize, FSlateLayoutTransform(FVector2f(1.0f, BXTLTTN::NodePadding))), Sign1Text, SubFont, ESlateDrawEffect::None, FLinearColor::Black);
+		FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(Sign1TextSize, FSlateLayoutTransform(FVector2f(3.0f, BXTLTTN::NodePadding + 1.0f))), Sign1Text, SubFont, ESlateDrawEffect::None, FLinearColor::Black);
 	}
 	FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(FVector2f(Sign1TextSize.X, Sign1TextSize.Y), FSlateLayoutTransform(FVector2f(0.0f, BXTLTTN::NodePadding))), StyleInfo, ESlateDrawEffect::None, bTriggered ? FLinearColor::White : FLinearColor::Gray);
 	// 绘制输入数据标记
 	FText Sign2Text = FText::FromString(TEXT("D"));
-	FVector2f Sign2TextSize = FVector2f(8.0f, 8.0f);
+	FVector2f Sign2TextSize = FVector2f(11.0f, 11.0f);
 	if (bInputData)
 	{
-		FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(Sign2TextSize, FSlateLayoutTransform(FVector2f(Sign1TextSize.X + BXTLTTN::NodePadding + 1.0f, BXTLTTN::NodePadding))), Sign2Text, SubFont, ESlateDrawEffect::None, FLinearColor::Black);
+		FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(Sign2TextSize, FSlateLayoutTransform(FVector2f(Sign1TextSize.X + BXTLTTN::NodePadding + 3.0f, BXTLTTN::NodePadding + 1.0f))), Sign2Text, SubFont, ESlateDrawEffect::None, FLinearColor::Black);
 	}
 	FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(FVector2f(Sign2TextSize.X, Sign1TextSize.Y), FSlateLayoutTransform(FVector2f(Sign1TextSize.X + BXTLTTN::NodePadding, BXTLTTN::NodePadding))), StyleInfo, ESlateDrawEffect::None, bInputData ? FLinearColor::Yellow : FLinearColor::Gray);
 
