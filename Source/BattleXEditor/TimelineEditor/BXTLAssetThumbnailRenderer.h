@@ -2,7 +2,7 @@
 
 #include "ThumbnailRendering/DefaultSizedThumbnailRenderer.h"
 
-#include "BXTLAssetThumbnailRenderer.generated.h"
+#include "BXTLAssetThumbnailRenderer.generated.h" 
 
 
 

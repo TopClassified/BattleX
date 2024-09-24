@@ -1,6 +1,6 @@
 #include "BXShapeComponentVisualizer.h"
 
-#include "BXFunctionLibrary.h"
+#include "BXFunctionLibrary.h" 
 
 
 
@@ -48,13 +48,13 @@ void FBXShapeComponentVisualizer::DrawVisualization(const UActorComponent* Compo
 	USceneComponent* AttachParent = Owner->GetRootComponent();
 	for (TMap<FName, FBXShapeInformation>::TConstIterator It(ShapeComponent->ShapeInformations); It; ++It)
 	{
-		AttachParent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, It->Value.AttachToComponent, nullptr, false);
+		AttachParent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, It->Value.AttachParent, nullptr, false);
 		if (!AttachParent)
 		{
 			AttachParent = Owner->GetRootComponent();
 		}
 
-		FTransform WTransform = It->Value.Relation * AttachParent->GetSocketTransform(It->Value.AttachToSocket.BoneName);
+		FTransform WTransform = It->Value.Relation * AttachParent->GetSocketTransform(It->Value.Socket.BoneName);
 
 		if (It->Value.ShapeType == EBXShapeType::ST_Sphere)
 		{
@@ -109,7 +109,7 @@ void FBXShapeComponentVisualizer::DrawVisualization(const UActorComponent* Compo
 			float Radius = It->Value.ShapeSize.X;
 			float HalfHeight = It->Value.ShapeSize.Y;
 
-			// »æÖÆÔ­ÇĞÃæ
+			// ç»˜åˆ¶åŸåˆ‡é¢
 			const float HalfAxis = FMath::Max<float>(HalfHeight - Radius, 1.f);
 			const FVector TopEnd = Origin + HalfAxis * ZAxis;
 			const FVector BottomEnd = Origin - HalfAxis * ZAxis;
@@ -117,7 +117,7 @@ void FBXShapeComponentVisualizer::DrawVisualization(const UActorComponent* Compo
 			DrawCircle(PDI, TopEnd, XAxis, YAxis, Radius);
 			DrawCircle(PDI, BottomEnd, XAxis, YAxis, Radius);
 
-			// »æÖÆñ·¶¥
+			// ç»˜åˆ¶ç©¹é¡¶
 			DrawHalfCircle(PDI, TopEnd, YAxis, ZAxis, Radius);
 			DrawHalfCircle(PDI, TopEnd, XAxis, ZAxis, Radius);
 
@@ -126,7 +126,7 @@ void FBXShapeComponentVisualizer::DrawVisualization(const UActorComponent* Compo
 			DrawHalfCircle(PDI, BottomEnd, YAxis, NegZAxis, Radius);
 			DrawHalfCircle(PDI, BottomEnd, XAxis, NegZAxis, Radius);
 
-			// »æÖÆÊúÏß
+			// ç»˜åˆ¶ç«–çº¿
 			PDI->DrawLine(TopEnd + Radius * XAxis, BottomEnd + Radius * XAxis, FLinearColor::Red, SDPG_Foreground);
 			PDI->DrawLine(TopEnd - Radius * XAxis, BottomEnd - Radius * XAxis, FLinearColor::Red, SDPG_Foreground);
 			PDI->DrawLine(TopEnd + Radius * YAxis, BottomEnd + Radius * YAxis, FLinearColor::Red, SDPG_Foreground);

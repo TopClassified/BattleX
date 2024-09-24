@@ -6,7 +6,7 @@
 
 #include "BXEnums.h"
 
-#include "BXStructs.generated.h"
+#include "BXStructs.generated.h" 
 
 
 
@@ -217,11 +217,11 @@ public:
 
 	// 挂接到哪个组件
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FName AttachToComponent = NAME_None;
+	FName AttachParent = NAME_None;
 
 	// 挂接到哪个Socket
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FBXBoneSelector AttachToSocket;
+	FBXBoneSelector Socket;
 
 	// 相对方位
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)

@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "Timeline/BXTLAsset.h"
 
-#include "BXSkillAsset.generated.h"
+#include "BXSkillAsset.generated.h" 
 
 
 

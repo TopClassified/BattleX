@@ -5,7 +5,7 @@
 #include "Curves/CurveVector.h"
 #include "Curves/CurveLinearColor.h"
 
-#include "BXCurves.generated.h"
+#include "BXCurves.generated.h" 
 
 
 

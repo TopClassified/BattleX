@@ -8,7 +8,7 @@
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
-#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBorder.h" 
 
 
 

@@ -6,7 +6,7 @@
 #include "BXTEnums.h"
 #include "BXTStructs.h"
 
-#include "BXTask.generated.h"
+#include "BXTask.generated.h" 
 
 
 

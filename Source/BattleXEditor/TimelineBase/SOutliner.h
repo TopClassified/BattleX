@@ -7,7 +7,7 @@
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/Views/STreeView.h"
-#include "TimelineTrack.h"
+#include "TimelineTrack.h" 
 
 class SListPanel;
 class FTimelineController;

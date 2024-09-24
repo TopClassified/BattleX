@@ -28,21 +28,21 @@ public:
 
 #pragma region BodyPart
 public:
-	// ¸ù¾İÉíÌå²¿Î»ÀàĞÍ£¬»ñÈ¡ÉíÌå²¿Î»Êı¾İ
+	// æ ¹æ®èº«ä½“éƒ¨ä½ç±»å‹ï¼Œè·å–èº«ä½“éƒ¨ä½æ•°æ®
 	UFUNCTION(BlueprintCallable)
 	bool GetBodyPartByType(EBXBodyPartType InType, FBXBodyPartRTInformation& OutInformation);
 
-	// ¸ù¾İ×é¼şºÍ¹Ç÷ÀÃû³Æ£¬»ñÈ¡ÉíÌå²¿Î»Êı¾İ
+	// æ ¹æ®ç»„ä»¶å’Œéª¨éª¼åç§°ï¼Œè·å–èº«ä½“éƒ¨ä½æ•°æ®
 	UFUNCTION(BlueprintCallable)
 	bool GetBodyPartByComponentAndBone(USceneComponent* InComponent, FName InBoneName, FBXBodyPartRTInformation& OutInformation);
 
 public:
-	// ÉíÌå²¿Î»ÅäÖÃĞÅÏ¢
+	// èº«ä½“éƒ¨ä½é…ç½®ä¿¡æ¯
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BodyPart")
 	TMap<EBXBodyPartType, FBXBodyPartConfig> BodyPartConfigs;
 
 protected:
-	// ÉíÌå²¿Î»ÔËĞĞĞÅÏ¢
+	// èº«ä½“éƒ¨ä½è¿è¡Œä¿¡æ¯
 	UPROPERTY(Transient, BlueprintReadWrite, Category = "BodyPart")
 	TMap<EBXBodyPartType, FBXBodyPartRTInformation> BodyPartRTDatas;
 

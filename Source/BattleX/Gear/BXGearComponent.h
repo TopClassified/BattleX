@@ -4,23 +4,21 @@
 #include "Components/ActorComponent.h"
 
 #include "BXGear.h"
+#include "BXGearEnums.h"
 
-#include "BXGearComponent.generated.h"
+#include "BXGearComponent.generated.h" 
 
 
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPreEquipGearDelegate, ABXGear*, Gear, UPARAM(ref) FBXEquipGearInformation&, Information);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPostEquipGearDelegate, ABXGear*, Gear, UPARAM(ref) FBXEquipGearInformation&, Information);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPreUnequipGearDelegate, ABXGear*, Gear, UPARAM(ref) FBXEquipGearInformation&, Information);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPostUnequipGearDelegate, ABXGear*, Gear, UPARAM(ref) FBXEquipGearInformation&, Information);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPreUsingGearDelegate, ABXGear*, Gear, UPARAM(ref) FBXUsingGearInformation&, Information);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPostUsingGearDelegate, ABXGear*, Gear, UPARAM(ref) FBXUsingGearInformation&, Information);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPreUnusingGearDelegate, ABXGear*, Gear, UPARAM(ref) FBXUsingGearInformation&, Information);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPostUnusingGearDelegate, ABXGear*, Gear, UPARAM(ref) FBXUsingGearInformation&, Information);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPreSheathGearDelegate, ABXGear*, Gear, UPARAM(ref) FBXSheathGearInformation&, Information);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPostSheathGearDelegate, ABXGear*, Gear, UPARAM(ref) FBXSheathGearInformation&, Information);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPreUnsheathGearDelegate, ABXGear*, Gear, UPARAM(ref) FBXSheathGearInformation&, Information);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPostUnsheathGearDelegate, ABXGear*, Gear, UPARAM(ref) FBXSheathGearInformation&, Information);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPreEquipGearDelegate, UPARAM(ref) FBXEquipGearInformation&, Information);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPostEquipGearDelegate, UPARAM(ref) FBXEquipGearInformation&, Information);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPreUnequipGearDelegate, UPARAM(ref) FBXEquipGearInformation&, Information);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPostUnequipGearDelegate, UPARAM(ref) FBXEquipGearInformation&, Information);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPreUsingGearDelegate, UPARAM(ref) FBXUsingGearInformation&, Information);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPostUsingGearDelegate, UPARAM(ref) FBXUsingGearInformation&, Information);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPreUnusingGearDelegate, UPARAM(ref) FBXUsingGearInformation&, Information);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPostUnusingGearDelegate, UPARAM(ref) FBXUsingGearInformation&, Information);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FChangeGearStateDelegate, ABXGear*, Gear, EBXGearState, OldState, EBXGearState, NewState);
 
 
 
@@ -36,15 +34,15 @@ public:
 	virtual void BeginPlay() override;
 
 public:
-	// Ã¿¸ö²å²ÛµÄ×î´óÈİÁ¿
+	// æ¯ä¸ªæ’æ§½çš„æœ€å¤§å®¹é‡
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TMap<EBXGearSlot, int32> SlotMaxSize;
 
-	// ×°ÉÏµÄ×°±¸
+	// è£…ä¸Šçš„è£…å¤‡
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TMap<EBXGearSlot, FBXGears> EquipGears;
 
-	// ÕıÔÚÊ¹ÓÃµÄ×°±¸Ë÷Òı
+	// æ­£åœ¨ä½¿ç”¨çš„è£…å¤‡ç´¢å¼•
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TMap<EBXGearSlot, int32> UsingGearIndexs;
 
@@ -54,62 +52,47 @@ public:
 	UPROPERTY(Transient)
 	FBXUsingGearInformation HelpUsingInformation;
 
-	UPROPERTY(Transient)
-	FBXSheathGearInformation HelpSheathInformation;
-
 #pragma endregion Important
 
 
 
 #pragma region Delegate
 public:
-	// ×°±¸Ç°
+	// è£…å¤‡å‰
 	UPROPERTY(BlueprintAssignable)
-	FPreEquipGearDelegate OnPreEquipGear;
+	FPreEquipGearDelegate PreEquipGearEvent;
 
-	// ×°±¸ºó
+	// è£…å¤‡å
 	UPROPERTY(BlueprintAssignable)
-	FPostEquipGearDelegate OnPostEquipGear;
+	FPostEquipGearDelegate PostEquipGearEvent;
 
-	// Ğ¶ÏÂ×°±¸Ç°
+	// å¸ä¸‹è£…å¤‡å‰
 	UPROPERTY(BlueprintAssignable)
-	FPreUnequipGearDelegate OnPreUnequipGear;
+	FPreUnequipGearDelegate PreUnequipGearEvent;
 
-	// Ğ¶ÏÂ×°±¸ºó
+	// å¸ä¸‹è£…å¤‡å
 	UPROPERTY(BlueprintAssignable)
-	FPostUnequipGearDelegate OnPostUnequipGear;
+	FPostUnequipGearDelegate PostUnequipGearEvent;
 
-	// Ê¹ÓÃ×°±¸Ç°
+	// ä½¿ç”¨è£…å¤‡å‰
 	UPROPERTY(BlueprintAssignable)
-	FPreUsingGearDelegate OnPreUsingGear;
+	FPreUsingGearDelegate PreUsingGearEvent;
 
-	// Ê¹ÓÃ×°±¸ºó
+	// ä½¿ç”¨è£…å¤‡å
 	UPROPERTY(BlueprintAssignable)
-	FPostUsingGearDelegate OnPostUsingGear;
+	FPostUsingGearDelegate PostUsingGearEvent;
 
-	// ÆúÓÃ×°±¸Ç°
+	// å¼ƒç”¨è£…å¤‡å‰
 	UPROPERTY(BlueprintAssignable)
-	FPreUnusingGearDelegate OnPreUnusingGear;
+	FPreUnusingGearDelegate PreUnusingGearEvent;
 
-	// ÆúÓÃ×°±¸ºó
+	// å¼ƒç”¨è£…å¤‡å
 	UPROPERTY(BlueprintAssignable)
-	FPostUnusingGearDelegate OnPostUnusingGear;
+	FPostUnusingGearDelegate PostUnusingGearEvent;
 
-	// ×°±¸¹ÒÆğÇ°
+	// è£…å¤‡çŠ¶æ€å‘ç”Ÿæ”¹å˜
 	UPROPERTY(BlueprintAssignable)
-	FPreSheathGearDelegate OnPreSheathGear;
-
-	// ×°±¸¹ÒÆğºó
-	UPROPERTY(BlueprintAssignable)
-	FPostSheathGearDelegate OnPostSheathGear;
-
-	// ×°±¸»½ĞÑÇ°
-	UPROPERTY(BlueprintAssignable)
-	FPreUnsheathGearDelegate OnPreUnsheathGear;
-
-	// ×°±¸»½ĞÑºó
-	UPROPERTY(BlueprintAssignable)
-	FPostUnsheathGearDelegate OnPostUnsheathGear;
+	FChangeGearStateDelegate ChangeGearStateEvent;
 
 #pragma endregion Delegate
 
@@ -117,33 +100,37 @@ public:
 
 #pragma region API
 public:
-	// »ñÈ¡ÕıÔÚÊ¹ÓÃµÄ×°±¸
+	// è·å–æ­£åœ¨ä½¿ç”¨çš„è£…å¤‡
 	UFUNCTION(BlueprintCallable)
 	virtual ABXGear* GetUsingGear(EBXGearSlot InSlot);
 
-	// ÇĞ»»ÕıÔÚÊ¹ÓÃµÄ×°±¸
+	// è·å–æ­£åœ¨ä½¿ç”¨çš„è£…å¤‡çš„æ’æ§½
+	UFUNCTION(BlueprintCallable)
+	virtual EBXGearSlot GetUsingGearSlot(ABXGear* InGear);
+
+	// åˆ‡æ¢æ­£åœ¨ä½¿ç”¨çš„è£…å¤‡
 	UFUNCTION(BlueprintCallable)
 	virtual void SwitchUsingGear(EBXGearSlot InSlot, int32 InIndex);
 
-	// ÊÕÆğ×°±¸
+	// æ”¹å˜è£…å¤‡çŠ¶æ€
 	UFUNCTION(BlueprintCallable)
-	virtual void SheathGear(EBXGearSlot InSlot, bool bSheath);
+	virtual void ChangeUsingGearState(EBXGearSlot InSlot, EBXGearState InNewState);
 
-	// »ñÈ¡×°±¸²å²ÛµÄ×°±¸ÁĞ±í
+	// è·å–è£…å¤‡æ’æ§½çš„è£…å¤‡åˆ—è¡¨
 	UFUNCTION(BlueprintCallable)
 	virtual void GetEquipGears(EBXGearSlot InSlot, TArray<ABXGear*>& OutGears);
 
-	// ¸Ä±ä×°±¸²å²Û
+	// æ”¹å˜è£…å¤‡æ’æ§½
 	UFUNCTION(BlueprintCallable)
-	virtual void ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGear* InGear);
+	virtual void ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGear* InGear, class USkeletalMeshComponent* AttachParent);
 
-	// ¸Ä±ä×°±¸²å²Û
+	// æ”¹å˜è£…å¤‡æ’æ§½
 	UFUNCTION(BlueprintCallable)
-	virtual void ChangeEquipGearByClass(EBXGearSlot InSlot, int32 InIndex, UClass* InGearClass);
+	virtual void ChangeEquipGearByClass(EBXGearSlot InSlot, int32 InIndex, UClass* InGearClass, class USkeletalMeshComponent* AttachParent);
 
-	// ¸Ä±ä×°±¸²å²Û
+	// æ”¹å˜è£…å¤‡æ’æ§½
 	UFUNCTION(BlueprintCallable)
-	virtual void ChangeEquipGearByData(EBXGearSlot InSlot, int32 InIndex, UBXGearData* InGearData);
+	virtual void ChangeEquipGearByData(EBXGearSlot InSlot, int32 InIndex, UBXGearData* InGearData, class USkeletalMeshComponent* AttachParent);
 
 #pragma endregion API
 

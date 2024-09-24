@@ -6,7 +6,7 @@
 #include "BXStructs.h"
 
 #include "BXShapeComponent.generated.h"
-
+ 
 
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
@@ -19,7 +19,7 @@ public:
 	UBXShapeComponent();
 
 public:
-	// ĞÎ×´ĞÅÏ¢
+	// å½¢çŠ¶ä¿¡æ¯
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TMap<FName, FBXShapeInformation> ShapeInformations;
 

@@ -4,7 +4,7 @@
 
 #include "EdGraph/EdGraphNode.h"
 
-#include "BXTLGraphTransitionNode.generated.h"
+#include "BXTLGraphTransitionNode.generated.h" 
 
 
 

@@ -4,7 +4,7 @@
 #include "TimelineTrack.h"
 #include "ITimeSlider.h"
 #include "Widgets/SCompoundWidget.h"
-#include "Widgets/DeclarativeSyntaxSupport.h"
+#include "Widgets/DeclarativeSyntaxSupport.h" 
 
 class FPaintArgs;
 class FSlateWindowElementList;

@@ -7,7 +7,7 @@
 
 #include "Layout/Geometry.h"
 #include "Layout/Children.h"
-#include "Widgets/SPanel.h"
+#include "Widgets/SPanel.h" 
 #include "Widgets/DeclarativeSyntaxSupport.h"
 
 class FPaintArgs;

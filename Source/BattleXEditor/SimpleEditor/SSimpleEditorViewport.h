@@ -8,7 +8,7 @@
 #include "SViewportToolBar.h"
 
 #include "SimpleEditorViewportClient.h"
-#include "Toolkits/AssetEditorToolkit.h"
+#include "Toolkits/AssetEditorToolkit.h" 
 
 
 struct FEditorViewportParameter

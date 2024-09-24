@@ -2,7 +2,7 @@
 
 
 
-#pragma region Important
+#pragma region Important 
 UBXShapeComponent::UBXShapeComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;

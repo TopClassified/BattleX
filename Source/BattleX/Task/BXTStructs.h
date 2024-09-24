@@ -12,7 +12,7 @@
 #include "BXStructs.h"
 #include "BXFunctionLibrary.h"
 
-#include "BXTStructs.generated.h"
+#include "BXTStructs.generated.h" 
 
 
 

@@ -4,7 +4,7 @@
 #include "Misc/Attribute.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
-#include "TimeSliderController.h"
+#include "TimeSliderController.h" 
 
 class FPaintArgs;
 class FSlateWindowElementList;

@@ -34,7 +34,7 @@
 
 
 
-#define LOCTEXT_NAMESPACE "STimeline"
+#define LOCTEXT_NAMESPACE "STimeline" 
 
 const FName STimeline::InSnapName = TEXT("TimelineSnap");
 

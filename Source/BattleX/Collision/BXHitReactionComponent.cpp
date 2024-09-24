@@ -15,7 +15,7 @@ void UBXHitReactionComponent::BeginPlay()
 {
 	SetComponentTickEnabled(false);
 
-	// ³õÊ¼»¯ÉíÌå²¿Î»Êı¾İ
+	// åˆå§‹åŒ–èº«ä½“éƒ¨ä½æ•°æ®
 	for (TMap<EBXBodyPartType, FBXBodyPartConfig>::TIterator It(BodyPartConfigs); It; ++It)
 	{
 		USceneComponent* Component = UBXFunctionLibrary::GetSceneComponentByNameAndClass(GetOwner(), It->Value.ComponentName, UPrimitiveComponent::StaticClass(), false);

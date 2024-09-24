@@ -7,7 +7,7 @@
 #include "BXTLAsset.h"
 
 #include "SBXTLGraphNode.h"
-#include "BXTLGraphTransitionNode.h"
+#include "BXTLGraphTransitionNode.h" 
 
 
 

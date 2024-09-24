@@ -6,6 +6,32 @@
 
 
 
+// 装备挂接配置
+USTRUCT(BlueprintType)
+struct FBXGearAttachmentConfig
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	UPROPERTY(EditDefaultsOnly)
+	EBXGearSlot Slot = EBXGearSlot::GS_None;
+
+	UPROPERTY(EditDefaultsOnly)
+	EBXGearState State = EBXGearState::S_None;
+
+	UPROPERTY(EditDefaultsOnly)
+	TSoftObjectPtr<class USkeletalMesh> Mesh = nullptr;
+
+	UPROPERTY(EditDefaultsOnly)
+	FName Socket = NAME_None;
+
+	UPROPERTY(EditDefaultsOnly)
+	FTransform Relation = FTransform::Identity;
+
+};
+
+
+
 // 装上装备的相关信息
 USTRUCT(BlueprintType)
 struct FBXEquipGearInformation
@@ -13,7 +39,25 @@ struct FBXEquipGearInformation
 	GENERATED_USTRUCT_BODY()
 
 public:
+	// 装备
+	UPROPERTY(Transient, BlueprintReadWrite)
+	AActor* Gear = nullptr;
 
+	// 挂载到拥有者的哪个模型组件上
+	UPROPERTY(Transient, BlueprintReadWrite)
+	class USkeletalMeshComponent* AttachParent = nullptr;
+
+	// 拥有者的装备组件
+	UPROPERTY(Transient, BlueprintReadWrite)
+	class UBXGearComponent* OwnerComponent = nullptr;
+
+public:
+	void Reset()
+	{
+		Gear = nullptr;
+		AttachParent = nullptr;
+		OwnerComponent = nullptr;
+	}
 
 };
 
@@ -26,18 +70,9 @@ struct FBXUsingGearInformation
 	GENERATED_USTRUCT_BODY()
 
 public:
-
-};
-
-
-
-// 挂起装备相关信息
-USTRUCT(BlueprintType)
-struct FBXSheathGearInformation
-{
-	GENERATED_USTRUCT_BODY()
-
-public:
+	// 装备
+	UPROPERTY(Transient, BlueprintReadWrite)
+	AActor* Gear = nullptr;
 
 };
 

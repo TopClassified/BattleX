@@ -4,7 +4,7 @@
 
 
 
-#define LOCTEXT_NAMESPACE "BXTLGraphTransitionNode"
+#define LOCTEXT_NAMESPACE "BXTLGraphTransitionNode" 
 
 #pragma region Important
 UBXTLGraphTransitionNode::UBXTLGraphTransitionNode()

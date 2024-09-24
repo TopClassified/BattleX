@@ -5,7 +5,7 @@
 #include "Widgets/Text/SInlineEditableTextBlock.h"
 
 #include "BXTLGraphNode.h"
-#include "BXTLGraphTransitionNode.h"
+#include "BXTLGraphTransitionNode.h" 
 #include "SBXTLGraphTransitionPin.h"
 
 

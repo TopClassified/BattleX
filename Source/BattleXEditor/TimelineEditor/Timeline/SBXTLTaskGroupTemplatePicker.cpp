@@ -4,7 +4,7 @@
 #include "Widgets/Input/SComboBox.h"
 #include "Widgets/Input/SEditableText.h"
 
-#include "BXTLEditorTemplate.h"
+#include "BXTLEditorTemplate.h" 
 
 
 

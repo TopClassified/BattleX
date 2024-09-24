@@ -1,4 +1,4 @@
-#include "BXGearComponent.h"
+#include "BXGearComponent.h" 
 
 
 
@@ -37,6 +37,30 @@ ABXGear* UBXGearComponent::GetUsingGear(EBXGearSlot InSlot)
 	return nullptr;
 }
 
+EBXGearSlot UBXGearComponent::GetUsingGearSlot(ABXGear* InGear)
+{
+	for (TMap<EBXGearSlot, int32>::TIterator It(UsingGearIndexs); It; ++It)
+	{
+		FBXGears* GearList = EquipGears.Find(It->Key);
+		if (!GearList)
+		{
+			continue;
+		}
+
+		if (!GearList->List.IsValidIndex(It->Value))
+		{
+			continue;
+		}
+
+		if (GearList->List[It->Value] == InGear)
+		{
+			return It->Key;
+		}
+	}
+
+	return EBXGearSlot::GS_None;
+}
+
 void UBXGearComponent::SwitchUsingGear(EBXGearSlot InSlot, int32 InIndex)
 {
 	FBXGears* GearList = EquipGears.Find(InSlot);
@@ -62,30 +86,34 @@ void UBXGearComponent::SwitchUsingGear(EBXGearSlot InSlot, int32 InIndex)
 	if (CurrentGear)
 	{
 		CurrentGear->PreUnusing(HelpUsingInformation);
-		OnPreUnusingGear.Broadcast(CurrentGear, HelpUsingInformation);
+		HelpUsingInformation.Gear = CurrentGear;
+		PreUnusingGearEvent.Broadcast(HelpUsingInformation);
 	}
 	if (NewGear)
 	{
 		NewGear->PreUsing(HelpUsingInformation);
-		OnPreUsingGear.Broadcast(NewGear, HelpUsingInformation);
+		HelpUsingInformation.Gear = NewGear;
+		PreUsingGearEvent.Broadcast(HelpUsingInformation);
 	}
 
-	// ¸Ä±äÕýÔÚÊ¹ÓÃµÄ×°±¸
+	// æ”¹å˜æ­£åœ¨ä½¿ç”¨çš„è£…å¤‡
 	UsingGearIndexs.Add(InSlot, InIndex);
 
 	if (CurrentGear)
 	{
 		CurrentGear->PostUnusing(HelpUsingInformation);
-		OnPostUnusingGear.Broadcast(CurrentGear, HelpUsingInformation);
+		HelpUsingInformation.Gear = CurrentGear;
+		PostUnusingGearEvent.Broadcast(HelpUsingInformation);
 	}
 	if (NewGear)
 	{
 		NewGear->PostUsing(HelpUsingInformation);
-		OnPostUsingGear.Broadcast(NewGear, HelpUsingInformation);
+		HelpUsingInformation.Gear = NewGear;
+		PostUsingGearEvent.Broadcast(HelpUsingInformation);
 	}
 }
 
-void UBXGearComponent::SheathGear(EBXGearSlot InSlot, bool bSheath)
+void UBXGearComponent::ChangeUsingGearState(EBXGearSlot InSlot, EBXGearState InNewState)
 {
 	FBXGears* GearList = EquipGears.Find(InSlot);
 	if (!GearList)
@@ -110,22 +138,10 @@ void UBXGearComponent::SheathGear(EBXGearSlot InSlot, bool bSheath)
 		return;
 	}
 
-	if (bSheath)
-	{
-		CurrentGear->PreSheath(HelpSheathInformation);
-		OnPreSheathGear.Broadcast(CurrentGear, HelpSheathInformation);
+	EBXGearState OldState = CurrentGear->GetCurrentState();
 
-		CurrentGear->PostSheath(HelpSheathInformation);
-		OnPostSheathGear.Broadcast(CurrentGear, HelpSheathInformation);
-	}
-	else
-	{
-		CurrentGear->PreUnsheath(HelpSheathInformation);
-		OnPreUnsheathGear.Broadcast(CurrentGear, HelpSheathInformation);
-
-		CurrentGear->PostUnsheath(HelpSheathInformation);
-		OnPostUnsheathGear.Broadcast(CurrentGear, HelpSheathInformation);
-	}
+	CurrentGear->ChangeState(InNewState);
+	ChangeGearStateEvent.Broadcast(CurrentGear, OldState, InNewState);
 }
 
 void UBXGearComponent::GetEquipGears(EBXGearSlot InSlot, TArray<ABXGear*>& OutGears)
@@ -137,7 +153,7 @@ void UBXGearComponent::GetEquipGears(EBXGearSlot InSlot, TArray<ABXGear*>& OutGe
 	}
 }
 
-void UBXGearComponent::ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGear* InGear)
+void UBXGearComponent::ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGear* InGear, USkeletalMeshComponent* AttachParent)
 {
 	ABXGear* CurrentGear = nullptr;
 	if (FBXGears* GearList = EquipGears.Find(InSlot))
@@ -154,27 +170,34 @@ void UBXGearComponent::ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGea
 		CurrentUsingIndex = *Index;
 	}
 
+	// é‡ç½®è¾…åŠ©ç»“æž„ä½“
+	HelpEquipInformation.Reset();
+
 	if (CurrentGear)
 	{
-		// ÆúÓÃ¸Ã×°±¸
+		// å¼ƒç”¨è¯¥è£…å¤‡
 		if (CurrentUsingIndex == InIndex)
 		{
 			SwitchUsingGear(InSlot, -1);
 		}
 
-		// Ð¶ÏÂ×°±¸Ö®Ç°
+		// å¸ä¸‹è£…å¤‡ä¹‹å‰
 		CurrentGear->PreUnequip(HelpEquipInformation);
-		OnPreUnequipGear.Broadcast(CurrentGear, HelpEquipInformation);
+		HelpEquipInformation.Gear = CurrentGear;
+		HelpEquipInformation.AttachParent = nullptr;
+		PreUnequipGearEvent.Broadcast(HelpEquipInformation);
 	}
 
 	if (InGear)
 	{
-		// ×°ÉÏ×°±¸Ö®Ç°
+		// è£…ä¸Šè£…å¤‡ä¹‹å‰
 		InGear->PreEquip(HelpEquipInformation);
-		OnPreEquipGear.Broadcast(InGear, HelpEquipInformation);
+		HelpEquipInformation.Gear = InGear;
+		HelpEquipInformation.AttachParent = AttachParent;
+		PreEquipGearEvent.Broadcast(HelpEquipInformation);
 	}
 
-	// ×°ÉÏ×°±¸
+	// è£…ä¸Šè£…å¤‡
 	if (FBXGears* GearList = EquipGears.Find(InSlot))
 	{
 		if (GearList->List.IsValidIndex(InIndex))
@@ -189,18 +212,22 @@ void UBXGearComponent::ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGea
 
 	if (CurrentGear)
 	{
-		// Ð¶ÏÂ×°±¸Ö®ºó
+		// å¸ä¸‹è£…å¤‡ä¹‹åŽ
 		CurrentGear->PostUnequip(HelpEquipInformation);
-		OnPostUnequipGear.Broadcast(CurrentGear, HelpEquipInformation);
+		HelpEquipInformation.Gear = CurrentGear;
+		HelpEquipInformation.AttachParent = nullptr;
+		PostUnequipGearEvent.Broadcast(HelpEquipInformation);
 	}
 
 	if (InGear)
 	{
-		// ×°ÉÏ×°±¸Ö®ºó
+		// è£…ä¸Šè£…å¤‡ä¹‹åŽ
 		InGear->PostEquip(HelpEquipInformation);
-		OnPostEquipGear.Broadcast(InGear, HelpEquipInformation);
+		HelpEquipInformation.Gear = InGear;
+		HelpEquipInformation.AttachParent = AttachParent;
+		PostEquipGearEvent.Broadcast(HelpEquipInformation);
 
-		// Ê¹ÓÃ¸Ã×°±¸
+		// ä½¿ç”¨è¯¥è£…å¤‡
 		if (CurrentUsingIndex == InIndex)
 		{
 			SwitchUsingGear(InSlot, InIndex);
@@ -208,7 +235,7 @@ void UBXGearComponent::ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGea
 	}
 }
 
-void UBXGearComponent::ChangeEquipGearByClass(EBXGearSlot InSlot, int32 InIndex, UClass* InGearClass)
+void UBXGearComponent::ChangeEquipGearByClass(EBXGearSlot InSlot, int32 InIndex, UClass* InGearClass, USkeletalMeshComponent* AttachParent)
 {
 	if (!InGearClass || !InGearClass->IsChildOf(ABXGear::StaticClass()))
 	{
@@ -217,11 +244,11 @@ void UBXGearComponent::ChangeEquipGearByClass(EBXGearSlot InSlot, int32 InIndex,
 
 	if (ABXGear* NewGear = GetWorld()->SpawnActor<ABXGear>(InGearClass))
 	{
-		ChangeEquipGear(InSlot, InIndex, NewGear);
+		ChangeEquipGear(InSlot, InIndex, NewGear, AttachParent);
 	}
 }
 
-void UBXGearComponent::ChangeEquipGearByData(EBXGearSlot InSlot, int32 InIndex, UBXGearData* InGearData)
+void UBXGearComponent::ChangeEquipGearByData(EBXGearSlot InSlot, int32 InIndex, UBXGearData* InGearData, USkeletalMeshComponent* AttachParent)
 {
 	if (!InGearData || !InGearData->GearClass)
 	{
@@ -231,7 +258,7 @@ void UBXGearComponent::ChangeEquipGearByData(EBXGearSlot InSlot, int32 InIndex, 
 	if (ABXGear* NewGear = GetWorld()->SpawnActor<ABXGear>(InGearData->GearClass))
 	{
 		NewGear->GearData = InGearData;
-		ChangeEquipGear(InSlot, InIndex, NewGear);
+		ChangeEquipGear(InSlot, InIndex, NewGear, AttachParent);
 	}
 }
 

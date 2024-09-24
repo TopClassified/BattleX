@@ -1,4 +1,4 @@
-#pragma once
+#pragma once 
 
 
 
@@ -82,19 +82,37 @@ ENUM_CLASS_FLAGS(EBXUseFunction);
 
 
 
-// 出鞘/入鞘装备要执行的函数
-UENUM(BlueprintType, Meta = (Bitflags))
-enum class EBXSheathFunction : uint8
+// 装备状态
+UENUM(BlueprintType)
+enum class EBXGearState : uint8
 {
-	EF_NativePreSheath          = 0              UMETA(DisplayName = "C++入鞘之前"),
-	EF_BPPreSheath                               UMETA(DisplayName = "蓝图入鞘之前"),
-	EF_NativePostSheath                          UMETA(DisplayName = "C++入鞘之后"),
-	EF_BPPostSheath                              UMETA(DisplayName = "蓝图入鞘之后"),
-	EF_NativePreUnsheath                         UMETA(DisplayName = "C++出鞘之前"),
-	EF_BPPreUnsheath                             UMETA(DisplayName = "蓝图出鞘之前"),
-	EF_NativePostUnsheath                        UMETA(DisplayName = "C++出鞘之后"),
-	EF_BPPostUnsheath                            UMETA(DisplayName = "蓝图出鞘之后"),
+	S_None                      = 0              UMETA(DisplayName = "未知状态"),
+	S_Close                                      UMETA(DisplayName = "收起"),
+	S_Open                                       UMETA(DisplayName = "展开"),
+
+	S_Backup001                                  UMETA(DisplayName = "备用001"),
+	S_Backup002                                  UMETA(DisplayName = "备用002"),
+	S_Backup003                                  UMETA(DisplayName = "备用003"),
+	S_Backup004                                  UMETA(DisplayName = "备用004"),
+	S_Backup005                                  UMETA(DisplayName = "备用005"),
+	S_Backup006                                  UMETA(DisplayName = "备用006"),
+	S_Backup007                                  UMETA(DisplayName = "备用007"),
+	S_Backup008                                  UMETA(DisplayName = "备用008"),
+	S_Backup009                                  UMETA(DisplayName = "备用009"),
+	S_Backup010                                  UMETA(DisplayName = "备用010"),
+
+	S_TMax                                       UMETA(Hidden)
+};
+
+
+
+// 状态改变时装备要执行的函数
+UENUM(BlueprintType, Meta = (Bitflags))
+enum class EBXChangeStateFunction : uint8
+{
+	EF_NativeChangeState          = 0              UMETA(DisplayName = "C++改变状态"),
+	EF_BPChangeState                               UMETA(DisplayName = "蓝图改变状态"),
 
 	EF_TMax                                     UMETA(Hidden)
 };
-ENUM_CLASS_FLAGS(EBXSheathFunction);
+ENUM_CLASS_FLAGS(EBXChangeStateFunction);

@@ -5,8 +5,10 @@
 #include "GameFramework/Actor.h"
 
 #include "BXEnums.h"
+#include "BXGear.h"
+#include "BXGearEnums.h"
 
-#include "BXTLPreviewActor.generated.h"
+#include "BXTLPreviewActor.generated.h" 
 
 
 
@@ -22,7 +24,11 @@ public:
 	UPROPERTY(EditDefaultsOnly)
 	FTransform SpawnTransform = FTransform::Identity;
 
-	// 要锁定的身体部位
+	// 瑕佷娇鐢ㄧ殑瑁呭
+	UPROPERTY(EditDefaultsOnly)
+	TMap<EBXGearSlot, TSubclassOf<ABXGear>> UsingGears;
+
+	// 瑕侀攣瀹氱殑韬綋閮ㄤ綅
 	UPROPERTY(EditDefaultsOnly)
 	EBXBodyPartType LockedBodyPart = EBXBodyPartType::BPT_Default;
 

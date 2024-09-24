@@ -7,7 +7,7 @@
 
 #include "BXTask.h"
 
-#include "BXTLEditorTemplate.generated.h"
+#include "BXTLEditorTemplate.generated.h" 
 
 
 

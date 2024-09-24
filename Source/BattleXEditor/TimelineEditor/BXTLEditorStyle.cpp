@@ -3,7 +3,7 @@
 #include "Styling/SlateStyleRegistry.h"
 #include "Slate/SlateGameResources.h"
 #include "Interfaces/IPluginManager.h"
-#include "Framework/Application/SlateApplication.h"
+#include "Framework/Application/SlateApplication.h" 
 
 
 

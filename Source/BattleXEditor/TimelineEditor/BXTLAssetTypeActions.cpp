@@ -6,7 +6,7 @@
 #include "BXTLEditor.h"
 
 #include "BXTLAsset.h"
-#include "BXSkillAsset.h"
+#include "BXSkillAsset.h" 
 
 
 #define LOCTEXT_NAMESPACE "AssetTypeActions_BXTLAsset"

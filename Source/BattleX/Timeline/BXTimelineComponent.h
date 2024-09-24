@@ -6,7 +6,7 @@
 #include "BXTLAsset.h"
 #include "BXManager.h"
 
-#include "BXTimelineComponent.generated.h"
+#include "BXTimelineComponent.generated.h" 
 
 
 
@@ -29,29 +29,29 @@ public:
 
 #pragma region Timeline
 public:
-	// ²¥·ÅÊ±¼äÖá
+	// æ’­æ”¾æ—¶é—´è½´
 	UFUNCTION(BlueprintCallable)
 	virtual int64 PlayTimeline(UBXTLAsset* InAsset, UPARAM(ref) FBXTLPlayContext& InContext);
 
-	// Í£Ö¹Ê±¼äÖá
+	// åœæ­¢æ—¶é—´è½´
 	UFUNCTION(BlueprintCallable)
 	virtual void StopTimeline(int64 InID, EBXTLFinishReason InReason);
 
-	// ½ÓÊÕµ½Ê±¼äÖá¼´½«½áÊø
+	// æ¥æ”¶åˆ°æ—¶é—´è½´å³å°†ç»“æŸ
 	virtual void ReceiveTimelineWillFinish(int64 InID, EBXTLFinishReason InReason);
 	UFUNCTION(BlueprintImplementableEvent)
 	void ScriptReceiveTimelineWillFinish(int64 InID, EBXTLFinishReason InReason);
 
-	// ¸ù¾İÊ±¼äÖá×ÊÔ´£¬²éÑ¯ÊÇ·ñÓĞÕıÔÚÔËĞĞµÄÊı¾İ
+	// æ ¹æ®æ—¶é—´è½´èµ„æºï¼ŒæŸ¥è¯¢æ˜¯å¦æœ‰æ­£åœ¨è¿è¡Œçš„æ•°æ®
 	UFUNCTION(BlueprintCallable)
 	virtual bool IsTimelineRunning(UBXTLAsset* InAsset);
 
-	// ¸ù¾İID£¬²éÑ¯ÊÇ·ñÓĞÕıÔÚÔËĞĞµÄÊı¾İ
+	// æ ¹æ®IDï¼ŒæŸ¥è¯¢æ˜¯å¦æœ‰æ­£åœ¨è¿è¡Œçš„æ•°æ®
 	UFUNCTION(BlueprintCallable)
 	virtual bool IsTimelineRunningByID(int64 InID);
 
 protected:
-	// Ê±¼äÖáÔËĞĞÊı¾İIDÁĞ±í
+	// æ—¶é—´è½´è¿è¡Œæ•°æ®IDåˆ—è¡¨
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TArray<int64> TimelineRunTimeDataIDs;
 

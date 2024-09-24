@@ -12,7 +12,7 @@
 #include "SOutlinerItem.h"
 #include "BXTLTaskTrackPanel.h"
 #include "SBXTLTaskGroupTrackOutliner.h"
-#include "SBXTLTaskGroupTemplatePicker.h"
+#include "SBXTLTaskGroupTemplatePicker.h" 
 
 
 

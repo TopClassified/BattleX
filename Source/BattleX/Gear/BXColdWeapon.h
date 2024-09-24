@@ -7,7 +7,7 @@
 #include "BXGear.h"
 #include "BXShapeComponent.h"
 
-#include "BXColdWeapon.generated.h"
+#include "BXColdWeapon.generated.h" 
 
 
 
@@ -27,13 +27,13 @@ public:
 	virtual void TickActor(float DeltaTime, enum ELevelTick TickType, FActorTickFunction& ThisTickFunction) override;
 
 protected:
-	// À¬»øÇåÀí¼ä¸ô
+	// åƒåœ¾æ¸…ç†é—´éš”
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	float GCInterval = 10.0f;
-	// ÉÏÒ»´ÎÇåÀíÀ¬»øµÄÊ±¼ä´Á
+	// ä¸Šä¸€æ¬¡æ¸…ç†åƒåœ¾çš„æ—¶é—´æˆ³
 	float LastGCTS = 0.0f;
 
-	// Åö×²ĞÅÏ¢×é¼ş
+	// ç¢°æ’ä¿¡æ¯ç»„ä»¶
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	UBXShapeComponent* HitBoxComponent = nullptr;
 
@@ -41,21 +41,39 @@ protected:
 
 
 
+#pragma region Use
+protected:
+	virtual void InternalPostUsing(FBXUsingGearInformation& UsingInfo) override;
+
+	virtual void InternalPostUnusing(FBXUsingGearInformation& UsingInfo) override;
+
+#pragma endregion Use
+
+
+
+#pragma region State
+protected:
+	virtual void InternalChangeState(EBXGearState NewState) override;
+
+#pragma endregion State
+
+
+
 #pragma region Collision
 public:
-	// »ñÈ¡ËùÓĞµÄÅö×²ºĞÃû³Æ
+	// è·å–æ‰€æœ‰çš„ç¢°æ’ç›’åç§°
 	UFUNCTION(BlueprintCallable, Category = "Collision")
 	virtual void GetAllHitBoxNames(TArray<FName>& OutBoxNames);
 
-	// ¿ªÊ¼¼ÇÂ¼Î»ÖÃ
+	// å¼€å§‹è®°å½•ä½ç½®
 	UFUNCTION(BlueprintCallable, Category = "Collision")
 	virtual void StartRecordLocation(const TArray<FName>& BoxNames);
 
-	// Í£Ö¹¼ÇÂ¼Î»ÖÃ
+	// åœæ­¢è®°å½•ä½ç½®
 	UFUNCTION(BlueprintCallable, Category = "Collision")
 	virtual void StopRecordLocation(const TArray<FName>& BoxNames);
 
-	// »ñÈ¡NÃëÄÚ£¬Ä³¸öÅö×²ºĞµÄÅö×²½á¹ûĞÅÏ¢
+	// è·å–Nç§’å†…ï¼ŒæŸä¸ªç¢°æ’ç›’çš„ç¢°æ’ç»“æœä¿¡æ¯
 	UFUNCTION(BlueprintCallable, Category = "Collision")
 	virtual void GetHitResultsInSeconds(AActor* Requester, float Seconds, const FName& BoxName, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, const FBXCFilter& Filter, TArray<FHitResult>& OutResults);
 
@@ -63,15 +81,15 @@ protected:
 	virtual void AddNewHitBoxRecord(const TArray<FName>& BoxNames);
 
 protected:
-	// Òª¼ÇÂ¼µÄÅö×²ºĞÃû³Æ
+	// è¦è®°å½•çš„ç¢°æ’ç›’åç§°
 	UPROPERTY(Transient, BlueprintReadWrite, Category = "Collision")
 	TArray<FName> RecordBoxNames;
 
-	// 1ÃëÄÚÅö×²ºĞÎ»ÖÃĞÅÏ¢
+	// 1ç§’å†…ç¢°æ’ç›’ä½ç½®ä¿¡æ¯
 	UPROPERTY(Transient, BlueprintReadWrite, Category = "Collision")
 	TMap<FName, FBXGHitBoxRecords> HitBoxRecords;
 
-	// ¸¨ÖúÈİÆ÷
+	// è¾…åŠ©å®¹å™¨
 	UPROPERTY(Transient)
 	TMap<FName, USceneComponent*> HelpMap1;
 

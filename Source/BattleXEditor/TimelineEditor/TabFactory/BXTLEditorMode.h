@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "WorkflowOrientedApp/ApplicationMode.h"
-#include "WorkflowOrientedApp/WorkflowTabManager.h"
+#include "WorkflowOrientedApp/WorkflowTabManager.h" 
 
 
 

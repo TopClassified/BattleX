@@ -5,7 +5,7 @@
 
 #include "BXTLEditorSettings.h"
 #include "BXTLAsset.h"
-#include "BXTask.h"
+#include "BXTask.h" 
 
 
 
@@ -134,13 +134,13 @@ TSharedRef<SWidget> FBXTLEditorUtilities::MakeTrackButton(FText HoverText, FOnGe
 
 void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, const TArray<UBXTask*>& SrcTasks)
 {
-	// Á½¸öÊı×éµÄ´óĞ¡²»Ò»ÖÂ£¬ÔòÖ±½Ó·µ»Ø
+	// ä¸¤ä¸ªæ•°ç»„çš„å¤§å°ä¸ä¸€è‡´ï¼Œåˆ™ç›´æ¥è¿”å›
 	if (DestTasks.Num() != SrcTasks.Num())
 	{
 		return;
 	}
 
-	// ¶ÔÓ¦ÔªËØµÄÀàĞÍ²»Ò»ÖÂ£¬ÔòÖ±½Ó·µ»Ø
+	// å¯¹åº”å…ƒç´ çš„ç±»å‹ä¸ä¸€è‡´ï¼Œåˆ™ç›´æ¥è¿”å›
 	for (int32 i = 0; i < SrcTasks.Num(); ++i)
 	{
 		if (!IsValid(SrcTasks[i]) || !IsValid(DestTasks[i]) || SrcTasks[i]->GetClass() != DestTasks[i]->GetClass())
@@ -149,22 +149,22 @@ void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, con
 		}
 	}
 
-	// ¸ù¾İÄ£°åÁĞ±í£¬ĞŞ¸´TaskµÄÒÀÀµ¹ØÏµ
+	// æ ¹æ®æ¨¡æ¿åˆ—è¡¨ï¼Œä¿®å¤Taskçš„ä¾èµ–å…³ç³»
 	for (int32 i = 0; i < DestTasks.Num(); ++i)
 	{
 		UBXTask* SrcTask = SrcTasks[i];
 		UBXTask* DestTask = DestTasks[i];
 
-		// ĞŞ¸´CollisionInputDatas
+		// ä¿®å¤CollisionInputDatas
 		DestTask->CollisionInputDatas.Empty();
 		for (int32 j = 0; j < SrcTask->CollisionInputDatas.Num(); j++)
 		{
 			const FBXTInputInfo& Template = SrcTask->CollisionInputDatas[j];
 
-			// ÎŞÄÔ¿½±´ËùÓĞÊı¾İ
+			// æ— è„‘æ‹·è´æ‰€æœ‰æ•°æ®
 			FBXTInputInfo& NewInfo = DestTask->CollisionInputDatas.Add_GetRef(Template);
 
-			// µ÷ÕûÑ¡È¡µÄ¶ÔÏó
+			// è°ƒæ•´é€‰å–çš„å¯¹è±¡
 			int32 FindIndex = SrcTasks.Find(Cast<UBXTask>(Template.DataTask.Get()));
 			if (FindIndex >= 0)
 			{
@@ -178,13 +178,13 @@ void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, con
 			}
 		}
 
-		// ĞŞ¸´InputDatas
+		// ä¿®å¤InputDatas
 		DestTask->InputDatas.Empty();
 		for (int32 j = 0; j < SrcTask->InputDatas.Num(); j++)
 		{
 			const FBXTInputInfo& Template = SrcTask->InputDatas[j];
 
-			// ÎŞÄÔ¿½±´ËùÓĞÊı¾İ
+			// æ— è„‘æ‹·è´æ‰€æœ‰æ•°æ®
 			FBXTInputInfo& NewInfo = DestTask->InputDatas.Add_GetRef(Template);
 
 			int32 FindIndex = SrcTasks.Find(Cast<UBXTask>(Template.DataTask.Get()));
@@ -200,14 +200,14 @@ void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, con
 			}
 		}
 
-		// ĞŞ¸´OutputDatas
+		// ä¿®å¤OutputDatas
 		DestTask->OutputDatas.Empty();
 		for (int32 j = 0; j < SrcTask->OutputDatas.Num(); ++j)
 		{
 			DestTask->OutputDatas.Add(SrcTask->OutputDatas[j]);
 		}
 
-		// ĞŞ¸´EventTaskMap
+		// ä¿®å¤EventTaskMap
 		DestTask->Events.Empty();
 		for (TMap<FName, FBXTEvent>::TIterator It(SrcTask->Events); It; ++It)
 		{

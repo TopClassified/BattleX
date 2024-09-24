@@ -1,5 +1,7 @@
 #include "BXGear.h"
 
+#include "BXGearComponent.h" 
+
 
 
 #pragma region Important
@@ -21,6 +23,13 @@ ABXGear::~ABXGear()
 #pragma region Equip
 void ABXGear::PreEquip(UPARAM(ref) FBXEquipGearInformation& EquipInfo)
 {
+	if (!EquipInfo.OwnerComponent)
+	{
+		OwnerComponent = EquipInfo.OwnerComponent;
+	}
+
+	AttachTarget = EquipInfo.AttachParent;
+
 	if ((EquipFunctions & 1) > 0)
 	{
 		InternalPreEquip(EquipInfo);
@@ -69,6 +78,9 @@ void ABXGear::PostUnequip(UPARAM(ref) FBXEquipGearInformation& UnequipInfo)
 	{
 		ScriptPostUnequip(UnequipInfo);
 	}
+
+	AttachTarget = nullptr;
+	OwnerComponent = nullptr;
 }
 
 void ABXGear::InternalPreEquip(FBXEquipGearInformation& EquipInfo)
@@ -98,12 +110,12 @@ void ABXGear::InternalPostUnequip(FBXEquipGearInformation& UnequipInfo)
 #pragma region Use
 void ABXGear::PreUsing(UPARAM(ref) FBXUsingGearInformation& UsingInfo)
 {
-	if ((EquipFunctions & 256) > 0)
+	if ((UseFunctions & 1) > 0)
 	{
 		InternalPreUsing(UsingInfo);
 	}
 
-	if ((EquipFunctions & 512) > 0)
+	if ((UseFunctions & 2) > 0)
 	{
 		ScriptPreUsing(UsingInfo);
 	}
@@ -111,12 +123,12 @@ void ABXGear::PreUsing(UPARAM(ref) FBXUsingGearInformation& UsingInfo)
 
 void ABXGear::PostUsing(UPARAM(ref) FBXUsingGearInformation& UsingInfo)
 {
-	if ((EquipFunctions & 1024) > 0)
+	if ((UseFunctions & 4) > 0)
 	{
 		InternalPostUsing(UsingInfo);
 	}
 
-	if ((EquipFunctions & 2048) > 0)
+	if ((UseFunctions & 8) > 0)
 	{
 		ScriptPostUsing(UsingInfo);
 	}
@@ -124,12 +136,12 @@ void ABXGear::PostUsing(UPARAM(ref) FBXUsingGearInformation& UsingInfo)
 
 void ABXGear::PreUnusing(UPARAM(ref) FBXUsingGearInformation& UnusingInfo)
 {
-	if ((EquipFunctions & 4096) > 0)
+	if ((UseFunctions & 16) > 0)
 	{
 		InternalPreUnusing(UnusingInfo);
 	}
 
-	if ((EquipFunctions & 8192) > 0)
+	if ((UseFunctions & 32) > 0)
 	{
 		ScriptPreUnusing(UnusingInfo);
 	}
@@ -137,12 +149,12 @@ void ABXGear::PreUnusing(UPARAM(ref) FBXUsingGearInformation& UnusingInfo)
 
 void ABXGear::PostUnusing(UPARAM(ref) FBXUsingGearInformation& UnusingInfo)
 {
-	if ((EquipFunctions & 16384) > 0)
+	if ((UseFunctions & 64) > 0)
 	{
 		InternalPostUnusing(UnusingInfo);
 	}
 
-	if ((EquipFunctions & 32768) > 0)
+	if ((UseFunctions & 128) > 0)
 	{
 		ScriptPostUnusing(UnusingInfo);
 	}
@@ -155,7 +167,7 @@ void ABXGear::InternalPreUsing(FBXUsingGearInformation& UsingInfo)
 
 void ABXGear::InternalPostUsing(FBXUsingGearInformation& UsingInfo)
 {
-
+	SetActorHiddenInGame(false);
 }
 
 void ABXGear::InternalPreUnusing(FBXUsingGearInformation& UnusingInfo)
@@ -165,84 +177,68 @@ void ABXGear::InternalPreUnusing(FBXUsingGearInformation& UnusingInfo)
 
 void ABXGear::InternalPostUnusing(FBXUsingGearInformation& UnusingInfo)
 {
-
+	SetActorHiddenInGame(true);
 }
 
 #pragma endregion Use
 
 
 
-#pragma region Sheath
-void ABXGear::PreSheath(UPARAM(ref) FBXSheathGearInformation& SheathInfo)
+#pragma region State
+EBXGearState ABXGear::GetCurrentState() const
 {
-	if ((EquipFunctions & 256) > 0)
+	return CurrentState;
+}
+
+void ABXGear::ChangeState(EBXGearState NewState)
+{
+	if ((ChangeStateFunctions & 1) > 0)
 	{
-		InternalPreSheath(SheathInfo);
+		InternalChangeState(NewState);
 	}
 
-	if ((EquipFunctions & 512) > 0)
+	if ((ChangeStateFunctions & 2) > 0)
 	{
-		ScriptPreSheath(SheathInfo);
+		ScriptChangeState(NewState);
 	}
 }
 
-void ABXGear::PostSheath(UPARAM(ref) FBXSheathGearInformation& SheathInfo)
-{
-	if ((EquipFunctions & 1024) > 0)
-	{
-		InternalPostSheath(SheathInfo);
-	}
-
-	if ((EquipFunctions & 2048) > 0)
-	{
-		ScriptPostSheath(SheathInfo);
-	}
-}
-
-void ABXGear::PreUnsheath(UPARAM(ref) FBXSheathGearInformation& UnsheathInfo)
-{
-	if ((EquipFunctions & 4096) > 0)
-	{
-		InternalPreUnsheath(UnsheathInfo);
-	}
-
-	if ((EquipFunctions & 8192) > 0)
-	{
-		ScriptPreUnsheath(UnsheathInfo);
-	}
-}
-
-void ABXGear::PostUnsheath(UPARAM(ref) FBXSheathGearInformation& UnsheathInfo)
-{
-	if ((EquipFunctions & 16384) > 0)
-	{
-		InternalPostUnsheath(UnsheathInfo);
-	}
-
-	if ((EquipFunctions & 32768) > 0)
-	{
-		ScriptPostUnsheath(UnsheathInfo);
-	}
-}
-
-void ABXGear::InternalPreSheath(FBXSheathGearInformation& SheathInfo)
+void ABXGear::InternalChangeState(EBXGearState NewState)
 {
 
 }
 
-void ABXGear::InternalPostSheath(FBXSheathGearInformation& SheathInfo)
-{
+#pragma endregion State
 
+
+
+#pragma region Attach
+void ABXGear::AttachToSocket()
+{
+	if (!AttachTarget || !OwnerComponent)
+	{
+		return;
+	}
+
+	USkeletalMesh* AttachMesh = AttachTarget->GetSkeletalMeshAsset();
+	if (!AttachMesh)
+	{
+		return;
+	}
+
+	EBXGearSlot SlotType = OwnerComponent->GetUsingGearSlot(this);
+
+	for (TArray<FBXGearAttachmentConfig>::TIterator It(AttachmentConfigs); It; ++It)
+	{
+		if (It->Mesh == AttachMesh && It->Slot == SlotType && It->State == CurrentState)
+		{
+			AttachToComponent(AttachTarget, FAttachmentTransformRules::KeepWorldTransform, It->Socket);
+
+			SetActorRelativeTransform(It->Relation);
+
+			return;
+		}
+	}
 }
 
-void ABXGear::InternalPreUnsheath(FBXSheathGearInformation& UnsheathInfo)
-{
-
-}
-
-void ABXGear::InternalPostUnsheath(FBXSheathGearInformation& UnsheathInfo)
-{
-
-}
-
-#pragma endregion Sheath
+#pragma endregion Attach

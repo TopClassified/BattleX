@@ -10,7 +10,7 @@
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 
-#include "BXTLEditorDelegates.h"
+#include "BXTLEditorDelegates.h" 
 
 
 

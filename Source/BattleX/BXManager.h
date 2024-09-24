@@ -6,7 +6,7 @@
 
 #include "BXTLStructs.h"
 
-#include "BXManager.generated.h"
+#include "BXManager.generated.h" 
 
 
 

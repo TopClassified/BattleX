@@ -9,7 +9,7 @@
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Layout/Margin.h"
 #include "Layout/Visibility.h"
-#include "Layout/ArrangedChildren.h"
+#include "Layout/ArrangedChildren.h" 
 
 /** Splitter used on the anim timeline as an overlay. Input is disabled on all areas except the draggable positions */
 class BATTLEXEDITOR_API STimelineSplitterOverlay : public SOverlay

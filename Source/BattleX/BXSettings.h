@@ -6,7 +6,7 @@
 
 #include "Internationalization/StringTable.h"
 
-#include "BXSettings.generated.h"
+#include "BXSettings.generated.h" 
 
 
 

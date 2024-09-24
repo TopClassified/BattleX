@@ -4,7 +4,7 @@
 #include "UObject/NoExportTypes.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 
-#include "BXFunctionLibrary.generated.h"
+#include "BXFunctionLibrary.generated.h" 
 
 
 

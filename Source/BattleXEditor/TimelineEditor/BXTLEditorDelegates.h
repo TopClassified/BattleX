@@ -1,46 +1,46 @@
 #pragma once
 
-#include "CoreMinimal.h"
+#include "CoreMinimal.h" 
 
 
 
-// ���ˢ���¼�
+// 面板刷新事件
 DECLARE_DELEGATE(FBXTLESlateRefreshPanel);
 
-// ���ѡȡ�ڵ��¼�
+// 面板选取节点事件
 DECLARE_DELEGATE(FBXTLESlateSelectNode);
 
-// ���ȡ��ѡȡ���нڵ��¼�
+// 面板取消选取所有节点事件
 DECLARE_DELEGATE(FBXTLESlateDeselectNodes);
 
-// ������������¼�
+// 面板添加任务事件
 DECLARE_DELEGATE_TwoParams(FBXTLESlateAddTask, UClass*, float)
 
-// ���ɾ�������¼�
+// 面板删除任务事件
 DECLARE_DELEGATE(FBXTLESlateDeleteTask);
 
-// ��忽�������¼�
+// 面板拷贝任务事件
 DECLARE_DELEGATE(FBXTLESlateCopyTask);
 
-// ���ճ�������¼�
+// 面板粘贴任务事件
 DECLARE_DELEGATE(FBXTLESlatePasteTask);
 
-// ��嵼������ģ���¼�
+// 面板导出任务模板事件
 DECLARE_DELEGATE(FBXTLESlateExportTemplate);
 
-// �����ק����ڵ��¼�
+// 面板拖拽任务节点事件
 DECLARE_DELEGATE_RetVal_FourParams(FReply, FBXTLESlateDragTTN, TSharedRef<class SBXTLTaskTrackNode>, const FPointerEvent&, const FVector2D&, const bool)
 
-// �����ק����ڵ��¼�
+// 面板拖拽额外节点事件
 DECLARE_DELEGATE_RetVal_FourParams(FReply, FBXTLESlateDragETN, TSharedRef<class SBXTLExtraTrackNode>, const FPointerEvent&, const FVector2D&, const bool)
 
 
 
-// �߼�ˢ������¼�
+// 逻辑刷新面板事件
 DECLARE_MULTICAST_DELEGATE(FBXTLELogicRefreshPanel);
 
-// �߼��ı�Ԥ��״̬�¼�
+// 逻辑改变预览状态事件
 DECLARE_MULTICAST_DELEGATE_TwoParams(FBXTLELogicPreviewChanged, bool, bool);
 
-// �߼��ı�ѡȡ�����¼�
+// 逻辑改变选取任务事件
 DECLARE_MULTICAST_DELEGATE_OneParam(FBXTLELogicTaskSelected, TArray<class UBXTask*>&);

@@ -10,7 +10,7 @@
 #include "BXTask.h"
 #include "BXTLStructs.h"
 
-#include "BXTLAsset.generated.h"
+#include "BXTLAsset.generated.h" 
 
 
 

@@ -1,4 +1,4 @@
-#include "BXTimelineComponent.h"
+#include "BXTimelineComponent.h" 
 
 
 
@@ -46,7 +46,7 @@ int64 UBXTimelineComponent::PlayTimeline(UBXTLAsset* InAsset, UPARAM(ref) FBXTLP
 
 	TimelineRunTimeDataIDs.Add(TimelineID);
 
-	// ¹ã²¥Ê±¼äÖá¿ªÊ¼ÊÂ¼ş
+	// å¹¿æ’­æ—¶é—´è½´å¼€å§‹äº‹ä»¶
 	TimelineStarted.Broadcast(TimelineID);
 
 	return TimelineID;
@@ -67,10 +67,10 @@ void UBXTimelineComponent::ReceiveTimelineWillFinish(int64 InID, EBXTLFinishReas
 {
 	ScriptReceiveTimelineWillFinish(InID, InReason);
 
-	// ¹ã²¥Ê±¼äÖá¼´½«½áÊøÊÂ¼ş
+	// å¹¿æ’­æ—¶é—´è½´å³å°†ç»“æŸäº‹ä»¶
 	TimelineWillEnd.Broadcast(InID, InReason);
 
-	// ´ÓÈİÆ÷ÖĞÒÆ³ı
+	// ä»å®¹å™¨ä¸­ç§»é™¤
 	TimelineRunTimeDataIDs.RemoveSwap(InID);
 }
 

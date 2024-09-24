@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
 
-#include "BXTLPreviewGameMode.generated.h"
+#include "BXTLPreviewGameMode.generated.h" 
 
 
 

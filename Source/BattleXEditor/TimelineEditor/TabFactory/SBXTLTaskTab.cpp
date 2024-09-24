@@ -1,7 +1,7 @@
 #include "SBXTLTaskTab.h"
 
 #include "Modules/ModuleManager.h"
-#include "PropertyEditorModule.h"
+#include "PropertyEditorModule.h" 
 
 
 

@@ -1,7 +1,7 @@
 #include "BXSettings.h"
 
 #include "BXStructs.h"
-#include "BXManager.h"
+#include "BXManager.h" 
 
 
 

@@ -6,7 +6,7 @@
 
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SCompoundWidget.h"
-#include "Widgets/DeclarativeSyntaxSupport.h"
+#include "Widgets/DeclarativeSyntaxSupport.h" 
 
 
 

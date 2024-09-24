@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -7,7 +7,7 @@
 #include "BXGearStructs.h"
 #include "BXGearData.h"
 
-#include "BXGear.generated.h"
+#include "BXGear.generated.h" 
 
 
 
@@ -23,13 +23,17 @@ public:
 	virtual ~ABXGear();
 
 public:
-	// ×°±¸ÀàĞÍ
+	// è£…å¤‡ç±»å‹
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	EBXGearType GearType = EBXGearType::GT_Weapon;
 
-	// ×°±¸Êı¾İ
+	// è£…å¤‡æ•°æ®
 	UPROPERTY(Transient, BlueprintReadOnly)
 	UBXGearData* GearData = nullptr;
+
+	// è£…å¤‡æ‹¥æœ‰è€…
+	UPROPERTY(Transient, BlueprintReadOnly)
+	class UBXGearComponent* OwnerComponent = nullptr;
 
 #pragma endregion Important
 
@@ -37,19 +41,19 @@ public:
 
 #pragma region Equip
 public:
-	// ½«Òª×°ÉÏ
+	// è£…ä¸Šä¹‹å‰
 	UFUNCTION(BlueprintCallable, Category = "Equip")
 	void PreEquip(UPARAM(ref) FBXEquipGearInformation& EquipInfo);
 
-	// ÒÑ¾­×°ÉÏ
+	// è£…ä¸Šä¹‹å
 	UFUNCTION(BlueprintCallable, Category = "Equip")
 	void PostEquip(UPARAM(ref) FBXEquipGearInformation& EquipInfo);
 
-	// ½«ÒªĞ¶ÏÂ
+	// å¸ä¸‹ä¹‹å‰
 	UFUNCTION(BlueprintCallable, Category = "Equip")
 	void PreUnequip(UPARAM(ref) FBXEquipGearInformation& UnequipInfo);
 
-	// ÒÑ¾­Ğ¶ÏÂ
+	// å¸ä¸‹ä¹‹å
 	UFUNCTION(BlueprintCallable, Category = "Equip")
 	void PostUnequip(UPARAM(ref) FBXEquipGearInformation& UnequipInfo);
 
@@ -71,7 +75,7 @@ protected:
 	void ScriptPostUnequip(UPARAM(ref) FBXEquipGearInformation& UnequipInfo);
 
 protected:
-	// ÒªÖ´ĞĞµÄº¯Êı(Ä¬ÈÏÖ»Ö´ĞĞC++º¯Êı)
+	// è¦æ‰§è¡Œçš„å‡½æ•°(é»˜è®¤åªæ‰§è¡ŒC++å‡½æ•°)
 	UPROPERTY(EditDefaultsOnly, Category = "Equip", Meta = (Bitmask, BitmaskEnum = "EBXEquipFunction"))
 	int32 EquipFunctions = 85;
 
@@ -81,19 +85,19 @@ protected:
 
 #pragma region Use
 public:
-	// ½«ÒªÊ¹ÓÃ
+	// ä½¿ç”¨ä¹‹å‰
 	UFUNCTION(BlueprintCallable, Category = "Use")
 	void PreUsing(UPARAM(ref) FBXUsingGearInformation& UsingInfo);
 
-	// ÒÑ¾­Ê¹ÓÃ
+	// ä½¿ç”¨ä¹‹å
 	UFUNCTION(BlueprintCallable, Category = "Use")
 	void PostUsing(UPARAM(ref) FBXUsingGearInformation& UsingInfo);
 
-	// ½«ÒªÆúÓÃ
+	// å¼ƒç”¨ä¹‹å‰
 	UFUNCTION(BlueprintCallable, Category = "Use")
 	void PreUnusing(UPARAM(ref) FBXUsingGearInformation& UnusingInfo);
 
-	// ÒÑ¾­ÆúÓÃ
+	// å¼ƒç”¨ä¹‹å
 	UFUNCTION(BlueprintCallable, Category = "Use")
 	void PostUnusing(UPARAM(ref) FBXUsingGearInformation& UnusingInfo);
 
@@ -115,7 +119,7 @@ protected:
 	void ScriptPostUnusing(UPARAM(ref) FBXUsingGearInformation& UnusingInfo);
 
 protected:
-	// ÒªÖ´ĞĞµÄº¯Êı(Ä¬ÈÏÖ»Ö´ĞĞC++º¯Êı)
+	// è¦æ‰§è¡Œçš„å‡½æ•°(é»˜è®¤åªæ‰§è¡ŒC++å‡½æ•°)
 	UPROPERTY(EditDefaultsOnly, Category = "Use", Meta = (Bitmask, BitmaskEnum = "EBXUseFunction"))
 	int32 UseFunctions = 85;
 
@@ -123,46 +127,48 @@ protected:
 
 
 
-#pragma region Sheath
+#pragma region State
 public:
-	// ½«ÒªÈëÇÊ
-	UFUNCTION(BlueprintCallable, Category = "Sheath")
-	void PreSheath(UPARAM(ref) FBXSheathGearInformation& SheathInfo);
+	// è·å–å½“å‰çš„çŠ¶æ€
+	EBXGearState GetCurrentState() const;
 
-	// ÒÑ¾­ÈëÇÊ
-	UFUNCTION(BlueprintCallable, Category = "Sheath")
-	void PostSheath(UPARAM(ref) FBXSheathGearInformation& SheathInfo);
-
-	// ½«Òª³öÇÊ
-	UFUNCTION(BlueprintCallable, Category = "Sheath")
-	void PreUnsheath(UPARAM(ref) FBXSheathGearInformation& UnsheathInfo);
-
-	// ÒÑ¾­³öÇÊ
-	UFUNCTION(BlueprintCallable, Category = "Sheath")
-	void PostUnsheath(UPARAM(ref) FBXSheathGearInformation& UnsheathInfo);
+	// æ”¹å˜çŠ¶æ€
+	UFUNCTION(BlueprintCallable, Category = "State")
+	void ChangeState(EBXGearState NewState);
 
 protected:
-	virtual void InternalPreSheath(FBXSheathGearInformation& SheathInfo);
-	UFUNCTION(BlueprintImplementableEvent, Category = "Sheath")
-	void ScriptPreSheath(UPARAM(ref) FBXSheathGearInformation& SheathInfo);
-
-	virtual void InternalPostSheath(FBXSheathGearInformation& SheathInfo);
-	UFUNCTION(BlueprintImplementableEvent, Category = "Sheath")
-	void ScriptPostSheath(UPARAM(ref) FBXSheathGearInformation& SheathInfo);
-
-	virtual void InternalPreUnsheath(FBXSheathGearInformation& UnsheathInfo);
-	UFUNCTION(BlueprintImplementableEvent, Category = "Sheath")
-	void ScriptPreUnsheath(UPARAM(ref) FBXSheathGearInformation& UnsheathInfo);
-
-	virtual void InternalPostUnsheath(FBXSheathGearInformation& UnsheathInfo);
-	UFUNCTION(BlueprintImplementableEvent, Category = "Sheath")
-	void ScriptPostUnsheath(UPARAM(ref) FBXSheathGearInformation& UnsheathInfo);
+	virtual void InternalChangeState(EBXGearState NewState);
+	UFUNCTION(BlueprintImplementableEvent, Category = "State")
+	void ScriptChangeState(EBXGearState NewState);
 
 protected:
-	// ÒªÖ´ĞĞµÄº¯Êı(Ä¬ÈÏÖ»Ö´ĞĞC++º¯Êı)
-	UPROPERTY(EditDefaultsOnly, Category = "Sheath", Meta = (Bitmask, BitmaskEnum = "EBXSheathFunction"))
-	int32 SheathFunctions = 85;
+	// å½“å‰çŠ¶æ€
+	UPROPERTY(Transient, BlueprintReadWrite)
+	EBXGearState CurrentState = EBXGearState::S_None;
 
-#pragma endregion Sheath
+	// è¦æ‰§è¡Œçš„å‡½æ•°(é»˜è®¤åªæ‰§è¡ŒC++å‡½æ•°)
+	UPROPERTY(EditDefaultsOnly, Category = "State", Meta = (Bitmask, BitmaskEnum = "EBXChangeStateFunction"))
+	int32 ChangeStateFunctions = 1;
+
+#pragma endregion State
+
+
+
+#pragma region Attach
+public:
+	// æŒ‚æ¥è£…å¤‡
+	UFUNCTION(BlueprintCallable, Category = "Attach")
+	void AttachToSocket();
+
+public:
+	// æŒ‚æ¥ä½ç½®
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FBXGearAttachmentConfig> AttachmentConfigs;
+
+	// è£…å¤‡æŒ‚è½½è€…
+	UPROPERTY(Transient, BlueprintReadOnly)
+	class USkeletalMeshComponent* AttachTarget = nullptr;
+
+#pragma endregion Attach
 
 };

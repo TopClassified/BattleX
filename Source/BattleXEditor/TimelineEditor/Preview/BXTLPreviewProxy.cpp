@@ -13,7 +13,7 @@
 
 #include "BXTLEditor.h"
 #include "BXTLEditorDelegates.h"
-#include "Preview/BXTLPreviewScene.h"
+#include "Preview/BXTLPreviewScene.h" 
 
 
 

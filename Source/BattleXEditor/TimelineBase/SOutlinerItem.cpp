@@ -4,6 +4,8 @@
 #include "SOutliner.h"
 #include "Widgets/SOverlay.h"
 
+
+
 SOutlinerItem::~SOutlinerItem()
 {
 	TSharedPtr<SOutliner> Outliner = StaticCastSharedPtr<SOutliner>(OwnerTablePtr.Pin());

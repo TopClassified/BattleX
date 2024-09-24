@@ -10,7 +10,7 @@
 
 #include "BXTLAssetTypeActions.h"
 #include "BXTLAssetThumbnailRenderer.h"
-#include "ComponentVisualizers/BXShapeComponentVisualizer.h"
+#include "ComponentVisualizers/BXShapeComponentVisualizer.h" 
 
 
 
@@ -27,12 +27,12 @@ void FBattleXEditorModule::StartupModule()
 
 	IAssetTools& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
 	EAssetTypeCategories::Type CurrentAssetCategory = EAssetTypeCategories::Type::Gameplay;
-	// ×¢²áÊ±¼äÖá×ÊÔ´
+	// æ³¨å†Œæ—¶é—´è½´èµ„æº
 	AssetToolsModule.RegisterAssetTypeActions(MakeShareable(new FAssetTypeActions_BXTLAsset(CurrentAssetCategory)));
-	// ×¢²á¼¼ÄÜ×ÊÔ´
+	// æ³¨å†ŒæŠ€èƒ½èµ„æº
 	AssetToolsModule.RegisterAssetTypeActions(MakeShareable(new FAssetTypeActions_BXSkillAsset(CurrentAssetCategory)));
 
-	// ×Ô¶¨ÒåËõÂÔÍ¼
+	// è‡ªå®šä¹‰ç¼©ç•¥å›¾
 	UThumbnailManager::Get().UnregisterCustomRenderer(UBXTLAsset::StaticClass());
 	UThumbnailManager::Get().RegisterCustomRenderer(UBXTLAsset::StaticClass(), UBXTLAssetThumbnailRenderer::StaticClass());
 }

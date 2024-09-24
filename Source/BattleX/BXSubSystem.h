@@ -4,7 +4,7 @@
 
 #include "Subsystems/GameInstanceSubsystem.h"
 
-#include "BXSubSystem.generated.h"
+#include "BXSubSystem.generated.h" 
 
 
 

@@ -13,7 +13,7 @@
 #include "BXTLEditorDelegates.h"
 #include "SBXTLTaskTrackNode.h"
 
-#include "BXTask.h"
+#include "BXTask.h" 
 
 
 

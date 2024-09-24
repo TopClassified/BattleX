@@ -8,7 +8,7 @@
 #include "SBXTLTaskTrackNode.h"
 #include "SBXTLTaskTrackOutliner.h"
 
-#include "BXTask.h"
+#include "BXTask.h" 
 
 
 

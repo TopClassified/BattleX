@@ -3,7 +3,7 @@
 #include "BXSettings.h"
 #include "BXTLAsset.h"
 #include "BXTLStructs.h"
-#include "BXTask.h"
+#include "BXTask.h" 
 
 
 
@@ -141,7 +141,7 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 		return false;
 	}
 
-	// ÐèÒª¹ã²¥£¬ÔòÌí¼Óµ½¹ã²¥ÁÐ±í
+	// éœ€è¦å¹¿æ’­ï¼Œåˆ™æ·»åŠ åˆ°å¹¿æ’­åˆ—è¡¨
 	if (EventPointer->bMulticast)
 	{
 		InOutRTSData.BroadcastTasks.Add(FBXTLBroadcastTaskInfo(InOutRTSData.Index * 1000 + InOutRTTData.Index, InEventName));
@@ -150,17 +150,17 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 	TArray<int32>& List = InOutRTSData.FramePendingTasks;
 	for (TMap<TSoftObjectPtr<UBXTask>, float>::TIterator It(EventPointer->Event); It; ++It)
 	{
-		// ÈÎÎñÈ«Á¿Ë÷Òý
+		// ä»»åŠ¡å…¨é‡ç´¢å¼•
 		int32 FullIndex = UBXFunctionLibrary::GetSoftTaskFullIndex(Asset, It->Key);
 		if (FullIndex < 0)
 		{
 			continue;
 		}
 
-		// ÈÎÎñ¾Ö²¿Ë÷Òý
+		// ä»»åŠ¡å±€éƒ¨ç´¢å¼•
 		int32 LocalIndex = FullIndex % 1000;
 
-		// ÑÓ³Ù´¥·¢µÄÈÎÎñ£¬Ìí¼Óµ½´ý´¦ÀíÁÐ±í
+		// å»¶è¿Ÿè§¦å‘çš„ä»»åŠ¡ï¼Œæ·»åŠ åˆ°å¾…å¤„ç†åˆ—è¡¨
 		if (It->Value > 0.0f)
 		{
 			InOutRTSData.PendingTasks.Add(FBXTLPendingTaskInfo(LocalIndex, InOutRTSData.RunTime + It->Value));
@@ -168,7 +168,7 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 			continue;
 		}
 
-		// Èç¹û¿ªÆôÁËÖ¡ÄÚ´ý´¦ÀíÁÐ±í£¬ÔòÌí¼Óµ½¸ÃÁÐ±í
+		// å¦‚æžœå¼€å¯äº†å¸§å†…å¾…å¤„ç†åˆ—è¡¨ï¼Œåˆ™æ·»åŠ åˆ°è¯¥åˆ—è¡¨
 		if (List.Num() > 0)
 		{
 			if (!List.Contains(LocalIndex) && Settings->FramePendingTaskLimit > List.Num())

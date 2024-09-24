@@ -7,7 +7,7 @@
 
 #include "Input/Reply.h"
 #include "Input/CursorReply.h"
-#include "Widgets/SWidget.h"
+#include "Widgets/SWidget.h" 
 
 class FSlateWindowElementList;
 

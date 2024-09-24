@@ -1,5 +1,7 @@
 #include "BXColdWeapon.h"
 
+#include "Components/SkeletalMeshComponent.h"
+
 #include "BXCollision.h"
 #include "BXFunctionLibrary.h"
 
@@ -15,7 +17,7 @@ ABXColdWeapon::ABXColdWeapon(const FObjectInitializer& ObjectInitializer) : Supe
 
 ABXColdWeapon::~ABXColdWeapon()
 {
-
+	
 }
 
 void ABXColdWeapon::BeginPlay()
@@ -27,7 +29,7 @@ void ABXColdWeapon::BeginPlay()
 
 void ABXColdWeapon::TickActor(float DeltaTime, enum ELevelTick TickType, FActorTickFunction& ThisTickFunction)
 {
-	// ¼ÇÂ¼Åö×²ºĞµÄÎ»ÖÃ
+	// è®°å½•ç¢°æ’ç›’çš„ä½ç½®
 	if (RecordBoxNames.Num() > 0)
 	{
 		AddNewHitBoxRecord(RecordBoxNames);
@@ -39,12 +41,12 @@ void ABXColdWeapon::TickActor(float DeltaTime, enum ELevelTick TickType, FActorT
 
 	float CurrentTime = GetWorld()->GetTimeSeconds();
 
-	// À¬»ø»ØÊÕ
+	// åƒåœ¾å›æ”¶
 	if (CurrentTime - LastGCTS > GCInterval)
 	{
 		LastGCTS = CurrentTime;
 
-		// ÒÆ³ıÊ§Ğ§µÄ¼ÇÂ¼
+		// ç§»é™¤å¤±æ•ˆçš„è®°å½•
 		for (TMap<FName, FBXGHitBoxRecords>::TIterator It(HitBoxRecords); It; ++It)
 		{
 			It->Value.List.RemoveAll
@@ -62,6 +64,38 @@ void ABXColdWeapon::TickActor(float DeltaTime, enum ELevelTick TickType, FActorT
 
 #pragma endregion Important
 
+
+
+#pragma region Use
+void ABXColdWeapon::InternalPostUsing(FBXUsingGearInformation& UsingInfo)
+{
+	
+}
+
+void ABXColdWeapon::InternalPostUnusing(FBXUsingGearInformation& UsingInfo)
+{
+
+}
+
+#pragma endregion Use
+
+
+
+#pragma region State
+void ABXColdWeapon::InternalChangeState(EBXGearState NewState)
+{
+	if (CurrentState == NewState)
+	{
+		return;
+	}
+
+	CurrentState = NewState;
+
+	// æŒ‚æ¥åˆ°ç‰¹å®šä½ç½®
+	AttachToSocket();
+}
+
+#pragma endregion State
 
 
 
@@ -119,21 +153,21 @@ void ABXColdWeapon::GetHitResultsInSeconds(AActor* Requester, float Seconds, con
 		FBXCParameter Parameter;
 		Parameter.Requester = Requester;
 
-		// »ñÈ¡µ±Ç°µÄÎ»ÖÃĞÅÏ¢
+		// è·å–å½“å‰çš„ä½ç½®ä¿¡æ¯
 		EBXShapeType ShapeType = EBXShapeType::ST_Sphere;
 		FVector ShapeSize(FVector::ZeroVector);
 		FTransform WTransform = FTransform::Identity;
 		if (FBXShapeInformation* Information = HitBoxComponent->ShapeInformations.Find(BoxName))
 		{
-			USceneComponent* AttachParent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, Information->AttachToComponent, nullptr, false);
-			if (!AttachParent)
+			USceneComponent* AttachedComponent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, Information->AttachParent, nullptr, false);
+			if (!AttachedComponent)
 			{
-				AttachParent = GetRootComponent();
+				AttachedComponent = GetRootComponent();
 			}
 
 			ShapeType = Information->ShapeType;
 			ShapeSize = Information->ShapeSize;
-			WTransform = Information->Relation * AttachParent->GetSocketTransform(Information->AttachToSocket.BoneName);
+			WTransform = Information->Relation * AttachedComponent->GetSocketTransform(Information->Socket.BoneName);
 		}
 		else
 		{
@@ -143,7 +177,7 @@ void ABXColdWeapon::GetHitResultsInSeconds(AActor* Requester, float Seconds, con
 		EndQuat = WTransform.GetRotation();
 		Parameter.Scale = WTransform.GetScale3D();
 
-		// ²éÑ¯NÃëÖ®Ç°µÄÎ»ÖÃĞÅÏ¢
+		// æŸ¥è¯¢Nç§’ä¹‹å‰çš„ä½ç½®ä¿¡æ¯
 		int32 Index = 0;
 		for (int32 i = Records->List.Num() - 1; i >= 0; --i)
 		{
@@ -154,7 +188,7 @@ void ABXColdWeapon::GetHitResultsInSeconds(AActor* Requester, float Seconds, con
 			}
 		}
 
-		// ¼ÆËãÆğÊ¼Î»ÖÃ
+		// è®¡ç®—èµ·å§‹ä½ç½®
 		if (Index == Records->List.Num() - 1)
 		{
 			const FBXGHitBoxRecord& Record = Records->List[Index];
@@ -182,7 +216,7 @@ void ABXColdWeapon::GetHitResultsInSeconds(AActor* Requester, float Seconds, con
 		Parameter.StartRotation = StartQuat.Rotator();
 		Parameter.EndRotation = EndQuat.Rotator();
 
-		// µ÷ÓÃÅö×²²éÑ¯½Ó¿Ú
+		// è°ƒç”¨ç¢°æ’æŸ¥è¯¢æ¥å£
 		if (ShapeType == EBXShapeType::ST_Sphere)
 		{
 			OutResults = UBXCollisionLibrary::SphereCheck(Parameter, ObjectTypes, ShapeSize.X, Filter);
@@ -208,26 +242,26 @@ void ABXColdWeapon::AddNewHitBoxRecord(const TArray<FName>& BoxNames)
 	{
 		if (FBXShapeInformation* Information = HitBoxComponent->ShapeInformations.Find(BoxName))
 		{
-			// ÕÒµ½¹Ò½ÓµÄ¸¸×é¼ş
-			USceneComponent* AttachParent = nullptr;
-			if (USceneComponent** FindResult = HelpMap1.Find(Information->AttachToComponent))
+			// æ‰¾åˆ°æŒ‚æ¥çš„çˆ¶ç»„ä»¶
+			USceneComponent* AttachedComponent = nullptr;
+			if (USceneComponent** FindResult = HelpMap1.Find(Information->AttachParent))
 			{
-				AttachParent = *FindResult;
+				AttachedComponent = *FindResult;
 			}
 			else
 			{
-				AttachParent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, Information->AttachToComponent, nullptr, false);
+				AttachedComponent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, Information->AttachParent, nullptr, false);
 
-				HelpMap1.Add(Information->AttachToComponent, AttachParent);
+				HelpMap1.Add(Information->AttachParent, AttachedComponent);
 			}
-			if (!AttachParent)
+			if (!AttachedComponent)
 			{
-				AttachParent = GetRootComponent();
+				AttachedComponent = GetRootComponent();
 			}
 
-			// ¼ÇÂ¼Î»ÖÃ
+			// è®°å½•ä½ç½®
 			FBXGHitBoxRecord Record;
-			Record.WTransform = Information->Relation * AttachParent->GetSocketTransform(Information->AttachToSocket.BoneName);
+			Record.WTransform = Information->Relation * AttachedComponent->GetSocketTransform(Information->Socket.BoneName);
 			Record.GameTime = World->GetTimeSeconds();
 
 			FBXGHitBoxRecords& Records = HitBoxRecords.FindOrAdd(BoxName);

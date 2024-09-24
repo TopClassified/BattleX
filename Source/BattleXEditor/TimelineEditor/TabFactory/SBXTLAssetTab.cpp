@@ -15,7 +15,7 @@
 #include "Preview/BXTLPreviewProxy.h"
 #include "Timeline/BXTLController.h"
 
-#include "BXTLAsset.h"
+#include "BXTLAsset.h" 
 
 
 

@@ -7,7 +7,7 @@
 #include "BXTLEditorTemplate.h"
 #include "Preview/BXTLPreviewActor.h"
 
-#include "BXTLEditorSettings.generated.h"
+#include "BXTLEditorSettings.generated.h" 
 
 
 

@@ -8,7 +8,7 @@ public class BattleXEditor : ModuleRules
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 		
-		PublicIncludePaths.AddRange
+		PublicIncludePaths.AddRange 
 		(
 			new string[] 
 			{

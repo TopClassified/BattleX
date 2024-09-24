@@ -2,7 +2,7 @@
 
 #include "ComponentVisualizer.h"
 
-#include "BXShapeComponent.h"
+#include "BXShapeComponent.h" 
 
 
 

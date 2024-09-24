@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 
-#include "BXGearData.generated.h"
+#include "BXGearData.generated.h" 
 
 
 
@@ -12,7 +12,7 @@ class BATTLEX_API UBXGearData : public UObject
 	GENERATED_BODY()
 	
 public:
-	// ×°±¸Àà
+	// è£…å¤‡ç±»
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TSubclassOf<class ABXGear> GearClass;
 	

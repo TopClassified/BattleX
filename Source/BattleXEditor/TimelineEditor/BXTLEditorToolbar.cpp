@@ -6,7 +6,7 @@
 
 #include "BXTLEditor.h"
 #include "BXTLEditorStyle.h"
-#include "BXTLEditorCommands.h"   
+#include "BXTLEditorCommands.h"    
 
 
 

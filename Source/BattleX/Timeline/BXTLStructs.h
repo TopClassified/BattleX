@@ -8,22 +8,22 @@
 #include "BXStructs.h"
 #include "BXTLEnums.h"
 
-#include "BXTLStructs.generated.h"
+#include "BXTLStructs.generated.h" 
 
 
 
-// Ê±¼äÖáÔ¤ÀÀ¶¯Ì¬¶ÔÏóÊı¾İ
+// æ—¶é—´è½´é¢„è§ˆåŠ¨æ€å¯¹è±¡æ•°æ®
 USTRUCT(BlueprintType)
 struct FBXTLPreviewObjectData
 {
 	GENERATED_USTRUCT_BODY()
 
 public:
-	// Ëù¶ÔÓ¦µÄÈÎÎñ
+	// æ‰€å¯¹åº”çš„ä»»åŠ¡
 	UPROPERTY(Transient, BlueprintReadWrite)
 	class UBXTask* Task = nullptr;
 
-	// ÎŞÏà¶ÔÆ«ÒÆ×ø±ê
+	// æ— ç›¸å¯¹åç§»åæ ‡
 	UPROPERTY(Transient, BlueprintReadWrite)
 	FTransform NoOffsetTransform;
 
@@ -31,7 +31,7 @@ public:
 
 
 
-// ¹Ø¼üÖ¡Êı¾İ
+// å…³é”®å¸§æ•°æ®
 USTRUCT(BlueprintType)
 struct FBXTLKeyFrame
 {
@@ -51,7 +51,7 @@ public:
 
 
 
-// ´ı´¦ÀíÈÎÎñĞÅÏ¢
+// å¾…å¤„ç†ä»»åŠ¡ä¿¡æ¯
 USTRUCT(BlueprintType)
 struct FBXTLPendingTaskInfo
 {
@@ -62,18 +62,18 @@ public:
 	FBXTLPendingTaskInfo(int32 InIndex, float InTime) : LocalIndex(InIndex), Time(InTime){}
 
 public:
-	// ÈÎÎñ¾Ö²¿Ë÷Òı
+	// ä»»åŠ¡å±€éƒ¨ç´¢å¼•
 	UPROPERTY(BlueprintReadWrite)
 	int32 LocalIndex = -1;
 
-	// ´¥·¢Ê±¼ä
+	// è§¦å‘æ—¶é—´
 	UPROPERTY(BlueprintReadWrite)
 	float Time = 0.0f;
 };
 
 
 
-// ´ı¹ã²¥ÈÎÎñĞÅÏ¢
+// å¾…å¹¿æ’­ä»»åŠ¡ä¿¡æ¯
 USTRUCT(BlueprintType)
 struct FBXTLBroadcastTaskInfo
 {
@@ -84,18 +84,18 @@ public:
 	FBXTLBroadcastTaskInfo(int32 InIndex, const FName& InName) : FullIndex(InIndex), Name(InName) {}
 
 public:
-	// ÈÎÎñÈ«Á¿Ë÷Òı
+	// ä»»åŠ¡å…¨é‡ç´¢å¼•
 	UPROPERTY(BlueprintReadWrite)
 	int32 FullIndex = -1;
 
-	// ÊÂ¼şÃû³Æ
+	// äº‹ä»¶åç§°
 	UPROPERTY(BlueprintReadWrite)
 	FName Name;
 };
 
 
 
-// ¶¯Ì¬Êı¾İ¼¯²éÑ¯Ë÷Òı
+// åŠ¨æ€æ•°æ®é›†æŸ¥è¯¢ç´¢å¼•
 USTRUCT(BlueprintType)
 struct FBXTLDynamicDataSearchKey
 {
@@ -116,18 +116,18 @@ public:
 	}
 
 public:
-	// Ë÷Òı
+	// ç´¢å¼•
 	UPROPERTY(BlueprintReadWrite)
 	int32 Index = 0;
 
-	// Ãû³Æ
+	// åç§°
 	UPROPERTY(BlueprintReadWrite)
 	FName Name;
 };
 
 
 
-// ÈÎÎñÔËĞĞÊı¾İ
+// ä»»åŠ¡è¿è¡Œæ•°æ®
 USTRUCT(BlueprintType)
 struct FBXTLTaskRTData
 {
@@ -194,30 +194,30 @@ public:
 	}
 
 public:
-	// ¾²Ì¬Êı¾İË÷Òı
+	// é™æ€æ•°æ®ç´¢å¼•
 	UPROPERTY(Transient, BlueprintReadOnly)
 	int32 Index = -1;
 
-	// ¿ªÊ¼Ê±¼ä´Á
+	// å¼€å§‹æ—¶é—´æˆ³
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int64 StartTimestamp = 0;
 
-	// ÔËĞĞÊ±³¤
+	// è¿è¡Œæ—¶é•¿
 	UPROPERTY(Transient, BlueprintReadWrite)
 	float RunTime = 0.0f;
 
-	// ÊÇ·ñÌáÇ°½áÊø
+	// æ˜¯å¦æå‰ç»“æŸ
 	UPROPERTY(Transient, BlueprintReadWrite)
 	bool bEarlyFinish = false;
 
-	// ×Ô¶¨Òå¶¯Ì¬Êı¾İ
+	// è‡ªå®šä¹‰åŠ¨æ€æ•°æ®
 	UPROPERTY(Transient, BlueprintReadWrite)
 	FInstancedStruct DynamicData;
 };
 
 
 
-// ÈÎÎñÍĞ¹ÜÊı¾İ
+// ä»»åŠ¡æ‰˜ç®¡æ•°æ®
 USTRUCT(BlueprintType)
 struct FBXTLTaskHostingData
 {
@@ -227,34 +227,34 @@ public:
 	FBXTLTaskHostingData() {}
 
 public:
-	// ÈÎÎñ¾²Ì¬Êı¾İ
+	// ä»»åŠ¡é™æ€æ•°æ®
 	UPROPERTY(Transient, BlueprintReadWrite)
 	UBXTask* Task = nullptr;
 
-	// ÓµÓĞÕß
+	// æ‹¥æœ‰è€…
 	UPROPERTY(Transient, BlueprintReadWrite)
 	AActor* Owner = nullptr;
 
-	// Ê¼×÷Ù¸Õß
+	// å§‹ä½œä¿‘è€…
 	UPROPERTY(Transient, BlueprintReadWrite)
 	AActor* Instigator = nullptr;
 
-	// ´¥·¢Õß
+	// è§¦å‘è€…
 	UPROPERTY(Transient, BlueprintReadWrite)
 	AActor* Triggerer = nullptr;
 
-	// Ëø¶¨Ä¿±êÁĞ±í
+	// é”å®šç›®æ ‡åˆ—è¡¨
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TArray<FBXBodyPartSelection> LockParts;
 
-	// ÔËĞĞÊı¾İ
+	// è¿è¡Œæ•°æ®
 	UPROPERTY(Transient, BlueprintReadWrite)
 	FBXTLTaskRTData TaskRTData;
 };
 
 
 
-// Ê±¼äÆ¬¶ÎÔËĞĞÊı¾İ
+// æ—¶é—´ç‰‡æ®µè¿è¡Œæ•°æ®
 USTRUCT(BlueprintType)
 struct FBXTLSectionRTData
 {
@@ -375,46 +375,46 @@ public:
 	}
 
 public:
-	// Ê±¼äÖáË÷Òı
+	// æ—¶é—´è½´ç´¢å¼•
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int32 Index = -1;
 
-	// µ±Ç°µÄ¹Ø¼üÖ¡Ë÷Òı
+	// å½“å‰çš„å…³é”®å¸§ç´¢å¼•
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int32 KeyFrameIndex = 0;
 
-	// ¿ªÊ¼Ê±¼ä´Á
+	// å¼€å§‹æ—¶é—´æˆ³
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int64 Timestamp = 0;
 
-	// ÔËĞĞÊ±³¤
+	// è¿è¡Œæ—¶é•¿
 	UPROPERTY(Transient, BlueprintReadWrite)
 	float RunTime = 0.0f;
 
-	// Ñ­»·´ÎÊı
+	// å¾ªç¯æ¬¡æ•°
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int32 LoopCount = 0;
 
-	// ÕıÔÚÔËĞĞµÄTaskÊı¾İ
+	// æ­£åœ¨è¿è¡Œçš„Taskæ•°æ®
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TArray<FBXTLTaskRTData> RunningTasks;
 
-	// ´ıÖ´ĞĞTaskÁĞ±í TaskË÷Òı ´¥·¢Ê±¼äµã
+	// å¾…æ‰§è¡ŒTaskåˆ—è¡¨ Taskç´¢å¼• è§¦å‘æ—¶é—´ç‚¹
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TArray<FBXTLPendingTaskInfo> PendingTasks;
 
-	// Ö¡ÄÚ´ıÖ´ĞĞTaskË÷ÒıÁĞ±í
+	// å¸§å†…å¾…æ‰§è¡ŒTaskç´¢å¼•åˆ—è¡¨
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TArray<int32> FramePendingTasks;
 
-	// ĞèÒª¹ã²¥µÄTaskÊı¾İ Ê±¼äÖáË÷Òı*1000+TaskË÷Òı ´¥·¢Ê±¼äµã
+	// éœ€è¦å¹¿æ’­çš„Taskæ•°æ® æ—¶é—´è½´ç´¢å¼•*1000+Taskç´¢å¼• è§¦å‘æ—¶é—´ç‚¹
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TArray<FBXTLBroadcastTaskInfo> BroadcastTasks;
 };
 
 
 
-// Ê±¼äÖáÔËĞĞÊı¾İ
+// æ—¶é—´è½´è¿è¡Œæ•°æ®
 USTRUCT(BlueprintType)
 struct FBXTLRunTimeData
 {
@@ -532,56 +532,56 @@ public:
 	}
 
 public:
-	// Î¨Ò»ID
+	// å”¯ä¸€ID
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int64 ID = 0;
 
-	// ¾²Ì¬Êı¾İ
+	// é™æ€æ•°æ®
 	UPROPERTY(Transient, BlueprintReadWrite)
 	class UBXTLAsset* StaticData = nullptr;
 
-	// ÓµÓĞÕß
+	// æ‹¥æœ‰è€…
 	UPROPERTY(Transient, BlueprintReadWrite)
 	AActor* Owner = nullptr;
 
-	// Ê¼×÷Ù¸Õß
+	// å§‹ä½œä¿‘è€…
 	UPROPERTY(Transient, BlueprintReadWrite)
 	AActor* Instigator = nullptr;
 
-	// ´¥·¢Õß
+	// è§¦å‘è€…
 	UPROPERTY(Transient, BlueprintReadWrite)
 	AActor* Triggerer = nullptr;
 
-	// Ëø¶¨Ä¿±êÁĞ±í
+	// é”å®šç›®æ ‡åˆ—è¡¨
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TArray<FBXBodyPartSelection> LockParts;
 
-	// ¿ªÊ¼Ê±¼ä´Á
+	// å¼€å§‹æ—¶é—´æˆ³
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int64 Timestamp = 0;
 
-	// ÔËĞĞÊ±³¤
+	// è¿è¡Œæ—¶é•¿
 	UPROPERTY(Transient, BlueprintReadWrite)
 	float RunTime = 0.0f;
 
-	// ÔËĞĞËÙÂÊ
+	// è¿è¡Œé€Ÿç‡
 	UPROPERTY(Transient, BlueprintReadWrite)
 	float RunRate = 1.0f;
 
-	// ÊÇ·ñÌáÇ°½áÊø
+	// æ˜¯å¦æå‰ç»“æŸ
 	UPROPERTY(Transient, BlueprintReadWrite)
 	bool bEarlyFinish = false;
 
-	// Æ¬¶ÎÔËĞĞĞÅÏ¢
+	// ç‰‡æ®µè¿è¡Œä¿¡æ¯
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TArray<FBXTLSectionRTData> RunningSections;
 
-	// ¶¯Ì¬Êı¾İ¼¯
+	// åŠ¨æ€æ•°æ®é›†
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TMap<FBXTLDynamicDataSearchKey, FInstancedStruct> DynamicDatas;
 
 #if WITH_EDITORONLY_DATA
-	// Ô¤ÀÀ¶ÔÏóµ½ÈÎÎñÈ«Á¿Ë÷ÒıµÄÓ³Éä±í
+	// é¢„è§ˆå¯¹è±¡åˆ°ä»»åŠ¡å…¨é‡ç´¢å¼•çš„æ˜ å°„è¡¨
 	UPROPERTY(Transient)
 	TMap<UObject*, FBXTLPreviewObjectData> PreviewObjects;
 #endif
@@ -590,7 +590,7 @@ public:
 
 
 
-// Ê±¼äÖáÔËĞĞÉÏÏÂÎÄ
+// æ—¶é—´è½´è¿è¡Œä¸Šä¸‹æ–‡
 USTRUCT(BlueprintType)
 struct FBXTLPlayContext
 {
@@ -659,23 +659,23 @@ public:
 	}
 
 public:
-	// Ê¼×÷Ù¸Õß
+	// å§‹ä½œä¿‘è€…
 	UPROPERTY(BlueprintReadWrite)
 	AActor* Instigator = nullptr;
 
-	// ´¥·¢Õß
+	// è§¦å‘è€…
 	UPROPERTY(BlueprintReadWrite)
 	AActor* Triggerer = nullptr;
 
-	// Ëø¶¨Ä¿±êÁĞ±í
+	// é”å®šç›®æ ‡åˆ—è¡¨
 	UPROPERTY(BlueprintReadWrite)
 	TArray<FBXBodyPartSelection> LockParts;
 
-	// ¿ªÊ¼Ê±¼ä´Á
+	// å¼€å§‹æ—¶é—´æˆ³
 	UPROPERTY(BlueprintReadWrite)
 	int64 Timestamp = 0;
 
-	// ¶¯Ì¬Êı¾İ¼¯
+	// åŠ¨æ€æ•°æ®é›†
 	UPROPERTY(BlueprintReadWrite)
 	TMap<FName, FInstancedStruct> InputDatas;
 

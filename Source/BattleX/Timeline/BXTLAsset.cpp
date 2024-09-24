@@ -1,4 +1,4 @@
-#include "BXTLAsset.h"
+#include "BXTLAsset.h" 
 
 
 
@@ -97,7 +97,7 @@ void UBXTLAsset::RefreshSections()
 
 				int32 Index = -1;
 				
-				// ³¢ÊÔÕÒµ½¹Ø¼üÖ¡
+				// å°è¯•æ‰¾åˆ°å…³é”®å¸§
 				for (int32 k = 0; k < Section.KeyFrames.Num(); ++k)
 				{
 					if (FMath::IsNearlyEqual(StartTime, Section.KeyFrames[k].Time))
@@ -106,7 +106,7 @@ void UBXTLAsset::RefreshSections()
 					}
 				}
 
-				// Ìí¼ÓĞÂµÄ¹Ø¼üÖ¡
+				// æ·»åŠ æ–°çš„å…³é”®å¸§
 				if (Index < 0)
 				{
 					for (int32 k = 0; k < Section.KeyFrames.Num(); ++k)
@@ -178,7 +178,7 @@ void UBXTLAsset::CleanInvalidTaskDependency(UBXTask* InvalidTask)
 				continue;
 			}
 
-			// ¼ì²éÊÂ¼ş
+			// æ£€æŸ¥äº‹ä»¶
 			for (TMap<FName, FBXTEvent>::TIterator It(Task->Events); It; ++It)
 			{
 				for (TMap<TSoftObjectPtr<UBXTask>, float>::TIterator It2(It->Value.Event); It2; ++It2)
@@ -190,7 +190,7 @@ void UBXTLAsset::CleanInvalidTaskDependency(UBXTask* InvalidTask)
 				}
 			}
 
-			// ¼ì²éÅö×²´«ÈëÊı¾İ
+			// æ£€æŸ¥ç¢°æ’ä¼ å…¥æ•°æ®
 			for (TArray<FBXTInputInfo>::TIterator It(Task->CollisionInputDatas); It; ++It)
 			{
 				if (It->DataTask.LoadSynchronous() == InvalidTask)
@@ -199,7 +199,7 @@ void UBXTLAsset::CleanInvalidTaskDependency(UBXTask* InvalidTask)
 				}
 			}
 
-			// ¼ì²é´«ÈëÊı¾İ
+			// æ£€æŸ¥ä¼ å…¥æ•°æ®
 			for (TArray<FBXTInputInfo>::TIterator It(Task->InputDatas); It; ++It)
 			{
 				if (It->DataTask.LoadSynchronous() == InvalidTask)

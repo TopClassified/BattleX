@@ -9,7 +9,7 @@
 
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
-#include "Widgets/Input/NumericTypeInterface.h"
+#include "Widgets/Input/NumericTypeInterface.h" 
 
 class SOutliner;
 class STrackArea;

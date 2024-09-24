@@ -4,7 +4,7 @@
 #include "Widgets/SCompoundWidget.h"
 #include "Widgets/Text/STextBlock.h"
 
-#include "BXTLEditorDelegates.h"
+#include "BXTLEditorDelegates.h" 
 
 
 
