@@ -65,7 +65,7 @@ bool UBXHitReactionComponent::GetBodyPartByComponentAndBone(USceneComponent* InC
 
 	for (TMap<EBXBodyPartType, FBXBodyPartRTInformation>::TIterator It(BodyPartRTDatas); It; ++It)
 	{
-		if (It->Value.Component == InComponent && It->Value.BoneNames.Contains(InBoneName))
+		if (It->Value.Component == InComponent && (It->Value.BoneNames.Contains(InBoneName) || It->Value.BoneNames.Num() <= 0))
 		{
 			OutInformation = It->Value;
 
