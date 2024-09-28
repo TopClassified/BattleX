@@ -161,25 +161,54 @@ void FBXTLEditor::Tick(float DeltaTime)
 	PreviewProxy->Tick(DeltaTime);
 
 	// 对齐时间属性
-	int64 CurrentTS = UBXFunctionLibrary::GetUtcMillisecond();
-	if (CurrentTS - AlignTimePropertyTS > 125 && EditAsset.IsValid())
+	if (PreviewProxy->IsStopped())
 	{
-		AlignTimePropertyTS = CurrentTS;
-
-		if (const UBXTLEditorSettings* Setting = GetDefault<UBXTLEditorSettings>())
+		int64 CurrentTS = UBXFunctionLibrary::GetUtcMillisecond();
+		if (CurrentTS - AlignTimePropertyTS > 125 && EditAsset.IsValid())
 		{
-			if (UBXTLGraph* Graph = Cast<UBXTLGraph>(EditAsset->Graph))
-			{
-				Graph->AlignTimeProperty(Setting->PreviewTickRate);
-			}
+			AlignTimePropertyTS = CurrentTS;
 
-			EditAsset->AlignTimeProperty(Setting->PreviewTickRate);
+			if (const UBXTLEditorSettings* Setting = GetDefault<UBXTLEditorSettings>())
+			{
+				if (UBXTLGraph* Graph = Cast<UBXTLGraph>(EditAsset->Graph))
+				{
+					Graph->AlignTimeProperty(Setting->PreviewTickRate);
+				}
+
+				EditAsset->AlignTimeProperty(Setting->PreviewTickRate);
+			}
 		}
 	}
 
 	// 检查是否要刷新时间轴
 	bool bNeedRefreshPanel = false;
-	if (PreviewProxy->IsPlaying())
+	if (PreviewProxy->IsStopped())
+	{
+		for (int32 i = 0; i < EditSectionsToShow.Num(); ++i)
+		{
+			if (!SectionsToShow.Contains(EditSectionsToShow[i]))
+			{
+				bNeedRefreshPanel = true;
+				break;
+			}
+		}
+
+		if (!bNeedRefreshPanel)
+		{
+			for (int32 i = 0; i < SectionsToShow.Num(); ++i)
+			{
+				if (!EditSectionsToShow.Contains(SectionsToShow[i]))
+				{
+					bNeedRefreshPanel = true;
+					break;
+				}
+			}
+		}
+
+		SectionsToShow.Reset();
+		SectionsToShow.Append(EditSectionsToShow);
+	}
+	else
 	{
 		PreviewSectionsToShow.Reset();
 		PreviewProxy->GetRunningSectionIndexes(PreviewSectionsToShow);
@@ -208,32 +237,7 @@ void FBXTLEditor::Tick(float DeltaTime)
 		SectionsToShow.Reset();
 		SectionsToShow.Append(PreviewSectionsToShow);
 	}
-	else
-	{
-		for (int32 i = 0; i < EditSectionsToShow.Num(); ++i)
-		{
-			if (!SectionsToShow.Contains(EditSectionsToShow[i]))
-			{
-				bNeedRefreshPanel = true;
-				break;
-			}
-		}
 
-		if (!bNeedRefreshPanel)
-		{
-			for (int32 i = 0; i < SectionsToShow.Num(); ++i)
-			{
-				if (!EditSectionsToShow.Contains(SectionsToShow[i]))
-				{
-					bNeedRefreshPanel = true;
-					break;
-				}
-			}
-		}
-
-		SectionsToShow.Reset();
-		SectionsToShow.Append(EditSectionsToShow);
-	}
 	if (bNeedRefreshPanel)
 	{
 		RefreshPanelEvent.Broadcast();

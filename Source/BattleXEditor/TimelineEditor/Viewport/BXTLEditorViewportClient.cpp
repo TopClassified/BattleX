@@ -127,7 +127,7 @@ void FBXTLEditorViewportClient::HandlerPreviewScenePostTick()
 void FBXTLEditorViewportClient::ProcessClick(FSceneView& View, HHitProxy* HitProxy, FKey Key, EInputEvent Event, uint32 HitX, uint32 HitY)
 {
 	// 处于运行时，屏蔽点击逻辑
-	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsPlaying() && !CachedEditor.Pin()->IsPaused())
+	if (CachedEditor.IsValid() && !CachedEditor.Pin()->IsStopped())
 	{
 		return;
 	}

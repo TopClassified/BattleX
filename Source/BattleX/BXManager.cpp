@@ -301,7 +301,8 @@ void UBXManager::UpdateTimeline(float InDeltaTime)
 		bool bNeedFinish = It->Value.bEarlyFinish;
 		if (!bNeedFinish)
 		{
-			for (int32 j = 0; It->Value.RunningSections.Num(); ++j)
+			bNeedFinish = true;
+			for (int32 j = 0; j < It->Value.RunningSections.Num(); ++j)
 			{
 				if (It->Value.RunningSections[j].Index >= 0)
 				{
@@ -649,7 +650,7 @@ UBXTProcessor* UBXManager::GetTLTProcessorByTLTClass(UClass* TaskClass)
 	return Processor;
 }
 
-FBXTLRunTimeData* UBXManager::GetTimelineRunTimeDataByID(int32 InID)
+FBXTLRunTimeData* UBXManager::GetTimelineRunTimeDataByID(int64 InID)
 {
 	return TimelineRTDatas.Find(InID);
 }

@@ -122,7 +122,7 @@ public:
 	class UBXTProcessor* GetTLTProcessorByTLTClass(UClass* TaskClass);
 
 	// 根据ID获取时间轴运行数据
-	FBXTLRunTimeData* GetTimelineRunTimeDataByID(int32 InID);
+	FBXTLRunTimeData* GetTimelineRunTimeDataByID(int64 InID);
 
 protected:
 	void InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDeltaTime);

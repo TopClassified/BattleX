@@ -4,6 +4,7 @@
 #include "SourceControlHelpers.h"
 #include "EditorUtilityLibrary.h"
 #include "DesktopPlatformModule.h"
+#include "Misc/FrameNumber.h"
 #include "Misc/MessageDialog.h"
 #include "Animation/AnimSequence.h"
 #include "Preferences/PersonaOptions.h"
@@ -179,26 +180,26 @@ int32 FBXTLController::GetSectionID()
 
 FFrameNumber FBXTLController::GetScrubPosition() const
 {
-	if (CachedPreviewProxy.IsValid())
+	if (!CachedPreviewProxy.IsValid())
 	{
-		if (CachedPreviewProxy->IsPlaying())
-		{
-			return FFrameNumber(FMath::RoundToInt(CachedPreviewProxy->GetCurrentTime(SectionIndex) * GetTickResolution()));
-		}
-		else
-		{
-			return FFrameNumber(FMath::RoundToInt(ScrubPosition * GetTickResolution()));
-		}
+		return FFrameNumber();
 	}
-	
-	return FFrameNumber(0);
+
+	if (CachedPreviewProxy->IsStopped())
+	{
+		return FFrameNumber(FMath::RoundToInt(ScrubPosition * GetTickResolution()));
+	}
+	else
+	{
+		return FFrameNumber(FMath::RoundToInt(CachedPreviewProxy->GetCurrentTime(SectionIndex) * GetTickResolution()));
+	}
 }
 
 void FBXTLController::SetScrubPosition(FFrameTime NewScrubPosition) const
 {
 	if (CachedPreviewProxy.IsValid())
 	{
-		if (CachedPreviewProxy->IsPlaying())
+		if (!CachedPreviewProxy->IsStopped())
 		{
 			CachedPreviewProxy->Stop();
 		}
