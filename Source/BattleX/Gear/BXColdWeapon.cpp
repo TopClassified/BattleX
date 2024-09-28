@@ -66,21 +66,6 @@ void ABXColdWeapon::TickActor(float DeltaTime, enum ELevelTick TickType, FActorT
 
 
 
-#pragma region Use
-void ABXColdWeapon::InternalPostUsing(FBXUsingGearInformation& UsingInfo)
-{
-	
-}
-
-void ABXColdWeapon::InternalPostUnusing(FBXUsingGearInformation& UsingInfo)
-{
-
-}
-
-#pragma endregion Use
-
-
-
 #pragma region State
 void ABXColdWeapon::InternalChangeState(EBXGearState NewState)
 {

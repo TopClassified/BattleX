@@ -78,13 +78,6 @@ void SSimpleEditorViewport::BindCommands()
 		FCanExecuteAction::CreateSP(this, &SSimpleEditorViewport::CanToggleGameView),
 		FIsActionChecked::CreateSP(this, &SSimpleEditorViewport::IsInGameView)
 	);
-
-	CommandListRef.MapAction
-	(
-		LevelViewportActions.EjectActorPilot,
-		FExecuteAction::CreateSP(this, &SSimpleEditorViewport::OnActorUnlock),
-		FCanExecuteAction::CreateSP(this, &SSimpleEditorViewport::CanExecuteActorUnlock)
-	);
 }
 
 #pragma endregion Important
@@ -140,20 +133,6 @@ bool SSimpleEditorViewport::CanToggleGameView() const
 bool SSimpleEditorViewport::IsInGameView() const
 {
 	return ViewportClient->IsInGameView();
-}
-
-void SSimpleEditorViewport::OnActorUnlock()
-{
-	if (ViewportClient->GetLockedActor() != nullptr)
-	{
-		ViewportClient->SetLockedActor(nullptr);
-		ViewportClient->ViewFOV = ViewportClient->FOVAngle;
-	}
-}
-
-bool SSimpleEditorViewport::CanExecuteActorUnlock() const
-{
-	return ViewportClient->GetLockedActor() != nullptr;
 }
 
 #pragma endregion EditLogic

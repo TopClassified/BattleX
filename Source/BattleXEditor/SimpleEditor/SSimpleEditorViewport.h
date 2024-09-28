@@ -93,12 +93,6 @@ protected:
 	// 是否处于游戏视角
 	bool IsInGameView() const;
 
-	// 解锁对象
-	void OnActorUnlock();
-
-	// 是否可以解锁对象
-	bool CanExecuteActorUnlock() const;
-
 #pragma endregion EditLogic
 
 };

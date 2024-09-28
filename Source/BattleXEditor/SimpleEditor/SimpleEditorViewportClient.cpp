@@ -33,16 +33,11 @@ FSimpleEditorViewportClient::FSimpleEditorViewportClient(FEditorModeTools* InMod
 
 	UWorld* PreviewWorld = InPreviewScene->GetWorld();
 	PreviewWorld->bAllowAudioPlayback = true;
-
-	GEngine->OnActorMoved().AddRaw(this, &FSimpleEditorViewportClient::OnActorMoved);
 }
 
 void FSimpleEditorViewportClient::Tick(float DeltaSeconds)
 {
 	FEditorViewportClient::Tick(DeltaSeconds);
-
-	// 跟随锁定的对象
-	MoveViewportToLockedActor();
 }
 
 #pragma endregion Important
@@ -115,30 +110,6 @@ void FSimpleEditorViewportClient::ProcessClick(FSceneView& View, HHitProxy* HitP
 void FSimpleEditorViewportClient::PerspectiveCameraMoved()
 {
 	FEditorViewportClient::PerspectiveCameraMoved();
-
-	MoveLockedActorToViewport();
-	MoveViewportToLockedActor();
-}
-
-void FSimpleEditorViewportClient::TrackingStopped()
-{
-	TArray<AActor*> ActorsToMove;
-	TArray<USceneComponent*> ComponentsToMove;
-	GetSelectedActorsAndComponentsForMove(ActorsToMove, ComponentsToMove);
-
-	for (USceneComponent* Component : ComponentsToMove)
-	{
-		Component->PostEditComponentMove(true);
-		GEditor->BroadcastEndObjectMovement(*Component);
-	}
-
-	for (AActor* Actor : ActorsToMove)
-	{
-		Actor->PostEditMove(true);
-		GEditor->BroadcastEndObjectMovement(*Actor);
-	}
-
-	GEditor->BroadcastActorsMoved(ActorsToMove);
 }
 
 bool FSimpleEditorViewportClient::CheckActorCanMove(const AActor* InActor) const
@@ -252,36 +223,6 @@ void FSimpleEditorViewportClient::GetSelectedActorsAndComponentsForMove(TArray<A
 	}
 }
 
-AActor* FSimpleEditorViewportClient::GetLockedActor() const
-{
-	return LockedActor.Get();
-}
-
-void FSimpleEditorViewportClient::SetLockedActor(AActor* InActor)
-{
-	LockActorInternal(InActor);
-}
-
-bool FSimpleEditorViewportClient::CheckActorIsLocked(const TWeakObjectPtr<AActor> TestActor) const
-{
-	if (!TestActor.IsValid())
-	{
-		return false;
-	}
-
-	if (!LockedActor.IsValid())
-	{
-		return false;
-	}
-
-	return TestActor.Get() == LockedActor.Get();
-}
-
-bool FSimpleEditorViewportClient::HasAnyActorLocked() const
-{
-	return LockedActor.IsValid();
-}
-
 AActor* FSimpleEditorViewportClient::GetSelectedActor() const
 {
 	if (USelection* Selection = GEditor->GetSelectedActors())
@@ -322,69 +263,6 @@ USceneComponent* FSimpleEditorViewportClient::GetSelectedComponent() const
 	}
 
 	return nullptr;
-}
-
-void FSimpleEditorViewportClient::LockActorInternal(AActor* InActor)
-{
-	LockedActor = InActor;
-
-	MoveViewportToLockedActor();
-}
-
-void FSimpleEditorViewportClient::MoveViewportToLockedActor()
-{
-	if (LockedActor.IsValid())
-	{
-		SetViewLocation(LockedActor->GetActorLocation());
-		SetViewRotation(LockedActor->GetActorRotation());
-		if (UCameraComponent* CameraComp = Cast<UCameraComponent>(LockedActor->GetComponentByClass(UCameraComponent::StaticClass())))
-		{
-			ViewFOV = CameraComp->FieldOfView;
-		}
-
-		Invalidate();
-	}
-}
-
-void FSimpleEditorViewportClient::MoveLockedActorToViewport()
-{
-	if (LockedActor.IsValid())
-	{
-		if (!LockedActor->IsLockLocation())
-		{
-			LockedActor->SetActorLocation(GetViewLocation(), false);
-			LockedActor->SetActorRotation(GetViewRotation());
-
-			USceneComponent* LockedActorComponent = LockedActor->GetRootComponent();
-			TOptional<FRotator> PreviousRotator;
-			if (LockedActorComponent)
-			{
-				PreviousRotator = LockedActorComponent->GetRelativeRotation();
-			}
-
-			if (LockedActorComponent)
-			{
-				const FRotator Rot = PreviousRotator.GetValue();
-				FRotator ActorRotWind, ActorRotRem;
-				Rot.GetWindingAndRemainder(ActorRotWind, ActorRotRem);
-				const FQuat ActorQ = ActorRotRem.Quaternion();
-				const FQuat ResultQ = LockedActorComponent->GetRelativeRotation().Quaternion();
-				FRotator NewActorRotRem = FRotator(ResultQ);
-				ActorRotRem.SetClosestToMe(NewActorRotRem);
-				FRotator DeltaRot = NewActorRotRem - ActorRotRem;
-				DeltaRot.Normalize();
-				LockedActorComponent->SetRelativeRotationExact(Rot + DeltaRot);
-			}
-		}
-	}
-}
-
-void FSimpleEditorViewportClient::OnActorMoved(AActor* InActor)
-{
-	if (CheckActorIsLocked(InActor))
-	{
-		MoveViewportToLockedActor();
-	}
 }
 
 #pragma endregion Logic
@@ -441,21 +319,30 @@ bool FSimpleEditorViewportClient::InputWidgetDelta(FViewport* InViewport, EAxisL
 		// 将增量应用于对象上
 		if (SelectedComponent)
 		{
-			GEditor->ApplyDeltaToComponent
+			ApplyDeltaToComponent
 			(
 				SelectedComponent, true,
 				&InDrag, &InRot, &InScale,
-				SelectedComponent->GetRelativeLocation()
+				SelectedComponent->GetRelativeLocation(),
+				FInputDeviceState()
 			);
+
+			GEngine->BroadcastOnComponentTransformChanged(SelectedComponent, ETeleportType::None);
 		}
 		else if (SelectedActor && !SelectedActor->IsA<AWorldSettings>())
 		{
-			GEditor->ApplyDeltaToActor
+			FInputDeviceState InputState;
+			InputState.SetModifierKeyStates(false, false, false, false);
+
+			ApplyDeltaToActor
 			(
 				SelectedActor, true,
 				&InDrag, &InRot, &InScale,
-				false, false, false
+				GLevelEditorModeTools().PivotLocation, 
+				InputState
 			);
+
+			GEngine->BroadcastOnActorMoving(SelectedActor);
 		}
 
 		if (!InRot.IsZero())
@@ -475,6 +362,231 @@ bool FSimpleEditorViewportClient::InputWidgetDelta(FViewport* InViewport, EAxisL
 	}
 
 	return bHandled;
+}
+
+void FSimpleEditorViewportClient::ApplyDeltaToComponent(USceneComponent* InComponent, const bool InIsDelta, const FVector* InDeltaTranslationPtr, const FRotator* InDeltaRotationPtr, const FVector* InDeltaScalePtr, const FVector& InPivotLocation, const FInputDeviceState& InInputState)
+{
+	if (GEditor->IsDeltaModificationEnabled())
+	{
+		InComponent->Modify();
+	}
+
+	if (InDeltaRotationPtr)
+	{
+		const FRotator& InDeltaRot = *InDeltaRotationPtr;
+		const bool bRotatingComp = !InIsDelta || !InDeltaRot.IsZero();
+		if (bRotatingComp)
+		{
+			if (InIsDelta)
+			{
+				const FRotator Rot = InComponent->GetRelativeRotation();
+				FRotator ActorRotWind, ActorRotRem;
+				Rot.GetWindingAndRemainder(ActorRotWind, ActorRotRem);
+				const FQuat ActorQ = ActorRotRem.Quaternion();
+				const FQuat DeltaQ = InDeltaRot.Quaternion();
+				const FQuat ResultQ = DeltaQ * ActorQ;
+
+				FRotator NewActorRotRem = FRotator(ResultQ);
+				ActorRotRem.SetClosestToMe(NewActorRotRem);
+				FRotator DeltaRot = NewActorRotRem - ActorRotRem;
+				DeltaRot.Normalize();
+				InComponent->SetRelativeRotationExact(Rot + DeltaRot);
+			}
+			else
+			{
+				InComponent->SetRelativeRotationExact(InDeltaRot);
+			}
+
+			if (InIsDelta)
+			{
+				FVector NewCompLocation = InComponent->GetRelativeLocation();
+				NewCompLocation -= InPivotLocation;
+				NewCompLocation = FRotationMatrix(InDeltaRot).TransformPosition(NewCompLocation);
+				NewCompLocation += InPivotLocation;
+				InComponent->SetRelativeLocation(NewCompLocation);
+			}
+		}
+	}
+
+	if (InDeltaTranslationPtr)
+	{
+		if (InIsDelta)
+		{
+			InComponent->SetRelativeLocation(InComponent->GetRelativeLocation() + *InDeltaTranslationPtr);
+		}
+		else
+		{
+			InComponent->SetRelativeLocation(*InDeltaTranslationPtr);
+		}
+	}
+
+	if (InDeltaScalePtr)
+	{
+		const FVector& InDeltaScale = *InDeltaScalePtr;
+		const bool bScalingComp = !InIsDelta || !InDeltaScale.IsNearlyZero(0.000001f);
+		if (bScalingComp)
+		{
+			if (InIsDelta)
+			{
+				InComponent->SetRelativeScale3D(InComponent->GetRelativeScale3D() + InDeltaScale);
+
+				FVector NewCompLocation = InComponent->GetRelativeLocation();
+				NewCompLocation -= InPivotLocation;
+				NewCompLocation += FScaleMatrix(InDeltaScale).TransformPosition(NewCompLocation);
+				NewCompLocation += InPivotLocation;
+				InComponent->SetRelativeLocation(NewCompLocation);
+			}
+			else
+			{
+				InComponent->SetRelativeScale3D(InDeltaScale);
+			}
+		}
+	}
+}
+
+void FSimpleEditorViewportClient::ApplyDeltaToActor(AActor* InActor, const bool InIsDelta, const FVector* InDeltaTranslationPtr, const FRotator* InDeltaRotationPtr, const FVector* InDeltaScalePtr, const FVector& InPivotLocation, const FInputDeviceState& InInputState)
+{
+	const bool bIsSimulatingInEditor = GEditor->IsSimulatingInEditor();
+
+	TArray<AActor*> AffectedActors;
+	AffectedActors.Add(InActor);
+
+	InActor->GetAttachedActors(AffectedActors, false, true);
+
+	if (GEditor->IsDeltaModificationEnabled())
+	{
+		for (AActor* Actor : AffectedActors)
+		{
+			Actor->Modify();
+		}
+	}
+
+	bool bTranslationOnly = true;
+
+	if (InDeltaRotationPtr)
+	{
+		const FRotator& InDeltaRot = *InDeltaRotationPtr;
+		const bool bRotatingActor = !InIsDelta || !InDeltaRot.IsZero();
+		if (bRotatingActor)
+		{
+			bTranslationOnly = false;
+
+			if (InIsDelta)
+			{
+				if (InActor->GetRootComponent())
+				{
+					const FRotator OriginalRotation = InActor->GetRootComponent()->GetComponentRotation();
+
+					InActor->EditorApplyRotation(InDeltaRot, InInputState.bAltKeyDown, InInputState.bShiftKeyDown, InInputState.bCtrlKeyDown);
+
+					UPrimitiveComponent* RootPrimitiveComponent = Cast<UPrimitiveComponent>(InActor->GetRootComponent());
+					if (bIsSimulatingInEditor && GIsPlayInEditorWorld && RootPrimitiveComponent)
+					{
+						FRotator ActorRotWind, ActorRotRem;
+						OriginalRotation.GetWindingAndRemainder(ActorRotWind, ActorRotRem);
+
+						const FQuat ActorQ = ActorRotRem.Quaternion();
+						const FQuat DeltaQ = InDeltaRot.Quaternion();
+						const FQuat ResultQ = DeltaQ * ActorQ;
+
+						const FRotator NewActorRotRem = FRotator(ResultQ);
+						FRotator DeltaRot = NewActorRotRem - ActorRotRem;
+						DeltaRot.Normalize();
+
+						RootPrimitiveComponent->SetWorldRotation(OriginalRotation + DeltaRot);
+					}
+				}
+
+				FVector NewActorLocation = InActor->GetActorLocation();
+				NewActorLocation -= InPivotLocation;
+				NewActorLocation = FRotationMatrix(InDeltaRot).TransformPosition(NewActorLocation);
+				NewActorLocation += InPivotLocation;
+				NewActorLocation -= InActor->GetActorLocation();
+				InActor->EditorApplyTranslation(NewActorLocation, InInputState.bAltKeyDown, InInputState.bShiftKeyDown, InInputState.bCtrlKeyDown);
+			}
+			else
+			{
+				InActor->SetActorRotation(InDeltaRot);
+			}
+		}
+	}
+
+	if (InDeltaTranslationPtr)
+	{
+		if (InIsDelta)
+		{
+			if (InActor->GetRootComponent())
+			{
+				const FVector OriginalLocation = InActor->GetRootComponent()->GetComponentLocation();
+
+				InActor->EditorApplyTranslation(*InDeltaTranslationPtr, InInputState.bAltKeyDown, InInputState.bShiftKeyDown, InInputState.bCtrlKeyDown);
+
+				UPrimitiveComponent* RootPrimitiveComponent = Cast<UPrimitiveComponent>(InActor->GetRootComponent());
+				if (bIsSimulatingInEditor && GIsPlayInEditorWorld && RootPrimitiveComponent)
+				{
+					RootPrimitiveComponent->SetWorldLocation(OriginalLocation + *InDeltaTranslationPtr);
+				}
+			}
+		}
+		else
+		{
+			InActor->SetActorLocation(*InDeltaTranslationPtr, false);
+		}
+	}
+
+	if (InDeltaScalePtr)
+	{
+		const FVector& InDeltaScale = *InDeltaScalePtr;
+		const bool bScalingActor = !InIsDelta || !InDeltaScale.IsNearlyZero(0.000001f);
+		if (bScalingActor)
+		{
+			bTranslationOnly = false;
+
+			FVector ModifiedScale = InDeltaScale;
+
+			if (GEditor->UsePercentageBasedScaling())
+			{
+				const FBox BoundingBox = InActor->GetComponentsBoundingBox(true);
+				const FVector BoundsExtents = BoundingBox.GetExtent();
+
+				const float MinThreshold = 1.0f;
+
+				for (int32 Idx = 0; Idx < 3; Idx++)
+				{
+					if ((FMath::Pow(BoundsExtents[Idx], 2)) > BIG_NUMBER)
+					{
+						ModifiedScale[Idx] = 0.0f;
+					}
+					else if (SMALL_NUMBER < BoundsExtents[Idx])
+					{
+						const bool bBelowAllowableScaleThreshold = ((InDeltaScale[Idx] + 1.0f) * BoundsExtents[Idx]) < MinThreshold;
+
+						if (bBelowAllowableScaleThreshold)
+						{
+							ModifiedScale[Idx] = (MinThreshold / BoundsExtents[Idx]) - 1.0f;
+						}
+					}
+				}
+			}
+
+			if (InIsDelta)
+			{
+				AActor::bUsePercentageBasedScaling = GEditor->UsePercentageBasedScaling();
+
+				InActor->EditorApplyScale(
+					ModifiedScale,
+					&InPivotLocation,
+					InInputState.bAltKeyDown,
+					InInputState.bShiftKeyDown,
+					InInputState.bCtrlKeyDown
+				);
+			}
+			else if (InActor->GetRootComponent())
+			{
+				InActor->GetRootComponent()->SetRelativeScale3D(InDeltaScale);
+			}
+		}
+	}
 }
 
 #pragma endregion Widget

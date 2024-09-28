@@ -24,6 +24,13 @@ FBXTLPreviewProxy::FBXTLPreviewProxy(UBXTLAsset* InAsset, const TSharedPtr<FBXTL
 	{
 		CachedEditor.Pin()->TaskSelectedEvent.AddRaw(this, &FBXTLPreviewProxy::OnTaskSelected);
 	}
+
+	// 注册关心的事件
+	if (GEngine)
+	{
+		GEngine->OnActorMoving().AddRaw(this, &FBXTLPreviewProxy::OnActorMoving);
+		GEngine->OnComponentTransformChanged().AddRaw(this, &FBXTLPreviewProxy::OnComponentMoving);
+	}
 }
 
 FBXTLPreviewProxy::~FBXTLPreviewProxy()
@@ -62,6 +69,13 @@ void FBXTLPreviewProxy::Finish()
 	if (CachedEditor.IsValid())
 	{
 		CachedEditor.Pin()->TaskSelectedEvent.RemoveAll(this);
+	}
+
+	// 注销关心的事件
+	if (GEngine)
+	{
+		GEngine->OnActorMoved().RemoveAll(this);
+		GEngine->OnComponentTransformChanged().RemoveAll(this);
 	}
 }
 
@@ -297,10 +311,20 @@ FBXTLRunTimeData* FBXTLPreviewProxy::GetTimelineRunTimeData()
 
 
 
-#pragma region Event
-void FBXTLPreviewProxy::OnObjectMoved(UObject* InObject)
+#pragma region Callback
+void FBXTLPreviewProxy::OnActorMoving(AActor* InActor)
 {
-	if (!IsValid(InObject))
+	OnObjectMoving(InActor);
+}
+
+void FBXTLPreviewProxy::OnComponentMoving(USceneComponent* InComponent, ETeleportType InType)
+{
+	OnObjectMoving(InComponent);
+}
+
+void FBXTLPreviewProxy::OnObjectMoving(UObject* InObject)
+{
+	if (!IsValid(InObject) || !InObject->IsValidLowLevelFast())
 	{
 		return;
 	}
@@ -366,4 +390,4 @@ void FBXTLPreviewProxy::OnTaskSelected(TArray<UBXTask*>& SelectTaskList)
 	GEditor->SelectNone(false, true, false);
 }
 
-#pragma endregion Event
+#pragma endregion Callback

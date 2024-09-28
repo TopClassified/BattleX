@@ -280,7 +280,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName ComponentName = NAME_None;
 
-	// 骨骼列表
+	// 骨骼列表(不填代表所有骨骼)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<FName> BoneNames;
 
@@ -291,6 +291,10 @@ public:
 	// 是否可以锁定
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bCanLock = true;
+
+	// 锁定的骨骼名称
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "bCanLock"))
+	FName LockBoneName = NAME_None;
 
 };
 

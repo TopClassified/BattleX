@@ -41,16 +41,6 @@ protected:
 
 
 
-#pragma region Use
-protected:
-	virtual void InternalPostUsing(FBXUsingGearInformation& UsingInfo) override;
-
-	virtual void InternalPostUnusing(FBXUsingGearInformation& UsingInfo) override;
-
-#pragma endregion Use
-
-
-
 #pragma region State
 protected:
 	virtual void InternalChangeState(EBXGearState NewState) override;

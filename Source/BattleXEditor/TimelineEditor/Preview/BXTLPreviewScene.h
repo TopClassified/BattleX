@@ -31,6 +31,7 @@ private:
 
 
 
+#pragma region Preview
 public:
 	// 初始化预览世界
 	void InitPreviewWorld();
@@ -61,10 +62,7 @@ protected:
 	class ULevelStreaming* LoadExternalMap(TSoftObjectPtr<UWorld> NewMap);
 
 	// 对象发生移动
-	void OnActorMoved(AActor* InActor);
-
-	// 组件发生移动
-	void OnComponentMoved(USceneComponent* InComponent, ETeleportType InType);
+	void OnActorMoving(AActor* InActor);
 
 private:
 	TWeakObjectPtr<ULevelStreaming> ExternalLevel = nullptr;

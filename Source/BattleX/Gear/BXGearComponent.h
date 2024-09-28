@@ -33,7 +33,9 @@ public:
 
 	virtual void BeginPlay() override;
 
-public:
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+protected:
 	// 每个插槽的最大容量
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TMap<EBXGearSlot, int32> SlotMaxSize;
@@ -100,6 +102,14 @@ public:
 
 #pragma region API
 public:
+	// 获取所有的装备列表
+	UFUNCTION(BlueprintCallable)
+	virtual void GetEquipGearList(TArray<ABXGear*>& OutList, bool bNeedReset = true);
+
+	// 获取装备插槽的装备列表
+	UFUNCTION(BlueprintCallable)
+	virtual void GetEquipGearsBySlot(EBXGearSlot InSlot, TArray<ABXGear*>& OutGears);
+
 	// 获取正在使用的装备
 	UFUNCTION(BlueprintCallable)
 	virtual ABXGear* GetUsingGear(EBXGearSlot InSlot);
@@ -116,10 +126,6 @@ public:
 	UFUNCTION(BlueprintCallable)
 	virtual void ChangeUsingGearState(EBXGearSlot InSlot, EBXGearState InNewState);
 
-	// 获取装备插槽的装备列表
-	UFUNCTION(BlueprintCallable)
-	virtual void GetEquipGears(EBXGearSlot InSlot, TArray<ABXGear*>& OutGears);
-
 	// 改变装备插槽
 	UFUNCTION(BlueprintCallable)
 	virtual void ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGear* InGear, class USkeletalMeshComponent* AttachParent);
@@ -131,6 +137,10 @@ public:
 	// 改变装备插槽
 	UFUNCTION(BlueprintCallable)
 	virtual void ChangeEquipGearByData(EBXGearSlot InSlot, int32 InIndex, UBXGearData* InGearData, class USkeletalMeshComponent* AttachParent);
+
+	// 卸下所有装备
+	UFUNCTION(BlueprintCallable)
+	virtual void UnequipAllGears(bool bForceDestroy = false);
 
 #pragma endregion API
 

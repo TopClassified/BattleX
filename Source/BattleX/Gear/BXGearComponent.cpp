@@ -5,7 +5,10 @@
 #pragma region Important
 UBXGearComponent::UBXGearComponent()
 {
-
+	for (int32 i = 0; i < (int32)EBXGearSlot::GS_Jewelry8; ++i)
+	{
+		SlotMaxSize.Add((EBXGearSlot)i, 1);
+	}
 }
 
 void UBXGearComponent::BeginPlay()
@@ -19,11 +22,49 @@ void UBXGearComponent::BeginPlay()
 	Super::BeginPlay();
 }
 
+void UBXGearComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+
+	UnequipAllGears();
+
+	UsingGearIndexs.Empty();
+	EquipGears.Empty();
+}
+
 #pragma endregion Important
 
 
 
 #pragma region API
+void UBXGearComponent::GetEquipGearList(TArray<ABXGear*>& OutList, bool bNeedReset)
+{
+	if (bNeedReset)
+	{
+		OutList.Reset();
+	}
+
+	for (TMap<EBXGearSlot, FBXGears>::TIterator It(EquipGears); It; ++It)
+	{
+		for (TArray<ABXGear*>::TIterator It2(It->Value.List); It2; ++It2)
+		{
+			if (IsValid(*It2))
+			{
+				OutList.AddUnique(*It2);
+			}
+		}
+	}
+}
+
+void UBXGearComponent::GetEquipGearsBySlot(EBXGearSlot InSlot, TArray<ABXGear*>& OutGears)
+{
+	OutGears.Reset();
+	if (FBXGears* Gears = EquipGears.Find(InSlot))
+	{
+		OutGears = Gears->List;
+	}
+}
+
 ABXGear* UBXGearComponent::GetUsingGear(EBXGearSlot InSlot)
 {
 	if (int32* Index = UsingGearIndexs.Find(InSlot))
@@ -85,14 +126,14 @@ void UBXGearComponent::SwitchUsingGear(EBXGearSlot InSlot, int32 InIndex)
 
 	if (CurrentGear)
 	{
-		CurrentGear->PreUnusing(HelpUsingInformation);
 		HelpUsingInformation.Gear = CurrentGear;
+		CurrentGear->PreUnusing(HelpUsingInformation);
 		PreUnusingGearEvent.Broadcast(HelpUsingInformation);
 	}
 	if (NewGear)
 	{
-		NewGear->PreUsing(HelpUsingInformation);
 		HelpUsingInformation.Gear = NewGear;
+		NewGear->PreUsing(HelpUsingInformation);
 		PreUsingGearEvent.Broadcast(HelpUsingInformation);
 	}
 
@@ -101,14 +142,14 @@ void UBXGearComponent::SwitchUsingGear(EBXGearSlot InSlot, int32 InIndex)
 
 	if (CurrentGear)
 	{
-		CurrentGear->PostUnusing(HelpUsingInformation);
 		HelpUsingInformation.Gear = CurrentGear;
+		CurrentGear->PostUnusing(HelpUsingInformation);
 		PostUnusingGearEvent.Broadcast(HelpUsingInformation);
 	}
 	if (NewGear)
 	{
-		NewGear->PostUsing(HelpUsingInformation);
 		HelpUsingInformation.Gear = NewGear;
+		NewGear->PostUsing(HelpUsingInformation);
 		PostUsingGearEvent.Broadcast(HelpUsingInformation);
 	}
 }
@@ -144,15 +185,6 @@ void UBXGearComponent::ChangeUsingGearState(EBXGearSlot InSlot, EBXGearState InN
 	ChangeGearStateEvent.Broadcast(CurrentGear, OldState, InNewState);
 }
 
-void UBXGearComponent::GetEquipGears(EBXGearSlot InSlot, TArray<ABXGear*>& OutGears)
-{
-	OutGears.Reset();
-	if (FBXGears* Gears = EquipGears.Find(InSlot))
-	{
-		OutGears = Gears->List;
-	}
-}
-
 void UBXGearComponent::ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGear* InGear, USkeletalMeshComponent* AttachParent)
 {
 	ABXGear* CurrentGear = nullptr;
@@ -182,18 +214,20 @@ void UBXGearComponent::ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGea
 		}
 
 		// 卸下装备之前
-		CurrentGear->PreUnequip(HelpEquipInformation);
 		HelpEquipInformation.Gear = CurrentGear;
 		HelpEquipInformation.AttachParent = nullptr;
+		HelpEquipInformation.OwnerComponent = nullptr;
+		CurrentGear->PreUnequip(HelpEquipInformation);
 		PreUnequipGearEvent.Broadcast(HelpEquipInformation);
 	}
 
 	if (InGear)
 	{
 		// 装上装备之前
-		InGear->PreEquip(HelpEquipInformation);
 		HelpEquipInformation.Gear = InGear;
 		HelpEquipInformation.AttachParent = AttachParent;
+		HelpEquipInformation.OwnerComponent = this;
+		InGear->PreEquip(HelpEquipInformation);
 		PreEquipGearEvent.Broadcast(HelpEquipInformation);
 	}
 
@@ -213,18 +247,20 @@ void UBXGearComponent::ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGea
 	if (CurrentGear)
 	{
 		// 卸下装备之后
-		CurrentGear->PostUnequip(HelpEquipInformation);
 		HelpEquipInformation.Gear = CurrentGear;
 		HelpEquipInformation.AttachParent = nullptr;
+		HelpEquipInformation.OwnerComponent = nullptr;
+		CurrentGear->PostUnequip(HelpEquipInformation);
 		PostUnequipGearEvent.Broadcast(HelpEquipInformation);
 	}
 
 	if (InGear)
 	{
 		// 装上装备之后
-		InGear->PostEquip(HelpEquipInformation);
 		HelpEquipInformation.Gear = InGear;
 		HelpEquipInformation.AttachParent = AttachParent;
+		HelpEquipInformation.OwnerComponent = this;
+		InGear->PostEquip(HelpEquipInformation);
 		PostEquipGearEvent.Broadcast(HelpEquipInformation);
 
 		// 使用该装备
@@ -259,6 +295,25 @@ void UBXGearComponent::ChangeEquipGearByData(EBXGearSlot InSlot, int32 InIndex, 
 	{
 		NewGear->GearData = InGearData;
 		ChangeEquipGear(InSlot, InIndex, NewGear, AttachParent);
+	}
+}
+
+void UBXGearComponent::UnequipAllGears(bool bForceDestroy)
+{
+	for (TMap<EBXGearSlot, FBXGears>::TIterator It(EquipGears); It; ++It)
+	{
+		for (TArray<ABXGear*>::TIterator GearIt(It->Value.List); GearIt; ++GearIt)
+		{
+			if (*GearIt)
+			{
+				ChangeEquipGear(It->Key, GearIt.GetIndex(), nullptr, nullptr);
+
+				if (bForceDestroy && IsValid(*GearIt))
+				{
+					(*GearIt)->Destroy();
+				}
+			}
+		}
 	}
 }
 

@@ -65,6 +65,7 @@ public class BattleXEditor : ModuleRules
                 "LevelEditor",
                 "AdvancedPreviewScene",
                 "ComponentVisualizers",
+                "InteractiveToolsFramework",
 
                 "Slate",
 				"SlateCore",

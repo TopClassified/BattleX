@@ -178,15 +178,6 @@ void FBXTLEditorViewportClient::ChangeViewMode(const FName& InCameraMode)
 	SetViewRotation(RawRot);
 	EnableCameraLock(false);
 
-	if (InCameraMode.IsEqual(BXTLViewportCameraMode::Free))
-	{
-		SetLockedActor(nullptr);
-	}
-	else if (InCameraMode.IsEqual(BXTLViewportCameraMode::RealGame))
-	{
-		SetLockedActor(nullptr);
-	}
-
 	Invalidate();
 }
 

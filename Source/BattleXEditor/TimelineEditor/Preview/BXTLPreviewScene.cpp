@@ -21,6 +21,7 @@
 #include "BXTLPreviewProxy.h"
 #include "BXTLEditorSettings.h"
 #include "BXTLEditorDelegates.h"
+#include "Gear/BXGearComponent.h"
 #include "Viewport/SBXTLEditorViewport.h" 
 
 
@@ -64,8 +65,7 @@ void FBXTLPreviewScene::OnCreateViewport(SBXTLEditorViewport* InEditorViewport, 
 	}
 
 	// 注册关心的事件
-	GEngine->OnActorMoved().AddRaw(this, &FBXTLPreviewScene::OnActorMoved);
-	GEngine->OnComponentTransformChanged().AddRaw(this, &FBXTLPreviewScene::OnComponentMoved);
+	GEngine->OnActorMoving().AddRaw(this, &FBXTLPreviewScene::OnActorMoving);
 }
 
 void FBXTLPreviewScene::Tick(float DeltaTime)
@@ -100,7 +100,6 @@ void FBXTLPreviewScene::Finish()
 
 	// 注销关心的事件
 	GEngine->OnActorMoved().RemoveAll(this);
-	GEngine->OnComponentTransformChanged().RemoveAll(this);
 }
 
 void FBXTLPreviewScene::AddReferencedObjects(FReferenceCollector& Collector)
@@ -225,33 +224,37 @@ void FBXTLPreviewScene::DestroyPreviewActors()
 
 	UWorld* World = GetWorld();
 
+	TArray<ABXGear*> GearList;
+
 	for (TWeakObjectPtr<AActor> ActorPtr : PreviewActors)
 	{
-		if (ActorPtr.IsValid())
+		if (!ActorPtr.IsValid())
 		{
-			// 删除子对象
-			for (int32 i = ActorPtr->Children.Num() - 1; i >= 0; --i)
-			{
-				if (AActor* Child = ActorPtr->Children[i].Get())
-				{
-					Child->RemoveFromRoot();
-					World->EditorDestroyActor(Child, false);
-				}
-			}
-
-			ActorPtr->RemoveFromRoot();
-
-			if (APawn* Pawn = Cast<APawn>(ActorPtr))
-			{
-				if (AController* Controller = Pawn->GetController())
-				{
-					Controller->UnPossess();
-					World->EditorDestroyActor(Controller, false);
-				}
-			}
-
-			World->EditorDestroyActor(ActorPtr.Get(), false);
+			continue;
 		}
+		
+		// 删除所有装备中的武器
+		if (UBXGearComponent* GearComp = ActorPtr->FindComponentByClass<UBXGearComponent>())
+		{
+			GearComp->GetEquipGearList(GearList);
+		}
+		for (TArray<ABXGear*>::TIterator It(GearList); It; ++It)
+		{
+			World->EditorDestroyActor(*It, false);
+		}
+
+		// 调整控制器
+		if (APawn* Pawn = Cast<APawn>(ActorPtr))
+		{
+			if (AController* Controller = Pawn->GetController())
+			{
+				Controller->UnPossess();
+				World->EditorDestroyActor(Controller, false);
+			}
+		}
+
+		ActorPtr->RemoveFromRoot();
+		World->EditorDestroyActor(ActorPtr.Get(), false);
 	}
 	PreviewActors.Empty();
 
@@ -310,9 +313,14 @@ ULevelStreaming* FBXTLPreviewScene::LoadExternalMap(TSoftObjectPtr<UWorld> NewMa
 	return NewLevel;
 }
 
-void FBXTLPreviewScene::OnActorMoved(AActor* InActor)
+void FBXTLPreviewScene::OnActorMoving(AActor* InActor)
 {
-	if (!CachedEditor.IsValid() || InActor->GetWorld() != GetWorld() || InActor->IsA<AWorldSettings>())
+	if (!IsValid(InActor) || !InActor->IsValidLowLevelFast())
+	{
+		return;
+	}
+
+	if (!CachedEditor.IsValid())
 	{
 		return;
 	}
@@ -342,34 +350,6 @@ void FBXTLPreviewScene::OnActorMoved(AActor* InActor)
 				PInfo->SpawnTransform = InActor->GetActorTransform();
 			}
 		}
-	}
-	else 
-	{
-		if (FBXTLPreviewProxy* Proxy = CachedEditor.Pin()->GetPreviewProxy().Get())
-		{
-			Proxy->OnObjectMoved(InActor);
-		}
-	}
-
-	Asset->MarkPackageDirty();
-}
-
-void FBXTLPreviewScene::OnComponentMoved(USceneComponent* InComponent, ETeleportType InType)
-{
-	if (!CachedEditor.IsValid() || InComponent->GetWorld() != GetWorld())
-	{
-		return;
-	}
-
-	UBXTLAsset* Asset = CachedEditor.Pin()->GetEditingAsset();
-	if (!Asset)
-	{
-		return;
-	}
-
-	if (FBXTLPreviewProxy* Proxy = CachedEditor.Pin()->GetPreviewProxy().Get())
-	{
-		Proxy->OnObjectMoved(InComponent);
 	}
 
 	Asset->MarkPackageDirty();

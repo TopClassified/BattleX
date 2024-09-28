@@ -80,9 +80,14 @@ private:
 
 #pragma region Callback
 public:
-	void OnObjectMoved(UObject* InObject);
+	void OnActorMoving(AActor* InActor);
+
+	void OnComponentMoving(USceneComponent* InComponent, ETeleportType InType);
 
 	void OnTaskSelected(TArray<class UBXTask*>& SelectTaskList);
+
+protected:
+	void OnObjectMoving(UObject* InObject);
 
 #pragma endregion Callback
 	

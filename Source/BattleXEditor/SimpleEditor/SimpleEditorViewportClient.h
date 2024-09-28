@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "InputState.h"
 #include "EditorViewportClient.h" 
 
 
@@ -50,26 +51,11 @@ public:
 	// 透视摄像机移动时触发的回调
 	virtual void PerspectiveCameraMoved() override;
 
-	// 追踪鼠标移动停止时的回调
-	virtual void TrackingStopped() override;
-
 	// 检查对象是否可以在窗口中移动
 	bool CheckActorCanMove(const AActor* InActor) const;
 
 	// 从编辑器已选的组件中获取可移动的对象和组件
 	void GetSelectedActorsAndComponentsForMove(TArray<AActor*>& OutActorsToMove, TArray<USceneComponent*>& OutComponentsToMove) const;
-
-	// 得到锁定的对象
-	AActor* GetLockedActor() const;
-
-	// 设置锁定的对象
-	void SetLockedActor(AActor* InActor);
-
-	// 检查对象是否被锁定
-	bool CheckActorIsLocked(const TWeakObjectPtr<AActor> TestActor) const;
-
-	// 是否有对象被锁定
-	bool HasAnyActorLocked() const;
 
 protected:
 	// 获取被选中的对象
@@ -77,21 +63,6 @@ protected:
 
 	// 获取被选中的组件
 	USceneComponent* GetSelectedComponent() const;
-
-private:
-	void LockActorInternal(AActor* InActor);
-
-	// 移动窗口到被锁定的对象
-	void MoveViewportToLockedActor();
-
-	// 移动被锁定的对象到窗口
-	void MoveLockedActorToViewport();
-
-	// 窗口内对象发生移动的回调函数
-	void OnActorMoved(AActor* InActor);
-
-private:
-	TWeakObjectPtr<AActor> LockedActor;
 
 #pragma endregion Logic
 
@@ -119,6 +90,13 @@ public:
 
 	// 应用Transform编辑部件的坐标增量
 	virtual bool InputWidgetDelta(FViewport* InViewport, EAxisList::Type CurrentAxis, FVector& Drag, FRotator& Rot, FVector& Scale) override;
+
+protected:
+	// 逻辑拷贝自FComponentElementEditorViewportInteractionCustomization::ApplyDeltaToComponent
+	void ApplyDeltaToComponent(USceneComponent* InComponent, const bool InIsDelta, const FVector* InDeltaTranslationPtr, const FRotator* InDeltaRotationPtr, const FVector* InDeltaScalePtr, const FVector& InPivotLocation, const FInputDeviceState& InInputState);
+
+	// 逻辑拷贝自FActorElementEditorViewportInteractionCustomization::ApplyDeltaToActor
+	void ApplyDeltaToActor(AActor* InActor, const bool InIsDelta, const FVector* InDeltaTranslationPtr, const FRotator* InDeltaRotationPtr, const FVector* InDeltaScalePtr, const FVector& InPivotLocation, const FInputDeviceState& InInputState);
 
 private:
 	UE::Widget::EWidgetMode WidgetMode = UE::Widget::EWidgetMode::WM_Translate;

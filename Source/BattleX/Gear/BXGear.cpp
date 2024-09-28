@@ -25,10 +25,11 @@ void ABXGear::PreEquip(UPARAM(ref) FBXEquipGearInformation& EquipInfo)
 {
 	if (!EquipInfo.OwnerComponent)
 	{
-		OwnerComponent = EquipInfo.OwnerComponent;
+		return;
 	}
 
 	AttachTarget = EquipInfo.AttachParent;
+	OwnerComponent = EquipInfo.OwnerComponent;
 
 	if ((EquipFunctions & 1) > 0)
 	{
