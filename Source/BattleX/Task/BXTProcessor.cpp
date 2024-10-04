@@ -3,7 +3,8 @@
 #include "BXSettings.h"
 #include "BXTLAsset.h"
 #include "BXTLStructs.h"
-#include "BXTask.h" 
+#include "BXTask.h"
+#include "BXHitReactionComponent.h"
 
 
 
@@ -185,4 +186,92 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 	return true;
 }
 
+/*
+bool UBXTProcessor::AnalyzeTransformCreater(AActor* InTarget, const FBXTLRunTimeData& InRTData, const FBXTTransformCreater& InCreater, FBXTTransformCreaterResult& OutResult)
+{
+	
+	
+	return false;
+}
+
+bool UBXTProcessor::AnalyzeTransformCreaterList(AActor* InTarget, const FBXTLRunTimeData& InRTData, const TArray<FBXTTransformCreater>& InCreaterList, FBXTTransformCreaterResult& OutResult)
+{
+	for (TArray<FBXTTransformCreater>::TConstIterator It(InCreaterList); It; ++It)
+	{
+		if (UBXTProcessor::AnalyzeTransformCreater(InTarget, InRTData, *It, OutResult))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+USceneComponent* UBXTProcessor::AnalyzeTransformCreaterCoordinateType(EBXTCoordinateType InType, const FBXTLRunTimeData& InRTData, FTransform& OutTransform)
+{
+	USceneComponent* OutResult = nullptr;
+	switch (InType)
+	{
+	case EBXTCoordinateType::C_Owner:
+		OutResult = IsValid(InRTData.Owner) ? InRTData.Owner->GetRootComponent() : nullptr;
+		if (OutResult)
+		{
+			OutTransform = OutResult->GetComponentTransform();
+		}
+		break;
+	case EBXTCoordinateType::C_Instigator:
+		OutResult = IsValid(InRTData.Instigator) ? InRTData.Instigator->GetRootComponent() : nullptr;
+		if (OutResult)
+		{
+			OutTransform = OutResult->GetComponentTransform();
+		}
+		break;
+	case EBXTCoordinateType::C_Trigger:
+		OutResult = IsValid(InRTData.Triggerer) ? InRTData.Triggerer->GetRootComponent() : nullptr;
+		if (OutResult)
+		{
+			OutTransform = OutResult->GetComponentTransform();
+		}
+		break;
+	case EBXTCoordinateType::C_LockTarget:
+		for (TArray<FBXBodyPartSelection>::TConstIterator It(InRTData.LockParts); It; ++It)
+		{
+			if (IsValid(It->Owner) && IsValid(It->Owner->GetOwner()))
+			{
+				OutResult = It->Owner->GetOwner()->GetRootComponent();
+				if (OutResult)
+				{
+					OutTransform = OutResult->GetComponentTransform();
+				}
+				break;
+			}
+		}
+		break;
+	case EBXTCoordinateType::C_LockPart:
+		FBXBodyPartRTInformation BPRTInfo;
+		for (TArray<FBXBodyPartSelection>::TConstIterator It(InRTData.LockParts); It; ++It)
+		{
+			if (IsValid(It->Owner) && It->Owner->GetBodyPartByType(It->BodyPart, BPRTInfo))
+			{
+				OutResult = BPRTInfo.Component;
+				if (OutResult)
+				{
+					OutTransform = OutResult->GetSocketTransform(BPRTInfo.LockBoneName);
+				}
+				break;
+			}
+		}
+		break;
+	case EBXTCoordinateType::C_Special:
+		
+		break;
+	case EBXTCoordinateType::C_World:
+		break;
+	default:
+		break;
+	}
+
+	return OutResult;
+}
+*/
 #pragma endregion GlobalAPI

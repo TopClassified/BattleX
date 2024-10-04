@@ -108,3 +108,15 @@ enum class EBXTProcessorFunction : uint8
 	PF_TMax                                  UMETA(Hidden)
 };
 ENUM_CLASS_FLAGS(EBXTProcessorFunction);
+
+
+
+// 动画资源类型
+UENUM(BlueprintType)
+enum class EBXTAnimationAssetType : uint8
+{
+	AAT_Montage               = 0               UMETA(DisplayName = "特定蒙太奇"),
+	AAT_Library                                 UMETA(DisplayName = "动画库中的动画"),
+
+	AAT_TMax                                    UMETA(DisplayName = "无效值")
+};

@@ -6,7 +6,13 @@
 #include "BXTEnums.h"
 #include "BXTStructs.h"
 
-#include "BXTask.generated.h" 
+#include "BXTask.generated.h"
+
+
+
+#if WITH_EDITOR
+DECLARE_MULTICAST_DELEGATE(FBXTRefreshInputOutput);
+#endif
 
 
 
@@ -44,7 +50,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Important", Meta = (Bitmask, BitmaskEnum = "EBXTTargetType"))
 	int32 TargetTypes = 1;
 	// 如果目标类型包含"碰撞目标"，在这里添加碰撞数据来源
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Important", Meta = (EditCondition = "(TargetTypes & 16) > 0", EditConditionHides))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Important", Meta = (EditCondition = "bNeedCollisionInput", EditConditionHides))
 	TArray<FBXTInputInfo> CollisionInputDatas;
 
 #pragma endregion Important
@@ -102,10 +108,16 @@ public:
 	// 被哪些任务触发
 	UPROPERTY(VisibleDefaultsOnly, Category = "Event")
 	TArray<TSoftObjectPtr<UBXTask>> TriggeredByList;
+
+	// 是否需呀碰撞信息
+	UPROPERTY(VisibleDefaultsOnly, Category = "Important", AdvancedDisplay)
+	bool bNeedCollisionInput = false;
 #endif
 
 #if WITH_EDITOR
 public:
+	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
+	
 	virtual void AlignTimeProperty(float InAlign);
 
 	virtual FText GetDisplayName() const;
@@ -122,6 +134,12 @@ public:
 	void RefreshDataByPreviewObject(UObject* InObject, const struct FBXTLPreviewObjectData& InData);
 
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
+	
+	virtual void RefreshTransformCreaters();
+
+public:
+	FBXTRefreshInputOutput RefreshInputOutput;
+	
 #endif
 #pragma endregion Editor
 

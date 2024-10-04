@@ -178,6 +178,8 @@ public:
 
 #if WITH_EDITOR
 public:
+	void SetUniqueID(int64 InID) { UniqueID = InID; }
+	
 	int64 GetUniqueID() const { return UniqueID; }
 #endif
 
@@ -355,8 +357,20 @@ struct BATTLEX_API FBXTTransformCreater
 	GENERATED_USTRUCT_BODY()
 
 public:
-	FBXTTransformCreater() {}
-	FBXTTransformCreater(EBXTCoordinateType InOrigin) {}
+	FBXTTransformCreater()
+	{
+#if WITH_EDITOR
+		OriginInputUniqueID = UBXFunctionLibrary::GetUniqueID();
+		XAxisInputUniqueID = UBXFunctionLibrary::GetUniqueID();
+#endif
+	}
+	FBXTTransformCreater(EBXTCoordinateType InOrigin)
+	{
+#if WITH_EDITOR
+		OriginInputUniqueID = UBXFunctionLibrary::GetUniqueID();
+		XAxisInputUniqueID = UBXFunctionLibrary::GetUniqueID();
+#endif
+	}
 
 public:
 	// 原点选取规则
@@ -364,29 +378,32 @@ public:
 	EBXTCoordinateType OriginType = EBXTCoordinateType::C_Owner;
 	
 	// 特定原点输入数据
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "OriginType == EBXTCoordinateType::C_Special", EditConditionHides))
-	FBXTInputInfo OriginInput;
+	UPROPERTY(BlueprintReadWrite)
+	TSoftObjectPtr<class UBXTask> OriginInputTask = nullptr;
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadWrite, Meta = (EditCondition = "OriginType == EBXTCoordinateType::C_Special || OriginType == EBXTCoordinateType::C_World", EditConditionHides))
+	FName OriginInputDesc = NAME_None;
 	
 	// 原点选取的骨骼名称
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "OriginType != EBXTCoordinateType::C_World", EditConditionHides))
 	FBXBoneSelector OriginBoneName;
 
 	// 原点偏移
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FVector OriginDelta = FVector::ZeroVector;
-
-
+	
 
 	// X轴选取规则(不填，则默认使用原点的坐标系轴向)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	EBXTCoordinateType XAxisType = EBXTCoordinateType::C_TMax;
 	
 	// 特定X轴输入数据ID
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "XAxisType == EBXTCoordinateType::C_Special", EditConditionHides))
-	FBXTInputInfo XAxisInput;
+	UPROPERTY(BlueprintReadWrite)
+	TSoftObjectPtr<class UBXTask> XAxisInputTask = nullptr;
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadWrite, Meta = (EditCondition = "XAxisType == EBXTCoordinateType::C_Special || XAxisType == EBXTCoordinateType::C_World", EditConditionHides))
+	FName XAxisInputDesc = NAME_None;
 
 	// X轴选取的骨骼名称
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "XAxisType != EBXTCoordinateType::C_TMax", EditConditionHides))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "XAxisType != EBXTCoordinateType::C_TMax && XAxisType != EBXTCoordinateType::C_World", EditConditionHides))
 	FBXBoneSelector XAxisBoneName;
 
 	// 使用连线作为X轴的轴向
@@ -394,9 +411,45 @@ public:
 	EBXTConnectionType ConnectionType = EBXTConnectionType::C_TMax;
 
 
-
 	// 创建完坐标系后的总体偏移
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	FTransform PostOffset;
 
+
+#if WITH_EDITORONLY_DATA
+public:
+	UPROPERTY()
+	int64 OriginInputUniqueID = 0;
+
+	UPROPERTY()
+	int64 XAxisInputUniqueID = 0;
+	
+#endif
+};
+
+
+
+// 坐标系创建器解析结果
+USTRUCT(BlueprintType)
+struct BATTLEX_API FBXTTransformCreaterResult
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	// 结果
+	UPROPERTY(Transient, BlueprintReadWrite)
+	FTransform Result;
+
+	// 无偏移修正结果
+	UPROPERTY(Transient, BlueprintReadWrite)
+	FTransform NoOffsetResult;
+
+	// 坐标原点组件
+	UPROPERTY(Transient, BlueprintReadWrite)
+	USceneComponent* OriginComponent = nullptr;
+
+	// 坐标X轴组件
+	UPROPERTY(Transient, BlueprintReadWrite)
+	USceneComponent* XAxisComponent = nullptr;
+	
 };

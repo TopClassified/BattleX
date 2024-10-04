@@ -10,6 +10,8 @@
 #include "Serialization/JsonSerializer.h"
 #include "Subsystems/SubsystemCollection.h"
 
+#include "BXEnums.h"
+
 #include "BXTLEditorDelegates.h" 
 
 

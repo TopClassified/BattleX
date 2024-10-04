@@ -58,13 +58,27 @@ public:
 
 	virtual ~UBXTLGraphNode();
 
+	void DestroyNode() override;
+
+	void Init();
+
+	void Uninit();
+
 public:
 	UPROPERTY()
 	class UBXTask* CachedTask = nullptr;
 
-	class SBXTLGraphNode* NodeWidget = nullptr;
+	TSharedPtr<class SBXTLGraphNode> NodeWidget = nullptr;
 
 #pragma endregion Important
+
+
+
+#pragma region Callback
+public:
+	void OnRefreshGraphNodeInformation();
+	
+#pragma endregion Callback
 
 
 

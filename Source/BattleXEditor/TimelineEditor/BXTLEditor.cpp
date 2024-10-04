@@ -61,7 +61,10 @@ class FBXTLGraphNodeFactory : public FGraphPanelNodeFactory
 	{
 		if (UBXTLGraphNode* GraphNode = Cast<UBXTLGraphNode>(Node))
 		{
-			return SNew(SBXTLGraphNode, GraphNode);
+			TSharedRef<SBXTLGraphNode> SNode = SNew(SBXTLGraphNode, GraphNode);
+			GraphNode->NodeWidget = SNode;
+			
+			return SNode;
 		}
 
 		if (UBXTLGraphTransitionNode* GraphNode = Cast<UBXTLGraphTransitionNode>(Node))
@@ -130,6 +133,11 @@ void FBXTLEditor::InitializeEditor(UBXTLAsset* InAsset, const TSharedPtr<IToolki
 			)
 		);
 	}
+	if (UBXTLGraph* BXTLGraph = Cast<UBXTLGraph>(EditAsset->Graph))
+	{
+		BXTLGraph->Init();
+	}
+		
 
 	// 初始化UE的资源编辑器
 	const bool bCreateDefaultStandaloneMenu = true;
@@ -264,6 +272,11 @@ void FBXTLEditor::OnClose()
 		CachedManager = nullptr;
 	}
 
+	if (UBXTLGraph* BXTLGraph = Cast<UBXTLGraph>(EditAsset->Graph))
+	{
+		BXTLGraph->Uninit();
+	}
+	
 	FBXTLEditor::BXTLEditorNum -= 1;
 
 	FWorkflowCentricApplication::OnClose();

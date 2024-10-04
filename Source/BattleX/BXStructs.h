@@ -288,12 +288,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bCanCollision = true;
 
-	// 是否可以锁定
+	// 锁定的骨骼名称，不填则不能锁定该部位
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	bool bCanLock = true;
-
-	// 锁定的骨骼名称
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "bCanLock"))
 	FName LockBoneName = NAME_None;
 
 };
@@ -316,7 +312,7 @@ public:
 		BoneNames.Reset();
 		BoneNames.Append(InOther.BoneNames);
 		bCanCollision = InOther.bCanCollision;
-		bCanLock = InOther.bCanLock;
+		LockBoneName = InOther.LockBoneName;
 	}
 
 	FBXBodyPartRTInformation(FBXBodyPartRTInformation&& InOther)
@@ -327,7 +323,7 @@ public:
 		BoneNames.Append(InOther.BoneNames);
 		InOther.BoneNames.Reset();
 		bCanCollision = InOther.bCanCollision;
-		bCanLock = InOther.bCanLock;
+		LockBoneName = InOther.LockBoneName;
 	}
 
 	FBXBodyPartRTInformation& operator=(const FBXBodyPartRTInformation& InOther)
@@ -339,7 +335,7 @@ public:
 			BoneNames.Reset();
 			BoneNames.Append(InOther.BoneNames);
 			bCanCollision = InOther.bCanCollision;
-			bCanLock = InOther.bCanLock;
+			LockBoneName = InOther.LockBoneName;
 		}
 
 		return *this;
@@ -355,7 +351,7 @@ public:
 			BoneNames.Append(InOther.BoneNames);
 			InOther.BoneNames.Reset();
 			bCanCollision = InOther.bCanCollision;
-			bCanLock = InOther.bCanLock;
+			LockBoneName = InOther.LockBoneName;
 		}
 
 		return *this;
@@ -378,8 +374,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bCanCollision = true;
 
-	// 是否可以锁定
+	// 锁定的骨骼名称，不填则不能锁定该部位
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	bool bCanLock = true;
+	FName LockBoneName = NAME_None;
 
 };

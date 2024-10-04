@@ -24,7 +24,45 @@ UBXTLGraphNode::~UBXTLGraphNode()
 
 }
 
+void UBXTLGraphNode::DestroyNode()
+{
+	Uninit();
+
+	Super::DestroyNode();
+}
+
+void UBXTLGraphNode::Init()
+{
+	if (CachedTask)
+	{
+		CachedTask->RefreshInputOutput.AddUObject(this, &UBXTLGraphNode::OnRefreshGraphNodeInformation);
+	}
+}
+
+void UBXTLGraphNode::Uninit()
+{
+	if (CachedTask)
+	{
+		CachedTask->RefreshInputOutput.RemoveAll(this);
+	}
+}
+
 #pragma endregion Important
+
+
+
+#pragma region Callback
+void UBXTLGraphNode::OnRefreshGraphNodeInformation()
+{
+	UpdatePins();
+
+	if (NodeWidget.IsValid())
+	{
+		NodeWidget->UpdateGraphNode();
+	}
+}
+	
+#pragma endregion Callback
 
 
 
@@ -480,6 +518,8 @@ void UBXTLGraphNode::RefreshGraphNodeInformation()
 		}
 	}
 
+	CachedTask->RefreshTransformCreaters();
+	
 	Modify();
 }
 

@@ -21,6 +21,10 @@ public:
 
 	virtual ~UBXTLGraph();
 
+	void Init();
+
+	void Uninit();
+	
 	void PreSave(class FObjectPreSaveContext ObjectSaveContext) override;
 
 	// 刷新图表

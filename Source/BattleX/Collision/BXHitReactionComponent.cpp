@@ -26,7 +26,7 @@ void UBXHitReactionComponent::BeginPlay()
 			NewInformation.Component = Component;
 			NewInformation.BoneNames.Append(It->Value.BoneNames);
 			NewInformation.bCanCollision = It->Value.bCanCollision;
-			NewInformation.bCanLock = It->Value.bCanLock;
+			NewInformation.LockBoneName = It->Value.LockBoneName;
 		}
 	}
 

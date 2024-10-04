@@ -19,6 +19,28 @@ UBXTLGraph::~UBXTLGraph()
 
 }
 
+void UBXTLGraph::Init()
+{
+	for (int32 i = 0; i < Nodes.Num(); ++i)
+	{
+		if (UBXTLGraphNode* Node = Cast<UBXTLGraphNode>(Nodes[i]))
+		{
+			Node->Init();
+		}
+	}
+}
+
+void UBXTLGraph::Uninit()
+{
+	for (int32 i = 0; i < Nodes.Num(); ++i)
+	{
+		if (UBXTLGraphNode* Node = Cast<UBXTLGraphNode>(Nodes[i]))
+		{
+			Node->Uninit();
+		}
+	}
+}
+
 void UBXTLGraph::PreSave(class FObjectPreSaveContext ObjectSaveContext)
 {
 	RefreshGraphInformation();
@@ -155,7 +177,7 @@ void UBXTLGraph::GenerateGraphNodeByTask(UBXTask* InTask, float InX, float InY)
 		AddNode(ResultNode, true, true);
 
 		ResultNode->CachedTask = InTask;
-
+		ResultNode->Init();
 		ResultNode->CreateNewGuid();
 		ResultNode->PostPlacedNewNode();
 		ResultNode->AllocateDefaultPins();

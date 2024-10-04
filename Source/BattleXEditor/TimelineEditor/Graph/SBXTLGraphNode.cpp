@@ -14,8 +14,6 @@ void SBXTLGraphNode::Construct(const FArguments& InArgs, UBXTLGraphNode* InNode)
 	GraphNode = InNode;
 
 	UpdateGraphNode();
-
-	InNode->NodeWidget = this;
 }
 
 void SBXTLGraphNode::UpdateGraphNode()
