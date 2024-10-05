@@ -217,8 +217,7 @@ const FPinConnectionResponse UBXTLGraphSchema::CanCreateConnection(const UEdGrap
 
 		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, LOCTEXT("Connect Error", "Data Type Mismatch!"));
 	}
-
-
+	
 	return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, LOCTEXT("Connect Error", "No Reason."));
 }
 
