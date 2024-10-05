@@ -194,37 +194,25 @@ const FPinConnectionResponse UBXTLGraphSchema::CanCreateConnection(const UEdGrap
 	}
 	else if (InputInfo->PinType == 2 || InputInfo->PinType == 3)
 	{
-		EBXDataType InputDataType = EBXDataType::DT_TMax;
 		UScriptStruct* InputDataStructType = nullptr;
-		InputNode->GetPinDataType(InputPin, InputDataType, InputDataStructType);
+		InputNode->GetPinDataType(InputPin, InputDataStructType);
 
-		EBXDataType OutputDataType = EBXDataType::DT_TMax;
 		UScriptStruct* OutputDataStructType = nullptr;
-		OutputNode->GetPinDataType(OutputPin, OutputDataType, OutputDataStructType);
+		OutputNode->GetPinDataType(OutputPin, OutputDataStructType);
 
-		if (InputDataType != EBXDataType::DT_TMax && InputDataType == OutputDataType)
+		ECanCreateConnectionResponse ConnectResponse;
+		if (InputPin == InPinA)
 		{
-			ECanCreateConnectionResponse ConnectResponse;
-			if (InputPin == InPinA)
-			{
-				ConnectResponse = CONNECT_RESPONSE_BREAK_OTHERS_A;
-			}
-			else
-			{
-				ConnectResponse = CONNECT_RESPONSE_BREAK_OTHERS_B;
-			}
-
-			if (InputDataType == EBXDataType::DT_Struct)
-			{
-				if (InputDataStructType == OutputDataStructType)
-				{
-					return FPinConnectionResponse(ConnectResponse, LOCTEXT("Connect Sucess", "Transfer Task Struct Data!"));
-				}
-			}
-			else
-			{
-				return FPinConnectionResponse(ConnectResponse, LOCTEXT("Connect Sucess", "Transfer Task Data!"));
-			}
+			ConnectResponse = CONNECT_RESPONSE_BREAK_OTHERS_A;
+		}
+		else
+		{
+			ConnectResponse = CONNECT_RESPONSE_BREAK_OTHERS_B;
+		}
+		
+		if (InputDataStructType == OutputDataStructType)
+		{
+			return FPinConnectionResponse(ConnectResponse, LOCTEXT("Connect Sucess", "Transfer Task Struct Data!"));
 		}
 
 		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, LOCTEXT("Connect Error", "Data Type Mismatch!"));

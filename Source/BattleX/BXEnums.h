@@ -110,19 +110,6 @@ ENUM_CLASS_FLAGS(EBXAttackerLocationType);
 
 
 
-// 数据类型
-UENUM(BlueprintType)
-enum class EBXDataType : uint8
-{
-	DT_Integer             = 0               UMETA(DisplayName = "整型"),
-	DT_Float                                 UMETA(DisplayName = "浮点型"),
-	DT_Struct                                UMETA(DisplayName = "结构体"),
-
-	DT_TMax                                  UMETA(Hidden)
-};
-
-
-
 // 形状类型
 UENUM(BlueprintType)
 enum class EBXShapeType : uint8

@@ -122,11 +122,17 @@ public:
 
 #pragma region Component
 public:
+	// 根据骨骼名称，获取组件
+	UFUNCTION(BlueprintCallable, Category = "Component")
+	static USceneComponent* GetSceneComponentBySocketName(AActor* InActor, const FName& InSocketName, bool bCheckChild = true);
+	
 	// 根据名称，获取组件
 	UFUNCTION(BlueprintCallable, Category = "Component")
 	static USceneComponent* GetSceneComponentByNameAndClass(AActor* InActor, const FName& InName, UClass* InClass, bool bCheckChild = true);
-
+	
 protected:
+	static USceneComponent* InternalGetSceneComponentBySocketName(AActor* InActor, const FName& InSocketName);
+	
 	static USceneComponent* InternalGetSceneComponentByNameAndClass(AActor* InActor, const FName& InName, UClass* InClass);
 
 #pragma endregion Component

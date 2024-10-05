@@ -97,7 +97,7 @@ public:
 	FBXTLGNodePin* GetPinInformation(const UEdGraphPin* InPin);
 
 	// 获取Pin的数据类型
-	void GetPinDataType(const UEdGraphPin* InPin, EBXDataType& OutType, UScriptStruct*& OutStructType);
+	void GetPinDataType(const UEdGraphPin* InPin, UScriptStruct*& OutStructType);
 
 	FName GetPinNameFromTagName(const FName& InTag);
 

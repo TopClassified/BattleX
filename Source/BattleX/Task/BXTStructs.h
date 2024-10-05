@@ -122,7 +122,6 @@ public:
 	{
 #if WITH_EDITOR
 		DisplayName = InOther.DisplayName;
-		DataType = InOther.DataType;
 		StructType = InOther.StructType;
 		UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
@@ -134,7 +133,6 @@ public:
 	{
 #if WITH_EDITOR
 		DisplayName = InOther.DisplayName;
-		DataType = InOther.DataType;
 		StructType = InOther.StructType;
 		UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
@@ -148,7 +146,6 @@ public:
 		{
 #if WITH_EDITOR
 			DisplayName = InOther.DisplayName;
-			DataType = InOther.DataType;
 			StructType = InOther.StructType;
 			UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
@@ -165,7 +162,6 @@ public:
 		{
 #if WITH_EDITOR
 			DisplayName = InOther.DisplayName;
-			DataType = InOther.DataType;
 			StructType = InOther.StructType;
 			UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
@@ -189,12 +185,8 @@ public:
 	UPROPERTY(EditDefaultsOnly)
 	FName DisplayName = NAME_None;
 
-	// 输入的数据类型
-	UPROPERTY(EditDefaultsOnly)
-	EBXDataType DataType = EBXDataType::DT_Integer;
-
 	// 输入的结构体类型
-	UPROPERTY(EditDefaultsOnly, Meta = (EditCondition = "DataType == EBXDataType::DT_Struct"))
+	UPROPERTY(EditDefaultsOnly)
 	UScriptStruct* StructType = nullptr;
 
 private:
@@ -229,7 +221,7 @@ public:
 #endif
 	}
 
-	FBXTOutputInfo(FName InName, EBXDataType InType, UScriptStruct* InStructType) : DataDesc(InName), DataType(InType), StructType(InStructType) {}
+	FBXTOutputInfo(FName InName, UScriptStruct* InStructType) : DataDesc(InName), StructType(InStructType) {}
 
 	FBXTOutputInfo(const FBXTOutputInfo& InOther)
 	{
@@ -237,7 +229,6 @@ public:
 		UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
 		DataDesc = InOther.DataDesc;
-		DataType = InOther.DataType;
 		StructType = InOther.StructType;
 	}
 
@@ -247,7 +238,6 @@ public:
 		UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
 		DataDesc = InOther.DataDesc;
-		DataType = InOther.DataType;
 		StructType = InOther.StructType;
 	}
 
@@ -259,7 +249,6 @@ public:
 			UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
 			DataDesc = InOther.DataDesc;
-			DataType = InOther.DataType;
 			StructType = InOther.StructType;
 		}
 
@@ -274,7 +263,6 @@ public:
 			UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
 			DataDesc = InOther.DataDesc;
-			DataType = InOther.DataType;
 			StructType = InOther.StructType;
 		}
 
@@ -297,13 +285,47 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	FName DataDesc;
 
-	// 输出的数据类型
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	EBXDataType DataType = EBXDataType::DT_Integer;
-
 	// 输出的结构体类型
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Meta = (EditCondition = "DataType == EBXDataType::DT_Struct"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	UScriptStruct* StructType = nullptr;
+
+};
+
+
+
+// 32位整形封装
+USTRUCT(BlueprintType)
+struct FBXTInt32
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	FBXTInt32() {}
+	FBXTInt32(int32 InValue) { Value = InValue; }
+	
+public:
+	// 数值
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	int32 Value = 0;
+
+};
+
+
+
+// 32位浮点封装
+USTRUCT(BlueprintType)
+struct FBXTFloat
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	FBXTFloat() {}
+	FBXTFloat(float InValue) { Value = InValue; }
+	
+public:
+	// 数值
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	float Value = 0.0f;
 
 };
 
@@ -384,7 +406,7 @@ public:
 	FName OriginInputDesc = NAME_None;
 	
 	// 原点选取的骨骼名称
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "OriginType != EBXTCoordinateType::C_World", EditConditionHides))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "OriginType != EBXTCoordinateType::C_LockPart && OriginType != EBXTCoordinateType::C_World", EditConditionHides))
 	FBXBoneSelector OriginBoneName;
 
 	// 原点偏移
@@ -403,7 +425,7 @@ public:
 	FName XAxisInputDesc = NAME_None;
 
 	// X轴选取的骨骼名称
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "XAxisType != EBXTCoordinateType::C_TMax && XAxisType != EBXTCoordinateType::C_World", EditConditionHides))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "XAxisType != EBXTCoordinateType::C_LockPart && XAxisType != EBXTCoordinateType::C_World && XAxisType != EBXTCoordinateType::C_TMax", EditConditionHides))
 	FBXBoneSelector XAxisBoneName;
 
 	// 使用连线作为X轴的轴向

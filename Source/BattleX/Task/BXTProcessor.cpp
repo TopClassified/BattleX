@@ -5,7 +5,8 @@
 #include "BXTLStructs.h"
 #include "BXTask.h"
 #include "BXHitReactionComponent.h"
-
+#include "EntitySystem/MovieSceneEntitySystemRunner.h"
+#include "Kismet/KismetMathLibrary.h"
 
 
 #pragma region Important
@@ -186,12 +187,89 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 	return true;
 }
 
-/*
 bool UBXTProcessor::AnalyzeTransformCreater(AActor* InTarget, const FBXTLRunTimeData& InRTData, const FBXTTransformCreater& InCreater, FBXTTransformCreaterResult& OutResult)
 {
+	USceneComponent* OriginComponent = nullptr;
+	FTransform OriginTransform = FTransform::Identity;
+	if (InCreater.OriginType == EBXTCoordinateType::C_Target)
+	{
+		if (!IsValid(InTarget))
+		{
+			return false;
+		}
+		
+		OriginComponent = InTarget->GetRootComponent();
+		OriginTransform = OriginComponent->GetComponentTransform();
+	}
+	else
+	{
+		OriginComponent = UBXTProcessor::AnalyzeTransformCreaterCoordinateType(InCreater, true, InRTData, OriginTransform);
+		if (!IsValid(OriginComponent) && InCreater.OriginType != EBXTCoordinateType::C_World)
+		{
+			return false;
+		}
+	}
+	OriginTransform.SetLocation(OriginTransform.TransformPosition(InCreater.OriginDelta));
+
+	USceneComponent* XAxisComponent = OriginComponent;
+	FTransform XAxisTransform = OriginTransform;
+	if (InCreater.XAxisType != EBXTCoordinateType::C_TMax)
+	{
+		if (InCreater.XAxisType == EBXTCoordinateType::C_Target)
+		{
+			if (IsValid(InTarget))
+			{
+				return false;
+			}
+		
+			XAxisComponent = InTarget->GetRootComponent();
+			XAxisTransform = XAxisComponent->GetComponentTransform();
+		}
+		else
+		{
+			XAxisComponent = UBXTProcessor::AnalyzeTransformCreaterCoordinateType(InCreater, false, InRTData, XAxisTransform);
+			if (!IsValid(XAxisComponent) && InCreater.XAxisType != EBXTCoordinateType::C_World)
+			{
+				return false;
+			}
+		}
+	}
+
+	if (InCreater.ConnectionType != EBXTConnectionType::C_TMax)
+	{
+		FVector Up = OriginTransform.GetUnitAxis(EAxis::Z);
+		FVector Delta = XAxisTransform.GetLocation() - OriginTransform.GetLocation();
+		switch (InCreater.ConnectionType)
+		{
+		case EBXTConnectionType::C_FromOriginIn2D:
+			Delta = Delta.GetSafeNormal2D();
+			break;
+		case EBXTConnectionType::C_FromOriginIn3D:
+			Delta = Delta.GetSafeNormal();
+			break;
+		case EBXTConnectionType::C_FromXAxisIn2D:
+			Up = XAxisTransform.GetUnitAxis(EAxis::Z);
+			Delta = Delta.GetSafeNormal2D() * -1.0f;
+			break;
+		case EBXTConnectionType::C_FromXAxisIn3D:
+			Up = XAxisTransform.GetUnitAxis(EAxis::Z);
+			Delta = Delta.GetSafeNormal() * -1.0f;
+			break;
+		default:
+			return false;
+		}
+
+		XAxisTransform.SetRotation(UKismetMathLibrary::MakeRotFromXZ(Delta, Up).Quaternion());
+	}
+
+	OutResult.OriginComponent = OriginComponent;
+	OutResult.XAxisComponent = XAxisComponent;
+	OutResult.NoOffsetResult.SetLocation(OriginTransform.GetLocation());
+	OutResult.NoOffsetResult.SetRotation(XAxisTransform.GetRotation());
+	OutResult.NoOffsetResult.SetScale3D(FVector::OneVector);
+	OutResult.Result = InCreater.PostOffset * OutResult.NoOffsetResult;
 	
-	
-	return false;
+	return true;
 }
 
 bool UBXTProcessor::AnalyzeTransformCreaterList(AActor* InTarget, const FBXTLRunTimeData& InRTData, const TArray<FBXTTransformCreater>& InCreaterList, FBXTTransformCreaterResult& OutResult)
@@ -207,10 +285,16 @@ bool UBXTProcessor::AnalyzeTransformCreaterList(AActor* InTarget, const FBXTLRun
 	return false;
 }
 
-USceneComponent* UBXTProcessor::AnalyzeTransformCreaterCoordinateType(EBXTCoordinateType InType, const FBXTLRunTimeData& InRTData, FTransform& OutTransform)
+USceneComponent* UBXTProcessor::AnalyzeTransformCreaterCoordinateType(const FBXTTransformCreater& InCreater, bool bUseOrigin, const FBXTLRunTimeData& InRTData, FTransform& OutTransform)
 {
+	EBXTCoordinateType CoordinateType = bUseOrigin ? InCreater.OriginType : InCreater.XAxisType;
+	int32 FullIndex = bUseOrigin ? UBXFunctionLibrary::GetSoftTaskFullIndex(InRTData.StaticData, InCreater.OriginInputTask) : UBXFunctionLibrary::GetSoftTaskFullIndex(InRTData.StaticData, InCreater.XAxisInputTask);
+	FName DataName = bUseOrigin ? InCreater.OriginInputDesc : InCreater.XAxisInputDesc;
+	FName BoneName = bUseOrigin ? InCreater.OriginBoneName.BoneName : InCreater.XAxisBoneName.BoneName;
+
+	// 根据类型找到坐标系和坐标系参照者
 	USceneComponent* OutResult = nullptr;
-	switch (InType)
+	switch (CoordinateType)
 	{
 	case EBXTCoordinateType::C_Owner:
 		OutResult = IsValid(InRTData.Owner) ? InRTData.Owner->GetRootComponent() : nullptr;
@@ -248,9 +332,9 @@ USceneComponent* UBXTProcessor::AnalyzeTransformCreaterCoordinateType(EBXTCoordi
 		}
 		break;
 	case EBXTCoordinateType::C_LockPart:
-		FBXBodyPartRTInformation BPRTInfo;
 		for (TArray<FBXBodyPartSelection>::TConstIterator It(InRTData.LockParts); It; ++It)
 		{
+			FBXBodyPartRTInformation BPRTInfo;
 			if (IsValid(It->Owner) && It->Owner->GetBodyPartByType(It->BodyPart, BPRTInfo))
 			{
 				OutResult = BPRTInfo.Component;
@@ -263,15 +347,45 @@ USceneComponent* UBXTProcessor::AnalyzeTransformCreaterCoordinateType(EBXTCoordi
 		}
 		break;
 	case EBXTCoordinateType::C_Special:
-		
+		if (FBXTHitResults* HitResults = UBXTProcessor::ReadContextData<FBXTHitResults>(InRTData, FullIndex, DataName))
+		{
+			if (HitResults->Results.Num() > 0)
+			{
+				OutResult = HitResults->Results[0].GetComponent();
+				if (OutResult)
+				{
+					OutTransform = OutResult->GetComponentTransform();
+				}
+			}
+		}
 		break;
 	case EBXTCoordinateType::C_World:
+		if (FTransform* TransformResults = UBXTProcessor::ReadContextData<FTransform>(InRTData, FullIndex, DataName))
+		{
+			OutResult = nullptr;
+			OutTransform = *TransformResults;
+		}
 		break;
 	default:
+		OutResult = nullptr;
+		OutTransform = FTransform::Identity;
 		break;
 	}
 
+	// 通过骨骼名称进行二次查询
+	if (CoordinateType != EBXTCoordinateType::C_LockPart && CoordinateType != EBXTCoordinateType::C_World)
+	{
+		if (OutResult && !BoneName.IsNone())
+		{
+			if (USceneComponent* SocketOwner = UBXFunctionLibrary::GetSceneComponentBySocketName(OutResult->GetOwner(), BoneName))
+			{
+				OutResult = SocketOwner;
+				OutTransform = OutResult->GetSocketTransform(BoneName);
+			}
+		}
+	}
+
 	return OutResult;
-}
-*/
+} 
+
 #pragma endregion GlobalAPI

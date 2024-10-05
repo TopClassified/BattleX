@@ -102,7 +102,6 @@ void UBXTask::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent
 		for (int32 i = 0; i < CollisionInputDatas.Num(); ++i)
 		{
 			CollisionInputDatas[i].DisplayName = FName(TEXT("InCol") + FString::FromInt(i));
-			CollisionInputDatas[i].DataType = EBXDataType::DT_Struct;
 			CollisionInputDatas[i].StructType = FBXTHitResults::StaticStruct();
 		}
 		
@@ -113,7 +112,6 @@ void UBXTask::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent
 		for (int32 i = 0; i < CollisionInputDatas.Num(); ++i)
 		{
 			CollisionInputDatas[i].DisplayName = FName(TEXT("InCol") + FString::FromInt(i));
-			CollisionInputDatas[i].DataType = EBXDataType::DT_Struct;
 			CollisionInputDatas[i].StructType = FBXTHitResults::StaticStruct();
 		}
 		
@@ -293,7 +291,6 @@ void UBXTask::RefreshTransformCreaters()
 				bBroadCast = true;
 				FBXTInputInfo& NewInfo = InputDatas.AddDefaulted_GetRef();
 				NewInfo.SetUniqueID(Creater->OriginInputUniqueID);
-				NewInfo.DataType = EBXDataType::DT_Struct;
 				NewInfo.StructType = (Creater->OriginType == EBXTCoordinateType::C_Special) ? FBXTHitResults::StaticStruct() : TBaseStructure<FTransform>::Get();
 				NewInfo.DisplayName = FName(CreaterName + SuffixO);
 				NewInfo.DataTask = nullptr;
@@ -321,7 +318,6 @@ void UBXTask::RefreshTransformCreaters()
 				bBroadCast = true;
 				FBXTInputInfo& NewInfo = InputDatas.AddDefaulted_GetRef();
 				NewInfo.SetUniqueID(Creater->XAxisInputUniqueID);
-				NewInfo.DataType = EBXDataType::DT_Struct;
 				NewInfo.StructType = (Creater->XAxisType == EBXTCoordinateType::C_Special) ? FBXTHitResults::StaticStruct() : TBaseStructure<FTransform>::Get();
 				NewInfo.DisplayName = FName(CreaterName + SuffixX);
 				NewInfo.DataTask = nullptr;

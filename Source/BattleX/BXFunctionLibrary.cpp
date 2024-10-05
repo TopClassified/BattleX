@@ -1208,11 +1208,63 @@ float UBXFunctionLibrary::SegmentToBox(const FVector& InL1S, const FVector& InL1
 
 	return FMath::Sqrt(ResultSquareDistance);
 }
+
 #pragma endregion Math
 
 
 
 #pragma region Component
+USceneComponent* UBXFunctionLibrary::GetSceneComponentBySocketName(AActor* InActor, const FName& InSocketName, bool bCheckChild)
+{
+	if (!InActor)
+	{
+		return nullptr;
+	}
+
+	if (USceneComponent* Result = InternalGetSceneComponentBySocketName(InActor, InSocketName))
+	{
+		return Result;
+	}
+
+	// 检查子级
+	if (bCheckChild)
+	{
+		for (int32 i = 0; i < InActor->Children.Num(); ++i)
+		{
+			AActor* Child = InActor->Children[i];
+			if (!IsValid(Child))
+			{
+				continue;
+			}
+
+			if (USceneComponent* Result = InternalGetSceneComponentBySocketName(Child, InSocketName))
+			{
+				return Result;
+			}
+		}
+
+		TArray<AActor*> AttachedActors;
+		InActor->GetAttachedActors(AttachedActors, true, true);
+		for (AActor* Child : AttachedActors)
+		{
+			if (!IsValid(Child))
+			{
+				continue;
+			}
+
+			if (USceneComponent* Result = InternalGetSceneComponentBySocketName(Child, InSocketName))
+			{
+				if (Result->IsAttachedTo(InActor->GetRootComponent()))
+				{
+					return Result;
+				}
+			}
+		}
+	}
+	
+	return nullptr;
+}
+
 USceneComponent* UBXFunctionLibrary::GetSceneComponentByNameAndClass(AActor* InActor, const FName& InName, UClass* InClass, bool bCheckChild)
 {
 	if (!InActor)
@@ -1270,6 +1322,26 @@ USceneComponent* UBXFunctionLibrary::GetSceneComponentByNameAndClass(AActor* InA
 	return nullptr;
 }
 
+USceneComponent* UBXFunctionLibrary::InternalGetSceneComponentBySocketName(AActor* InActor, const FName& InSocketName)
+{
+	if (!InActor)
+	{
+		return nullptr;
+	}
+
+	TArray<USceneComponent*> Components;
+	InActor->GetComponents<USceneComponent>(Components);
+	for (USceneComponent* Component : Components)
+	{
+		if (Component->GetAllSocketNames().Contains(InSocketName))
+		{
+			return Component;
+		}
+	}
+
+	return nullptr;
+}
+
 USceneComponent* UBXFunctionLibrary::InternalGetSceneComponentByNameAndClass(AActor* InActor, const FName& InName, UClass* InClass)
 {
 	if (!InActor)
@@ -1309,6 +1381,7 @@ USceneComponent* UBXFunctionLibrary::InternalGetSceneComponentByNameAndClass(AAc
 
 	return nullptr;
 }
+
 #pragma endregion Component
 
 

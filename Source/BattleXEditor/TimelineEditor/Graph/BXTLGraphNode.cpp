@@ -199,7 +199,7 @@ FBXTLGNodePin* UBXTLGraphNode::GetPinInformation(const UEdGraphPin* InPin)
 	return nullptr;
 }
 
-void UBXTLGraphNode::GetPinDataType(const UEdGraphPin* InPin, EBXDataType& OutType, UScriptStruct*& OutStructType)
+void UBXTLGraphNode::GetPinDataType(const UEdGraphPin* InPin, UScriptStruct*& OutStructType)
 {
 	if (!CachedTask)
 	{
@@ -216,7 +216,6 @@ void UBXTLGraphNode::GetPinDataType(const UEdGraphPin* InPin, EBXDataType& OutTy
 				const FBXTInputInfo& CurInfo = CollisionInfos[i];
 				if (CurInfo.GetUniqueID() == PinInfo->UniqueID)
 				{
-					OutType = CurInfo.DataType;
 					OutStructType = CurInfo.StructType;
 
 					return;
@@ -230,7 +229,6 @@ void UBXTLGraphNode::GetPinDataType(const UEdGraphPin* InPin, EBXDataType& OutTy
 				const FBXTInputInfo& CurInfo = CachedTask->InputDatas[i];
 				if (CurInfo.GetUniqueID() == PinInfo->UniqueID)
 				{
-					OutType = CurInfo.DataType;
 					OutStructType = CurInfo.StructType;
 
 					return;
@@ -244,7 +242,6 @@ void UBXTLGraphNode::GetPinDataType(const UEdGraphPin* InPin, EBXDataType& OutTy
 				const FBXTOutputInfo& CurInfo = CachedTask->OutputDatas[i];
 				if (CurInfo.GetUniqueID() == PinInfo->UniqueID)
 				{
-					OutType = CurInfo.DataType;
 					OutStructType = CurInfo.StructType;
 
 					return;
