@@ -12,7 +12,7 @@
 
 
 
-DEFINE_LOG_CATEGORY(BXMGR);
+DEFINE_LOG_CATEGORY(BX_MGR);
 
 
 
@@ -135,6 +135,8 @@ void UBXManager::Tick(float DeltaTime)
 	if (GCTimer <= 0.0f)
 	{
 		GCTimer = GCInterval;
+
+		CleanTimelineTrash();
 	}
 }
 
@@ -242,7 +244,6 @@ int64 UBXManager::PlayTimeline(UBXTLAsset* InAsset, AActor* InOwner, UPARAM(ref)
 	NewData.Instigator = InContext.Instigator;
 	NewData.Triggerer = InContext.Triggerer;
 	NewData.LockParts.Append(InContext.LockParts);
-	NewData.Timestamp = InContext.Timestamp;
 	for (TMap<FName, FInstancedStruct>::TIterator It(InContext.InputDatas); It; ++It)
 	{
 		NewData.DynamicDatas.Add(FBXTLDynamicDataSearchKey(-1, It->Key), It->Value);
@@ -253,7 +254,6 @@ int64 UBXManager::PlayTimeline(UBXTLAsset* InAsset, AActor* InOwner, UPARAM(ref)
 	{
 		FBXTLSectionRTData& NewSectionData = NewData.RunningSections.AddDefaulted_GetRef();
 		NewSectionData.Index = InAsset->StartSectionIndexes[i];
-		NewSectionData.Timestamp = InContext.Timestamp;
 	}
 
 	// 立刻更新一次
@@ -288,6 +288,56 @@ void UBXManager::StopTimeline(int64 InID, EBXTLFinishReason InReason)
 
 		// 从容器中移除
 		TimelineRTDatas.Remove(InID);
+	}
+}
+
+void UBXManager::ChangeTimelineTickRate(int64 InID, float InRate)
+{
+	InRate = FMath::Max(InRate, 0.0001f);
+	
+	if (FBXTLRunTimeData* RTData = TimelineRTDatas.Find(InID))
+	{
+		RTData->RunRate = InRate;
+		UBXTLAsset* Asset = RTData->StaticData;
+		if (!Asset)
+		{
+			return;
+		}
+
+		// 遍历所有的片段
+		for (int32 i = 0; i < RTData->RunningSections.Num(); ++i)
+		{
+			FBXTLSectionRTData& SectionData = RTData->RunningSections[i];
+			if (!Asset->Sections.IsValidIndex(SectionData.Index))
+			{
+				continue;
+			}
+			
+			const FBXTLSection& Section = Asset->Sections[SectionData.Index];
+			// 遍历所有的任务，调整其更新频率
+			for (int32 j = 0; j < SectionData.RunningTasks.Num(); ++j)
+			{
+				FBXTLTaskRTData& TaskData = SectionData.RunningTasks[j];
+				if (!Section.TaskList.IsValidIndex(TaskData.Index))
+				{
+					continue;
+				}
+				
+				UBXTask* Task = Section.TaskList[TaskData.Index];
+				if (!Task)
+				{
+					continue;
+				}
+				
+				UBXTProcessor* Processor = GetTLTProcessorByTLTClass(Task->GetClass());
+				if (!Processor)
+				{
+					continue;
+				}
+
+				Processor->ChangeTaskTickRate(TaskData, Task, InRate);
+			}
+		}
 	}
 }
 
@@ -354,6 +404,7 @@ void UBXManager::UpdateTimeline(float InDeltaTime)
 
 		// 填充辅助结构体
 		HelpHostingData1.Reset();
+		HelpHostingData1.RunRate = 1.0f;
 		HelpHostingData1.Owner = It->Owner;
 		HelpHostingData1.Instigator = It->Instigator;
 		HelpHostingData1.Triggerer = It->Triggerer;
@@ -363,7 +414,7 @@ void UBXManager::UpdateTimeline(float InDeltaTime)
 		// 更新
 		if (!UBXTProcessor::IsTaskCompleted(Task, It->TaskRTData, FinishReason))
 		{
-			Processor->UpdateTask(HelpHostingData1, HelpHostingData2, It->TaskRTData, Task, InDeltaTime, 1.0f);
+			Processor->UpdateTask(HelpHostingData1, HelpHostingData2, It->TaskRTData, Task, InDeltaTime);
 		}
 
 		// 结束
@@ -443,6 +494,13 @@ void UBXManager::FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSection
 			continue;
 		}
 
+		// 找到任务处理器，结束任务
+		UBXTProcessor* Processor = GetTLTProcessorByTLTClass(Task->GetClass());
+		if (!Processor)
+		{
+			continue;
+		}
+
 		// 固定时长需要托管
 		if (Task->LifeType == EBXTLifeType::L_Duration)
 		{
@@ -454,15 +512,11 @@ void UBXManager::FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSection
 			NewHosting.LockParts.Append(InOutData.LockParts);
 			NewHosting.TaskRTData = TaskData;
 
-			continue;
-		}
+			Processor->ChangeTaskTickRate(TaskData, Task, 1.0f);
 
-		// 找到任务处理器，结束任务
-		UBXTProcessor* Processor = GetTLTProcessorByTLTClass(Task->GetClass());
-		if (!Processor)
-		{
 			continue;
 		}
+		
 		Processor->EndTask(InOutData, InOutSectionData, TaskData, Task, InReason);
 	}
 
@@ -622,6 +676,7 @@ bool UBXManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSectionRT
 		// 创建Task运行时数据
 		FBXTLTaskRTData& NewTaskData = InOutSectionData.RunningTasks.AddDefaulted_GetRef();
 		NewTaskData.Index = InTaskIndex;
+		NewTaskData.RunTime = InStartOffset;
 		NewTaskData.DynamicData.InitializeAs(CustomDataType);
 
 		// 找到Task处理器
@@ -668,8 +723,10 @@ void UBXManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDel
 		return;
 	}
 
+	// 调整更新时间
+	float FixedDeltaTime = InDeltaTime * InOutData.RunRate;
+	
 	// 提炼常用数据
-	float UpdateRate = InOutData.RunRate;
 	ENetMode NetMode = ENetMode::NM_Standalone;
 	ENetRole LocalRole = ENetRole::ROLE_Authority;
 	if (AActor* Owner = Cast<AActor>(InOutData.Owner))
@@ -677,9 +734,9 @@ void UBXManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDel
 		NetMode = Owner->GetNetMode();
 		LocalRole = Owner->GetLocalRole();
 	}
-
+	
 	// 更新运行时间
-	InOutData.RunTime += InDeltaTime * UpdateRate;
+	InOutData.RunTime += FixedDeltaTime;
 
 	// 更新时间片段
 	for (TArray<FBXTLSectionRTData>::TIterator It(InOutData.RunningSections); It; ++It)
@@ -722,7 +779,7 @@ void UBXManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDel
 			// 更新
 			if (!UBXTProcessor::IsTaskCompleted(Task, TaskData, FinishReason))
 			{
-				Processor->UpdateTask(InOutData, SectionData, TaskData, Task, InDeltaTime, UpdateRate);
+				Processor->UpdateTask(InOutData, SectionData, TaskData, Task, FixedDeltaTime);
 			}
 
 			// 结束
@@ -733,7 +790,7 @@ void UBXManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDel
 		}
 
 		// 更新时间片段运行时间
-		SectionData.RunTime += InDeltaTime * UpdateRate;
+		SectionData.RunTime += FixedDeltaTime;
 
 		// 结束时间片段
 		if (SectionData.RunTime >= Section.Duration)
@@ -748,7 +805,6 @@ void UBXManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDel
 			else if (Section.NextIndex >= 0)
 			{
 				SectionData.LoopCount = 1;
-				SectionData.Timestamp = UBXFunctionLibrary::GetUtcMillisecond();
 				SectionData.Index = Section.NextIndex;
 			}
 		}
@@ -778,6 +834,11 @@ void UBXManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDel
 		ProcessTimelineSectionPendingTasks(InOutData, SectionData);
 	}
 	bUpdatingTimeline = false;
+}
+
+void UBXManager::CleanTimelineTrash()
+{
+
 }
 
 void UBXManager::CleanTimeline()

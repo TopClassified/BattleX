@@ -141,7 +141,6 @@ public:
 	FBXTLTaskRTData(const FBXTLTaskRTData& InOther)
 	{
 		Index = InOther.Index;
-		StartTimestamp = InOther.StartTimestamp;
 		RunTime = InOther.RunTime;
 		bEarlyFinish = InOther.bEarlyFinish;
 		DynamicData = InOther.DynamicData;
@@ -150,7 +149,6 @@ public:
 	FBXTLTaskRTData(FBXTLTaskRTData&& InOther)
 	{
 		Index = InOther.Index;
-		StartTimestamp = InOther.StartTimestamp;
 		RunTime = InOther.RunTime;
 		bEarlyFinish = InOther.bEarlyFinish;
 		DynamicData = InOther.DynamicData;
@@ -161,7 +159,6 @@ public:
 		if (this != &InOther)
 		{
 			Index = InOther.Index;
-			StartTimestamp = InOther.StartTimestamp;
 			RunTime = InOther.RunTime;
 			bEarlyFinish = InOther.bEarlyFinish;
 			DynamicData = InOther.DynamicData;
@@ -175,7 +172,6 @@ public:
 		if (this != &InOther)
 		{
 			Index = InOther.Index;
-			StartTimestamp = InOther.StartTimestamp;
 			RunTime = InOther.RunTime;
 			bEarlyFinish = InOther.bEarlyFinish;
 			DynamicData = InOther.DynamicData;
@@ -187,7 +183,6 @@ public:
 	void Reset()
 	{
 		Index = -1;
-		StartTimestamp = 0;
 		RunTime = 0.0f;
 		bEarlyFinish = true;
 		DynamicData.Reset();
@@ -198,13 +193,13 @@ public:
 	UPROPERTY(Transient, BlueprintReadOnly)
 	int32 Index = -1;
 
-	// 开始时间戳
-	UPROPERTY(Transient, BlueprintReadWrite)
-	int64 StartTimestamp = 0;
-
 	// 运行时长
 	UPROPERTY(Transient, BlueprintReadWrite)
 	float RunTime = 0.0f;
+
+	// 下次更新间隔（-1代表无穷大）
+	UPROPERTY(Transient, BlueprintReadWrite)
+	float NextTick = 0.0f;
 
 	// 是否提前结束
 	UPROPERTY(Transient, BlueprintReadWrite)
@@ -267,7 +262,6 @@ public:
 	{
 		Index = InOther.Index;
 		KeyFrameIndex = InOther.KeyFrameIndex;
-		Timestamp = InOther.Timestamp;
 		RunTime = InOther.RunTime;
 		LoopCount = InOther.LoopCount;
 		RunningTasks.Reset();
@@ -287,7 +281,6 @@ public:
 	{
 		Index = InOther.Index;
 		KeyFrameIndex = InOther.KeyFrameIndex;
-		Timestamp = InOther.Timestamp;
 		RunTime = InOther.RunTime;
 		LoopCount = InOther.LoopCount;
 		RunningTasks.Reset();
@@ -313,7 +306,6 @@ public:
 		{
 			Index = InOther.Index;
 			KeyFrameIndex = InOther.KeyFrameIndex;
-			Timestamp = InOther.Timestamp;
 			RunTime = InOther.RunTime;
 			LoopCount = InOther.LoopCount;
 			RunningTasks.Reset();
@@ -338,7 +330,6 @@ public:
 		{
 			Index = InOther.Index;
 			KeyFrameIndex = InOther.KeyFrameIndex;
-			Timestamp = InOther.Timestamp;
 			RunTime = InOther.RunTime;
 			LoopCount = InOther.LoopCount;
 			RunningTasks.Reset();
@@ -365,7 +356,6 @@ public:
 	{
 		Index = -1;
 		KeyFrameIndex = 0;
-		Timestamp = 0;
 		RunTime = 0.0f;
 		LoopCount = 0;
 		RunningTasks.Empty();
@@ -382,10 +372,6 @@ public:
 	// 当前的关键帧索引
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int32 KeyFrameIndex = 0;
-
-	// 开始时间戳
-	UPROPERTY(Transient, BlueprintReadWrite)
-	int64 Timestamp = 0;
 
 	// 运行时长
 	UPROPERTY(Transient, BlueprintReadWrite)
@@ -431,7 +417,6 @@ public:
 		Instigator = InOther.Instigator;
 		Triggerer = InOther.Triggerer;
 		LockParts.Append(InOther.LockParts);
-		Timestamp = InOther.Timestamp;
 		RunTime = InOther.RunTime;
 		RunRate = InOther.RunRate;
 		bEarlyFinish = InOther.bEarlyFinish;
@@ -451,7 +436,6 @@ public:
 		Triggerer = InOther.Triggerer;
 		LockParts.Append(InOther.LockParts);
 		InOther.LockParts.Reset();
-		Timestamp = InOther.Timestamp;
 		RunTime = InOther.RunTime;
 		RunRate = InOther.RunRate;
 		bEarlyFinish = InOther.bEarlyFinish;
@@ -474,7 +458,6 @@ public:
 			Instigator = InOther.Instigator;
 			Triggerer = InOther.Triggerer;
 			LockParts.Append(InOther.LockParts);
-			Timestamp = InOther.Timestamp;
 			RunTime = InOther.RunTime;
 			RunRate = InOther.RunRate;
 			bEarlyFinish = InOther.bEarlyFinish;
@@ -499,7 +482,6 @@ public:
 			Triggerer = InOther.Triggerer;
 			LockParts.Append(InOther.LockParts);
 			InOther.LockParts.Reset();
-			Timestamp = InOther.Timestamp;
 			RunTime = InOther.RunTime;
 			RunRate = InOther.RunRate;
 			bEarlyFinish = InOther.bEarlyFinish;
@@ -523,7 +505,6 @@ public:
 		Instigator = nullptr;
 		Triggerer = nullptr;
 		LockParts.Empty();
-		Timestamp = 0;
 		RunTime = 0.0f;
 		RunRate = 1.0f;
 		bEarlyFinish = false;
@@ -555,10 +536,6 @@ public:
 	// 锁定目标列表
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TArray<FBXBodyPartSelection> LockParts;
-
-	// 开始时间戳
-	UPROPERTY(Transient, BlueprintReadWrite)
-	int64 Timestamp = 0;
 
 	// 运行时长
 	UPROPERTY(Transient, BlueprintReadWrite)
@@ -604,7 +581,6 @@ public:
 		Instigator = InOther.Instigator;
 		Triggerer = InOther.Triggerer;
 		LockParts.Append(InOther.LockParts);
-		Timestamp = InOther.Timestamp;
 		InputDatas.Append(InOther.InputDatas);
 	}
 
@@ -614,7 +590,6 @@ public:
 		Triggerer = InOther.Triggerer;
 		LockParts.Append(InOther.LockParts);
 		InOther.LockParts.Reset();
-		Timestamp = InOther.Timestamp;
 		InputDatas.Append(InOther.InputDatas);
 		InOther.InputDatas.Reset();
 	}
@@ -626,7 +601,6 @@ public:
 			Instigator = InOther.Instigator;
 			Triggerer = InOther.Triggerer;
 			LockParts.Append(InOther.LockParts);
-			Timestamp = InOther.Timestamp;
 			InputDatas.Append(InOther.InputDatas);
 		}
 
@@ -641,7 +615,6 @@ public:
 			Triggerer = InOther.Triggerer;
 			LockParts.Append(InOther.LockParts);
 			InOther.LockParts.Reset();
-			Timestamp = InOther.Timestamp;
 			InputDatas.Append(InOther.InputDatas);
 			InOther.InputDatas.Reset();
 		}
@@ -654,7 +627,6 @@ public:
 		Instigator = nullptr;
 		Triggerer = nullptr;
 		LockParts.Empty();
-		Timestamp = 0;
 		InputDatas.Empty();
 	}
 
@@ -670,10 +642,6 @@ public:
 	// 锁定目标列表
 	UPROPERTY(BlueprintReadWrite)
 	TArray<FBXBodyPartSelection> LockParts;
-
-	// 开始时间戳
-	UPROPERTY(BlueprintReadWrite)
-	int64 Timestamp = 0;
 
 	// 动态数据集
 	UPROPERTY(BlueprintReadWrite)

@@ -4,12 +4,7 @@
 
 
 
-#pragma region State
-bool UBXCharacterMovementComponent::IsProactiveMovement() const
-{
-	return AllowProactiveMovement() && GetLastInputVector().SizeSquared() > 0.0f;
-}
-
+#pragma region Behavior
 void UBXCharacterMovementComponent::ChangeDisableProactiveMovement(int64 InSign, bool bDisable)
 {
 	if (bDisable)
@@ -63,24 +58,7 @@ bool UBXCharacterMovementComponent::AllowProactiveJump() const
 	return IsJumpAllowed();
 }
 
-void UBXCharacterMovementComponent::ChangeDisableMeshOffset(int64 InSign, bool bDisable)
-{
-	if (bDisable)
-	{
-		DisableMeshOffset.AddUnique(InSign);
-	}
-	else
-	{
-		DisableMeshOffset.RemoveSwap(InSign);
-	}
-}
-
-bool UBXCharacterMovementComponent::AllowMeshOffset() const
-{
-	return DisableMeshOffset.Num() <= 0;
-}
-
-#pragma endregion State
+#pragma endregion Behavior
 
 
 
@@ -180,6 +158,24 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 	{
 		CalcAvoidanceVelocity(DeltaTime);
 	}
+
+	// 更新主动移动的状态，并广播事件
+	if (bProactiveMoving)
+	{
+		if (bZeroAcceleration && bZeroRequestedAcceleration)
+		{
+			bProactiveMoving = false;
+			StopProactiveMoveEvent.Broadcast();
+		}
+	}
+	else
+	{
+		if (!bZeroAcceleration || !bZeroRequestedAcceleration)
+		{
+			bProactiveMoving = true;
+			StartProactiveMoveEvent.Broadcast();
+		}
+	}
 }
 
 FVector UBXCharacterMovementComponent::ComputeSlideVector(const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const
@@ -194,12 +190,155 @@ FVector UBXCharacterMovementComponent::ComputeSlideVector(const FVector& Delta, 
 
 void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 {
-	if (!AllowProactiveRotation())
+	if (!(bOrientRotationToMovement || bUseControllerDesiredRotation) || !AllowProactiveRotation())
+	{
+		// 停止主动转向状态
+		if (bProactiveRotating)
+		{
+			bProactiveRotating = false;
+			StopProactiveMoveEvent.Broadcast();
+		}
+		
+		return;
+	}
+
+	if (!HasValidData() || (!CharacterOwner->Controller && !bRunPhysicsWithNoController))
+	{
+		// 停止主动转向状态
+		if (bProactiveRotating)
+		{
+			bProactiveRotating = false;
+			StopProactiveMoveEvent.Broadcast();
+		}
+		
+		return;
+	}
+
+	FRotator CurrentRotation = UpdatedComponent->GetComponentRotation();
+	CurrentRotation.DiagnosticCheckNaN(TEXT("CharacterMovementComponent::PhysicsRotation(): CurrentRotation"));
+
+	FRotator DeltaRot = GetDeltaRotation(DeltaTime);
+	DeltaRot.DiagnosticCheckNaN(TEXT("CharacterMovementComponent::PhysicsRotation(): GetDeltaRotation"));
+
+	FRotator DesiredRotation = CurrentRotation;
+	if (bOrientRotationToMovement)
+	{
+		DesiredRotation = ComputeOrientToMovementRotation(CurrentRotation, DeltaTime, DeltaRot);
+	}
+	else if (CharacterOwner->Controller && bUseControllerDesiredRotation)
+	{
+		DesiredRotation = CharacterOwner->Controller->GetDesiredRotation();
+	}
+	else if (!CharacterOwner->Controller && bRunPhysicsWithNoController && bUseControllerDesiredRotation)
+	{
+		if (AController* ControllerOwner = Cast<AController>(CharacterOwner->GetOwner()))
+		{
+			DesiredRotation = ControllerOwner->GetDesiredRotation();
+		}
+	}
+	else
 	{
 		return;
 	}
+
+	const bool bWantsToBeVertical = ShouldRemainVertical();
+
+	if (bWantsToBeVertical)
+	{
+		if (HasCustomGravity())
+		{
+			FRotator GravityRelativeDesiredRotation = (GetGravityToWorldTransform() * DesiredRotation.Quaternion()).Rotator();
+			GravityRelativeDesiredRotation.Pitch = 0.0f;
+			GravityRelativeDesiredRotation.Yaw = FRotator::NormalizeAxis(GravityRelativeDesiredRotation.Yaw);
+			GravityRelativeDesiredRotation.Roll = 0.0f;
+			DesiredRotation = (GetWorldToGravityTransform() * GravityRelativeDesiredRotation.Quaternion()).Rotator();
+		}
+		else
+		{
+			DesiredRotation.Pitch = 0.f;
+			DesiredRotation.Yaw = FRotator::NormalizeAxis(DesiredRotation.Yaw);
+			DesiredRotation.Roll = 0.f;
+		}
+	}
+	else
+	{
+		DesiredRotation.Normalize();
+	}
 	
-	return Super::PhysicsRotation(DeltaTime);
+	const float AngleTolerance = 1e-3f;
+	if (!CurrentRotation.Equals(DesiredRotation, AngleTolerance))
+	{
+		if (bWantsToBeVertical)
+		{
+			if (FMath::IsNearlyZero(DeltaRot.Pitch))
+			{
+				DeltaRot.Pitch = 360.0;
+			}
+			if (FMath::IsNearlyZero(DeltaRot.Roll))
+			{
+				DeltaRot.Roll = 360.0;
+			}
+		}
+
+		if (HasCustomGravity())
+		{
+			FRotator GravityRelativeCurrentRotation = (GetGravityToWorldTransform() * CurrentRotation.Quaternion()).Rotator();
+			FRotator GravityRelativeDesiredRotation = (GetGravityToWorldTransform() * DesiredRotation.Quaternion()).Rotator();
+
+			if (!FMath::IsNearlyEqual(GravityRelativeCurrentRotation.Pitch, GravityRelativeDesiredRotation.Pitch, AngleTolerance))
+			{
+				GravityRelativeDesiredRotation.Pitch = FMath::FixedTurn(GravityRelativeCurrentRotation.Pitch, GravityRelativeDesiredRotation.Pitch, DeltaRot.Pitch);
+			}
+
+			if (!FMath::IsNearlyEqual(GravityRelativeCurrentRotation.Yaw, GravityRelativeDesiredRotation.Yaw, AngleTolerance))
+			{
+				GravityRelativeDesiredRotation.Yaw = FMath::FixedTurn(GravityRelativeCurrentRotation.Yaw, GravityRelativeDesiredRotation.Yaw, DeltaRot.Yaw);
+			}
+
+			if (!FMath::IsNearlyEqual(GravityRelativeCurrentRotation.Roll, GravityRelativeDesiredRotation.Roll, AngleTolerance))
+			{
+				GravityRelativeDesiredRotation.Roll = FMath::FixedTurn(GravityRelativeCurrentRotation.Roll, GravityRelativeDesiredRotation.Roll, DeltaRot.Roll);
+			}
+
+			DesiredRotation = (GetWorldToGravityTransform() * GravityRelativeDesiredRotation.Quaternion()).Rotator();
+		}
+		else
+		{
+			if (!FMath::IsNearlyEqual(CurrentRotation.Pitch, DesiredRotation.Pitch, AngleTolerance))
+			{
+				DesiredRotation.Pitch = FMath::FixedTurn(CurrentRotation.Pitch, DesiredRotation.Pitch, DeltaRot.Pitch);
+			}
+
+			if (!FMath::IsNearlyEqual(CurrentRotation.Yaw, DesiredRotation.Yaw, AngleTolerance))
+			{
+				DesiredRotation.Yaw = FMath::FixedTurn(CurrentRotation.Yaw, DesiredRotation.Yaw, DeltaRot.Yaw);
+			}
+
+			if (!FMath::IsNearlyEqual(CurrentRotation.Roll, DesiredRotation.Roll, AngleTolerance))
+			{
+				DesiredRotation.Roll = FMath::FixedTurn(CurrentRotation.Roll, DesiredRotation.Roll, DeltaRot.Roll);
+			}
+		}
+		
+		DesiredRotation.DiagnosticCheckNaN(TEXT("CharacterMovementComponent::PhysicsRotation(): DesiredRotation"));
+		MoveUpdatedComponent( FVector::ZeroVector, DesiredRotation, /*bSweep*/ false );
+
+		// 开始主动转向状态
+		if (!bProactiveRotating)
+		{
+			bProactiveRotating = true;
+			StartProactiveMoveEvent.Broadcast();
+		}
+	}
+	else
+	{
+		// 停止主动转向状态
+		if (bProactiveRotating)
+		{
+			bProactiveRotating = false;
+			StopProactiveMoveEvent.Broadcast();
+		}
+	}
 }
 
 void UBXCharacterMovementComponent::ProcessLanded(const FHitResult& Hit, float remainingTime, int32 Iterations)

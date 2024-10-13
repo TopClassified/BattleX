@@ -12,7 +12,11 @@
 #include "BXTLStructs.h"
 #include "BXTStructs.h"
 
-#include "BXTProcessor.generated.h" 
+#include "BXTProcessor.generated.h"
+
+
+
+DECLARE_LOG_CATEGORY_EXTERN(BX_TP, Log, All);
 
 
 
@@ -26,22 +30,26 @@ public:
 	class UWorld* GetWorld() const override;
 
 protected:
-	virtual bool Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask) { return true; }
+	virtual void Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask) {}
 	UFUNCTION(BlueprintImplementableEvent, Category = "Important")
-	bool ScriptStart(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask);
+	void ScriptStart(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask);
 
-	virtual bool Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, float InDeltaTime, float InTimeRate) { return true; }
+	virtual void Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, float InDeltaTime) {}
 	UFUNCTION(BlueprintImplementableEvent, Category = "Important")
-	bool ScriptUpdate(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, float InDeltaTime, float InTimeRate);
+	void ScriptUpdate(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, float InDeltaTime);
 
-	virtual bool End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, EBXTLFinishReason InReason) { return true; }
+	virtual void End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, EBXTLFinishReason InReason) {}
 	UFUNCTION(BlueprintImplementableEvent, Category = "Important")
-	bool ScriptEnd(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, EBXTLFinishReason InReason);
+	void ScriptEnd(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, EBXTLFinishReason InReason);
+
+	virtual void ChangeTickRate(FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, float InRate) {}
+	UFUNCTION(BlueprintImplementableEvent, Category = "Important")
+	void ScriptChangeTickRate(FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, float InRate);
 
 protected:
 	// 要执行的函数(默认只执行C++函数)
 	UPROPERTY(EditDefaultsOnly, Category = "Important", Meta = (Bitmask, BitmaskEnum = "EBXTProcessorFunction"))
-	int32 ExecuteFunctions = 21;
+	int32 ExecuteFunctions = 85;
 
 #pragma endregion Important
 
@@ -50,30 +58,41 @@ protected:
 #pragma region API
 public:
 	UFUNCTION(BlueprintCallable, Category = "API")
-	bool StartTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask);
+	void StartTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask);
 
 	UFUNCTION(BlueprintCallable, Category = "API")
-	bool UpdateTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, float InDeltaTime, float InTimeRate = 1.0f);
+	void UpdateTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, float InDeltaTime);
 
 	UFUNCTION(BlueprintCallable, Category = "API")
-	bool EndTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, EBXTLFinishReason InReason);
+	void EndTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, EBXTLFinishReason InReason);
 
+	UFUNCTION(BlueprintCallable, Category = "API")
+	void ChangeTaskTickRate(UPARAM(ref) FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, float InRate);
+	
 #pragma endregion API
 
 
 
 #pragma region GlobalAPI
 public:
+	// 任务是否结束
 	UFUNCTION(BlueprintCallable, Category = "API")
 	static bool IsTaskCompleted(class UBXTask* InTask, const FBXTLTaskRTData& InTaskData, EBXTLFinishReason& OutReason);
 
+	// 添加被动触发任务
 	UFUNCTION(BlueprintCallable, Category = "API")
 	static bool AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, const FName& InEventName);
+
+	// 根据目标掩码获取组件列表
+	UFUNCTION(BlueprintCallable, Category = "API")
+	static void GetTargetComponentList(const FBXTLRunTimeData& InRTData, class UBXTask* InTask, TArray<USceneComponent*>& OutComponents);
+	// 根据目标掩码获取角色列表
+	UFUNCTION(BlueprintCallable, Category = "API")
+	static void GetTargetActorList(const FBXTLRunTimeData& InRTData, class UBXTask* InTask, TArray<AActor*>& OutActors);
 	
 	// 解析坐标系创建器
 	UFUNCTION(BlueprintCallable, Category = "API")
 	static bool AnalyzeTransformCreater(AActor* InTarget, const FBXTLRunTimeData& InRTData, const FBXTTransformCreater& InCreater, FBXTTransformCreaterResult& OutResult);
-
 	// 解析坐标系创建器列表
 	UFUNCTION(BlueprintCallable, Category = "API")
 	static bool AnalyzeTransformCreaterList(AActor* InTarget, const FBXTLRunTimeData& InRTData, const TArray<FBXTTransformCreater>& InCreaterList, FBXTTransformCreaterResult& OutResult);
@@ -131,7 +150,6 @@ public:
 		RTDataPointer->DynamicDatas.Add(FBXTLDynamicDataSearchKey(*FullIndexPointer, *DataNamePointer), NewValue);
 		P_NATIVE_END;
 	}
-	
 	// 读取上下文数据
 	template<typename T>
 	static T* ReadContextData(const FBXTLRunTimeData& InOutRTData, int32 InFullIndex, FName InDataName)

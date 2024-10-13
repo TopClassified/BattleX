@@ -10,7 +10,7 @@
 
 
 
-DECLARE_LOG_CATEGORY_EXTERN(BXMGR, Log, All);
+DECLARE_LOG_CATEGORY_EXTERN(BX_MGR, Log, All);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBXTimelineStarted, int64, TimelineID);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBXTimelineWillEnd, int64, TimelineID, EBXTLFinishReason, Reason);
@@ -106,6 +106,10 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void StopTimeline(int64 InID, EBXTLFinishReason InReason);
 
+	// 改变时间轴更新速率
+	UFUNCTION(BlueprintCallable)
+	void ChangeTimelineTickRate(int64 InID, float InRate);
+	
 	// 更新时间轴
 	void UpdateTimeline(float InDeltaTime);
 
@@ -123,10 +127,12 @@ public:
 
 	// 根据ID获取时间轴运行数据
 	FBXTLRunTimeData* GetTimelineRunTimeDataByID(int64 InID);
-
+	
 protected:
 	void InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDeltaTime);
 
+	void CleanTimelineTrash();
+	
 	void CleanTimeline();
 
 protected:

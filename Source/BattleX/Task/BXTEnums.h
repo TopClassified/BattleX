@@ -99,11 +99,13 @@ UENUM(BlueprintType, Meta = (Bitflags))
 enum class EBXTProcessorFunction : uint8
 {
 	PF_NativeStart          = 0              UMETA(DisplayName = "C++开始"),
-	PF_BPStart                               UMETA(DisplayName = "蓝图开始"),
+	PF_ScriptStart                           UMETA(DisplayName = "脚本开始"),
 	PF_NativeUpdate                          UMETA(DisplayName = "C++更新"),
-	PF_BPUpdate                              UMETA(DisplayName = "蓝图更新"),
+	PF_ScriptUpdate                          UMETA(DisplayName = "脚本更新"),
 	PF_NativeEnd                             UMETA(DisplayName = "C++结束"),
-	PF_BPEnd                                 UMETA(DisplayName = "蓝图结束"),
+	PF_ScriptEnd                             UMETA(DisplayName = "脚本结束"),
+	PF_NativeChangeRate                      UMETA(DisplayName = "C++改变运行速率"),
+	PF_ScriptChangeRate                      UMETA(DisplayName = "脚本改变运行速率"),
 
 	PF_TMax                                  UMETA(Hidden)
 };

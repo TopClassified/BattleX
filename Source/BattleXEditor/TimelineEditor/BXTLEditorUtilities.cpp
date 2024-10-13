@@ -23,7 +23,7 @@ void FBXTLEditorUtilities::MakeNewTaskPicker(FMenuBuilder& MenuBuilder, const FO
 			const bool bChildOfObjectClass = InClass->IsChildOf(UBXTask::StaticClass());
 			const bool bMatchesFlags = !InClass->HasAnyClassFlags(CLASS_Hidden | CLASS_HideDropDown | CLASS_Deprecated | CLASS_Abstract);
 
-			return bChildOfObjectClass && bMatchesFlags;
+			return bChildOfObjectClass && bMatchesFlags && InClass->GetName().Contains(TEXT("BP_BXT_"));
 		}
 
 		virtual bool IsUnloadedClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const TSharedRef< const IUnloadedBlueprintData > InUnloadedClassData, TSharedRef< FClassViewerFilterFuncs > InFilterFuncs) override
@@ -31,7 +31,7 @@ void FBXTLEditorUtilities::MakeNewTaskPicker(FMenuBuilder& MenuBuilder, const FO
 			const bool bChildOfObjectClass = InUnloadedClassData->IsChildOf(UBXTask::StaticClass());
 			const bool bMatchesFlags = !InUnloadedClassData->HasAnyClassFlags(CLASS_Hidden | CLASS_HideDropDown | CLASS_Deprecated | CLASS_Abstract);
 
-			return bChildOfObjectClass && bMatchesFlags;
+			return bChildOfObjectClass && bMatchesFlags && InUnloadedClassData->GetClassName()->Contains(TEXT("BP_BXT_"));
 		}
 	};
 

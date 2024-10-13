@@ -5,8 +5,14 @@
 #include "BXTLStructs.h"
 #include "BXTask.h"
 #include "BXHitReactionComponent.h"
+#include "ShaderPrintParameters.h"
 #include "EntitySystem/MovieSceneEntitySystemRunner.h"
 #include "Kismet/KismetMathLibrary.h"
+
+
+
+DEFINE_LOG_CATEGORY(BX_TP);
+
 
 
 #pragma region Important
@@ -20,55 +26,73 @@ UWorld* UBXTProcessor::GetWorld() const
 	return GetOuter()->GetWorld();
 }
 
-bool UBXTProcessor::StartTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, UBXTask* InTask)
+void UBXTProcessor::StartTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, UBXTask* InTask)
 {
-	bool Result = false;
-
 	if ((ExecuteFunctions & 1) > 0)
 	{
-		Result &= Start(InOutRTData, InOutRTSData, InOutRTTData, InTask);
+		Start(InOutRTData, InOutRTSData, InOutRTTData, InTask);
 	}
 
 	if ((ExecuteFunctions & 2) > 0)
 	{
-		Result &= ScriptStart(InOutRTData, InOutRTSData, InOutRTTData, InTask);
+		ScriptStart(InOutRTData, InOutRTSData, InOutRTTData, InTask);
 	}
-
-	return Result;
 }
 
-bool UBXTProcessor::UpdateTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, UBXTask* InTask, float InDeltaTime, float InTimeRate)
+void UBXTProcessor::UpdateTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, UBXTask* InTask, float InDeltaTime)
 {
-	bool Result = false;
+	if (InOutRTTData.NextTick < 0.0f)
+	{
+		if (InOutRTData.StaticData)
+		{
+			FString OutInfo = FString::FromInt(InOutRTData.StaticData->ID) + TEXT("  Task FullIndex:") + FString::FromInt(InOutRTSData.Index * 1000 + InOutRTTData.Index);
+			UE_LOG(BX_TP, Log, TEXT("This Task(%s) Will Never Execute The Tick Logic."), *OutInfo);
+		}
+
+		return;
+	}
+	
+	InOutRTTData.NextTick = FMath::Max(0.0f, InOutRTTData.NextTick - InDeltaTime);
+	if (InOutRTTData.NextTick > 0.0f)
+	{
+		return;
+	}
 
 	if ((ExecuteFunctions & 4) > 0)
 	{
-		Result &= Update(InOutRTData, InOutRTSData, InOutRTTData, InTask, InDeltaTime, InTimeRate);
+		Update(InOutRTData, InOutRTSData, InOutRTTData, InTask, InDeltaTime);
 	}
 
 	if ((ExecuteFunctions & 8) > 0)
 	{
-		Result &= ScriptUpdate(InOutRTData, InOutRTSData, InOutRTTData, InTask, InDeltaTime, InTimeRate);
+		ScriptUpdate(InOutRTData, InOutRTSData, InOutRTTData, InTask, InDeltaTime);
 	}
-
-	return Result;
 }
 
-bool UBXTProcessor::EndTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, UBXTask* InTask, EBXTLFinishReason InReason)
+void UBXTProcessor::EndTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, UBXTask* InTask, EBXTLFinishReason InReason)
 {
-	bool Result = false;
-
 	if ((ExecuteFunctions & 16) > 0)
 	{
-		Result &= End(InOutRTData, InOutRTSData, InOutRTTData, InTask, InReason);
+		End(InOutRTData, InOutRTSData, InOutRTTData, InTask, InReason);
 	}
 
 	if ((ExecuteFunctions & 32) > 0)
 	{
-		Result &= ScriptEnd(InOutRTData, InOutRTSData, InOutRTTData, InTask, InReason);
+		ScriptEnd(InOutRTData, InOutRTSData, InOutRTTData, InTask, InReason);
+	}
+}
+
+void UBXTProcessor::ChangeTaskTickRate(UPARAM(ref) FBXTLTaskRTData& InOutRTTData, UBXTask* InTask, float InRate)
+{
+	if ((ExecuteFunctions & 64) > 0)
+	{
+		ChangeTickRate(InOutRTTData, InTask, InRate);
 	}
 
-	return Result;
+	if ((ExecuteFunctions & 128) > 0)
+	{
+		ScriptChangeTickRate(InOutRTTData, InTask, InRate);
+	}
 }
 
 #pragma endregion Important
@@ -100,10 +124,9 @@ bool UBXTProcessor::IsTaskCompleted(UBXTask* InTask, const FBXTLTaskRTData& InTa
 		return false;
 	case EBXTLifeType::L_DurationTimeline:
 		return InTaskData.RunTime >= InTask->Duration;
+	default:
+		return true;
 	}
-
-	OutReason = EBXTLFinishReason::FR_Interrupt;
-	return true;
 }
 
 bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, const FName& InEventName)
@@ -185,6 +208,91 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 	}
 
 	return true;
+}
+
+void UBXTProcessor::GetTargetComponentList(const FBXTLRunTimeData& InRTData, UBXTask* InTask, TArray<USceneComponent*>& OutComponents)
+{
+	OutComponents.Reset();
+	if (!IsValid(InTask) || !IsValid(InRTData.StaticData))
+	{
+		return;
+	}
+	
+	for (int32 i = 0; i < (int32)EBXTTargetType::T_TMax; ++i)
+	{
+		if ((InTask->TargetTypes & (1 << i)) <= 0)
+		{
+			continue;
+		}
+
+		switch ((EBXTTargetType)i)
+		{
+		case EBXTTargetType::T_Owner:
+			if (IsValid(InRTData.Owner))
+			{
+				OutComponents.AddUnique(InRTData.Owner->GetRootComponent());
+			}
+			break;
+		case EBXTTargetType::T_Instigator:
+			if (IsValid(InRTData.Instigator))
+			{
+				OutComponents.AddUnique(InRTData.Instigator->GetRootComponent());
+			}
+			break;
+		case EBXTTargetType::T_Trigger:
+			if (IsValid(InRTData.Triggerer))
+			{
+				OutComponents.AddUnique(InRTData.Triggerer->GetRootComponent());
+			}
+			break;
+		case EBXTTargetType::T_LockTargets:
+			for (TArray<FBXBodyPartSelection>::TConstIterator It(InRTData.LockParts); It; ++It)
+			{
+				if (!IsValid(It->Owner))
+				{
+					continue;
+				}
+
+				FBXBodyPartRTInformation PartInformation;
+				if (!It->Owner->GetBodyPartByType(It->BodyPart, PartInformation))
+				{
+					continue;
+				}
+				
+				OutComponents.AddUnique(PartInformation.Component);
+			}
+			break;
+		case EBXTTargetType::T_CollisionResults:
+			for (TArray<FBXTInputInfo>::TIterator It(InTask->CollisionInputDatas); It; ++It)
+			{
+				FBXTHitResults* HitResults = UBXTProcessor::ReadContextData<FBXTHitResults>(InRTData, UBXFunctionLibrary::GetSoftTaskFullIndex(InRTData.StaticData, It->DataTask), It->DataDesc);
+				if (!HitResults)
+				{
+					continue;
+				}
+
+				for (TArray<FHitResult>::TIterator HR(HitResults->Results); HR; ++HR)
+				{
+					OutComponents.AddUnique(HR->GetComponent());
+				}
+			}
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+void UBXTProcessor::GetTargetActorList(const FBXTLRunTimeData& InRTData, UBXTask* InTask, TArray<AActor*>& OutActors)
+{
+	TArray<USceneComponent*> Components;
+	UBXTProcessor::GetTargetComponentList(InRTData, InTask, Components);
+
+	OutActors.Reset();
+	for (TArray<USceneComponent*>::TIterator It(Components); It; ++It)
+	{
+		OutActors.AddUnique((*It)->GetOwner());
+	}
 }
 
 bool UBXTProcessor::AnalyzeTransformCreater(AActor* InTarget, const FBXTLRunTimeData& InRTData, const FBXTTransformCreater& InCreater, FBXTTransformCreaterResult& OutResult)

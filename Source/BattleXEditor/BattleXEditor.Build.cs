@@ -25,7 +25,10 @@ public class BattleXEditor : ModuleRules
                 "BattleX/Unit",
                 "BattleX/Lock",
                 "BattleX/Gear",
+                "BattleX/State",
+                "BattleX/Movement",
                 "BattleX/Timeline",
+                "BattleX/Animation",
                 "BattleX/Collision",
                 "BattleX/Condition",
 

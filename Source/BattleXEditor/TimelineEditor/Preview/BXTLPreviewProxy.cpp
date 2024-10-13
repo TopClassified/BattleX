@@ -199,7 +199,6 @@ void FBXTLPreviewProxy::Play()
 		FBXTLPlayContext Context;
 		Context.Instigator = Player;
 		Context.Triggerer = Player;
-		Context.Timestamp = UBXFunctionLibrary::GetUtcMillisecond();
 		if (AActor* Target = Scene->GetTargetActor())
 		{
 			if (UBXHitReactionComponent* HitReaction = Target->FindComponentByClass<UBXHitReactionComponent>())

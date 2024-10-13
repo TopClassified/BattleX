@@ -126,12 +126,19 @@ void UBXTLAsset::RefreshSections()
 
 				if (Index < 0)
 				{
-					Index = 0;
-					Section.KeyFrames.Add(FBXTLKeyFrame(StartTime));
+					FBXTLKeyFrame NewFrame;
+					NewFrame.Time = StartTime;
+					NewFrame.Tasks.Add(j);
+					
+					Section.KeyFrames.Add(NewFrame);
 				}
 				else
 				{
-					Section.KeyFrames.Insert(FBXTLKeyFrame(StartTime), Index);
+					FBXTLKeyFrame NewFrame;
+					NewFrame.Time = StartTime;
+					NewFrame.Tasks.Add(j);
+					
+					Section.KeyFrames.Insert(NewFrame, Index);
 				}
 			}
 		}

@@ -8,6 +8,10 @@
 
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBXDoJump);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBXStartProactiveMove);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBXStopProactiveMove);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBXStartProactiveRotate);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBXStopProactiveRotate);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBXLanded, const FHitResult&, Hit);
 
 
@@ -30,6 +34,18 @@ protected:
 public:
 	UPROPERTY(BlueprintAssignable)
 	FBXDoJump DoJumpEvent;
+
+	UPROPERTY(BlueprintAssignable)
+	FBXStartProactiveMove StartProactiveMoveEvent;
+
+	UPROPERTY(BlueprintAssignable)
+	FBXStopProactiveMove StopProactiveMoveEvent;
+
+	UPROPERTY(BlueprintAssignable)
+	FBXStartProactiveRotate StartProactiveRotateEvent;
+
+	UPROPERTY(BlueprintAssignable)
+	FBXStopProactiveRotate StopProactiveRotateEvent;
 	
 	UPROPERTY(BlueprintAssignable)
 	FBXLanded LandedEvent;
@@ -38,53 +54,46 @@ public:
 
 
 
-#pragma region State
+#pragma region Behavior
 public:
-	UFUNCTION(BlueprintPure, Category = "State")
-	bool IsProactiveMovement() const;
-	
-	UFUNCTION(BlueprintCallable, Category = "State")
+	UFUNCTION(BlueprintCallable, Category = "Behavior")
 	void ChangeDisableProactiveMovement(int64 InSign, bool bDisable);
 
-	UFUNCTION(BlueprintPure, Category = "State")
+	UFUNCTION(BlueprintPure, Category = "Behavior")
 	bool AllowProactiveMovement() const;
 
-	UFUNCTION(BlueprintCallable, Category = "State")
+	UFUNCTION(BlueprintCallable, Category = "Behavior")
 	void ChangeDisableProactiveRotation(int64 InSign, bool bDisable);
 
-	UFUNCTION(BlueprintPure, Category = "State")
+	UFUNCTION(BlueprintPure, Category = "Behavior")
 	bool AllowProactiveRotation() const;
 
-	UFUNCTION(BlueprintCallable, Category = "State")
+	UFUNCTION(BlueprintCallable, Category = "Behavior")
 	void ChangeDisableProactiveJump(int64 InSign, bool bDisable);
 
-	UFUNCTION(BlueprintPure, Category = "State")
+	UFUNCTION(BlueprintPure, Category = "Behavior")
 	bool AllowProactiveJump() const;
-
-	UFUNCTION(BlueprintCallable, Category = "State")
-	void ChangeDisableMeshOffset(int64 InSign, bool bDisable);
-
-	UFUNCTION(BlueprintPure, Category = "State")
-	bool AllowMeshOffset() const;
 	
 protected:
 	// 禁止主动移动
 	UPROPERTY(Transient)
 	TArray<int64> DisableProactiveMovement;
 
+	// 正在主动移动
+	bool bProactiveMoving = false;
+	
 	// 禁止主动转向
 	UPROPERTY(Transient)
 	TArray<int64> DisableProactiveRotation;
 
+	// 正在主动转向
+	bool bProactiveRotating = false;
+
 	// 禁止主动跳跃
 	UPROPERTY(Transient)
 	TArray<int64> DisableProactiveJump;
-
-	// 禁止模型偏移
-	UPROPERTY(Transient)
-	TArray<int64> DisableMeshOffset;
 	
-#pragma endregion State
+#pragma endregion Behavior
 
 
 
