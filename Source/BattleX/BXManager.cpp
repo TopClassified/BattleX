@@ -809,25 +809,32 @@ void UBXManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDel
 			}
 		}
 
-		// 触发时间片段的任务
-		for (TArray<FBXTLKeyFrame>::TConstIterator It2(Section.KeyFrames); It2; ++It2)
+		// 旧时间片段已经结束，且没有开启新的时间片段
+		if (SectionData.Index < 0)
 		{
-			const FBXTLKeyFrame& KeyFrame = *It2;
+			continue;
+		}
 
-			if (SectionData.RunTime < KeyFrame.Time)
-			{
-				SectionData.KeyFrameIndex = It2.GetIndex() + 1;
-				break;
-			}
+		// 触发时间片段的任务
+		while(SectionData.KeyFrameIndex < Section.KeyFrames.Num())
+		{
+			const FBXTLKeyFrame& KeyFrame = Section.KeyFrames[SectionData.KeyFrameIndex];
 
 			// 计算偏移时间
 			float OffsetTime = SectionData.RunTime - KeyFrame.Time;
-
+			if (OffsetTime < 0.0f)
+			{
+				break;
+			}
+			
 			// 执行新的Task
 			for (TArray<int32>::TConstIterator It3(KeyFrame.Tasks); It3; ++It3)
 			{
 				ExecuteTimelineTask(InOutData, SectionData, *It3, NetMode, LocalRole, OffsetTime);
 			}
+
+			// 前进到下一个关键帧
+			SectionData.KeyFrameIndex += 1;
 		}
 
 		// 处理待执行任务队列
