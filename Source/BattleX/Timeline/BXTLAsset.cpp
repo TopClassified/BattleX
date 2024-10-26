@@ -186,7 +186,7 @@ void UBXTLAsset::CleanInvalidTaskDependency(UBXTask* InvalidTask)
 			}
 
 			// 检查事件
-			for (TMap<FName, FBXTEvent>::TIterator It(Task->Events); It; ++It)
+			for (TMap<FGameplayTag, FBXTEvent>::TIterator It(Task->Events); It; ++It)
 			{
 				for (TMap<TSoftObjectPtr<UBXTask>, float>::TIterator It2(It->Value.Event); It2; ++It2)
 				{

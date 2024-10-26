@@ -43,7 +43,7 @@ public:
 	EBXTLifeType LifeType = EBXTLifeType::L_Instant;
 
 	// 持续时长
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Important")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Important", Meta = (ClampMin = "0.05"))
 	float Duration = 1.0f;
 
 	// 选取的目标
@@ -75,7 +75,7 @@ public:
 public:
 	// 事件触发Task列表
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Event")
-	TMap<FName, FBXTEvent> Events;
+	TMap<FGameplayTag, FBXTEvent> Events;
 
 #pragma endregion Event
 

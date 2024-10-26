@@ -16,7 +16,7 @@ UBXShapeComponent::UBXShapeComponent()
 #if WITH_EDITOR
 void UBXShapeComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
-	for (TMap<FName, FBXShapeInformation>::TIterator It(ShapeInformations); It; ++It)
+	for (TMap<FGameplayTag, FBXShapeInformation>::TIterator It(ShapeInformations); It; ++It)
 	{
 		if (It->Value.ShapeType == EBXShapeType::ST_Sphere)
 		{

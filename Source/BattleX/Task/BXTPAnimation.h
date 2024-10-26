@@ -1,7 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Task/BXTProcessor.h"
+
+#include "BXTProcessor.h"
 
 #include "BXTPAnimation.generated.h"
 
@@ -41,20 +42,18 @@ public:
 	
 };
 
-
-
 UCLASS(BlueprintType, Blueprintable)
 class BATTLEX_API UBXTPPlayAnimation : public UBXTProcessor
 {
 	GENERATED_BODY()
 	
 public:
-	virtual void Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask) override;
+	virtual void Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData) override;
 
-	virtual void Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, float InDeltaTime) override;
+	virtual void Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, float InDeltaTime) override;
 	
-	virtual void End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, EBXTLFinishReason InReason) override;
+	virtual void End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, EBXTLFinishReason InReason) override;
 
-	virtual void ChangeTickRate(FBXTLTaskRTData& InOutRTTData, class UBXTask* InTask, float InRate) override;
+	virtual void ChangeTickRate(FBXTLTaskRTData& InOutRTTData, float InRate) override;
 	
 };

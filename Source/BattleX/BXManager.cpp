@@ -16,6 +16,80 @@ DEFINE_LOG_CATEGORY(BX_MGR);
 
 
 
+#pragma region HelperRunable
+uint32 FBXHelperRunnable::Run()
+{
+	double LastTime = FPlatformTime::Seconds();
+	
+	while (!bShouldStop)  
+	{
+		double CurrentTime = FPlatformTime::Seconds();
+		double DeltaTime = CurrentTime - LastTime;
+		LastTime = CurrentTime;
+		
+		for (TArray<FHTRegisteredFunction>::TIterator It(HTRegisteredFunctions); It; ++It)
+		{
+			if (It->Object.IsValid() && It->Function.IsValid())
+			{
+				It->RemainTime -= DeltaTime;
+				if (It->RemainTime <= 0.0f)
+				{
+					It->RemainTime = It->Interval;
+					It->Object->ProcessEvent(It->Function.Get(), nullptr);
+				}
+			}
+			else
+			{
+				It.RemoveCurrentSwap();
+			}
+		}
+
+		for (TArray<FHTRegisteredFunction>::TIterator It(HTPeddingRegisteredFunctions); It; ++It)
+		{
+			if (HTRegisteredFunctions.Contains(*It))
+			{
+				continue;
+			}
+
+			HTRegisteredFunctions.Add(*It);
+		}
+		HTPeddingRegisteredFunctions.Empty();
+
+		for (TArray<FHTRegisteredFunction>::TIterator It(HTPeddingUnregisteredFunctions); It; ++It)
+		{
+			if (It->Function == nullptr)
+			{
+				for (TArray<FHTRegisteredFunction>::TIterator It2(HTRegisteredFunctions); It2; ++It2)
+				{
+					if (It->Object == It2->Object)
+					{
+						It2.RemoveCurrentSwap();
+					}
+				}
+			}
+			else
+			{
+				HTRegisteredFunctions.RemoveSwap(*It);
+			}
+		}
+		HTPeddingUnregisteredFunctions.Empty();
+	}
+	
+	return 0;
+}
+
+void FBXHelperRunnable::Stop()
+{
+	bShouldStop = true;
+}
+
+#pragma endregion HelperRunable
+
+
+
+
+
+
 #pragma region Important
 UBXManager* UBXManager::Get(UObject* InWorldContext)
 {
@@ -72,11 +146,27 @@ void UBXManager::Initialize()
 	// 受击所有的时间轴资源路径
 	CollectTimelineAssetPath();
 
+	// 创建辅助线程
+	HelperRunnable = MakeUnique<FBXHelperRunnable>();
+	HelperThread = TUniquePtr<FRunnableThread>(FRunnableThread::Create(HelperRunnable.Get(), TEXT("BX Helper Thread")));
+
 	FWorldDelegates::OnWorldCleanup.AddUObject(this, &UBXManager::OnWorldCleanupStart);
 }
 
 void UBXManager::Deinitialize()
 {
+	// 结束辅助线程
+	if (HelperThread.IsValid())
+	{
+		HelperThread->Kill();
+		HelperThread = nullptr;
+	}
+	if (HelperRunnable.IsValid())
+	{
+		HelperRunnable->Stop();
+		HelperRunnable = nullptr;
+	}
+	
 	FWorldDelegates::OnWorldCleanup.RemoveAll(this);
 }
 
@@ -238,13 +328,14 @@ int64 UBXManager::PlayTimeline(UBXTLAsset* InAsset, AActor* InOwner, UPARAM(ref)
 	// 创建时间轴运行时数据
 	int64 NewID = UBXFunctionLibrary::GetUniqueID();
 	FBXTLRunTimeData& NewData = TimelineRTDatas.Add(NewID);
+	NewData.Timeline = InAsset;
+	NewData.TimelineID = InAsset->ID;
 	NewData.ID = NewID;
-	NewData.StaticData = InAsset;
 	NewData.Owner = InOwner;
 	NewData.Instigator = InContext.Instigator;
 	NewData.Triggerer = InContext.Triggerer;
 	NewData.LockParts.Append(InContext.LockParts);
-	for (TMap<FName, FInstancedStruct>::TIterator It(InContext.InputDatas); It; ++It)
+	for (TMap<FGameplayTag, FInstancedStruct>::TIterator It(InContext.InputDatas); It; ++It)
 	{
 		NewData.DynamicDatas.Add(FBXTLDynamicDataSearchKey(-1, It->Key), It->Value);
 	}
@@ -298,7 +389,7 @@ void UBXManager::ChangeTimelineTickRate(int64 InID, float InRate)
 	if (FBXTLRunTimeData* RTData = TimelineRTDatas.Find(InID))
 	{
 		RTData->RunRate = InRate;
-		UBXTLAsset* Asset = RTData->StaticData;
+		UBXTLAsset* Asset = RTData->Timeline;
 		if (!Asset)
 		{
 			return;
@@ -335,7 +426,7 @@ void UBXManager::ChangeTimelineTickRate(int64 InID, float InRate)
 					continue;
 				}
 
-				Processor->ChangeTaskTickRate(TaskData, Task, InRate);
+				Processor->ChangeTaskTickRate(TaskData, InRate);
 			}
 		}
 	}
@@ -412,15 +503,15 @@ void UBXManager::UpdateTimeline(float InDeltaTime)
 		HelpHostingData2.Reset();
 
 		// 更新
-		if (!UBXTProcessor::IsTaskCompleted(Task, It->TaskRTData, FinishReason))
+		if (!UBXTProcessor::IsTaskCompleted(It->TaskRTData, FinishReason))
 		{
-			Processor->UpdateTask(HelpHostingData1, HelpHostingData2, It->TaskRTData, Task, InDeltaTime);
+			Processor->UpdateTask(HelpHostingData1, HelpHostingData2, It->TaskRTData, InDeltaTime);
 		}
 
 		// 结束
-		if (UBXTProcessor::IsTaskCompleted(Task, It->TaskRTData, FinishReason))
+		if (UBXTProcessor::IsTaskCompleted(It->TaskRTData, FinishReason))
 		{
-			Processor->EndTask(HelpHostingData1, HelpHostingData2, It->TaskRTData, Task, FinishReason);
+			Processor->EndTask(HelpHostingData1, HelpHostingData2, It->TaskRTData, FinishReason);
 			It.RemoveCurrent();
 		}
 	}
@@ -429,7 +520,7 @@ void UBXManager::UpdateTimeline(float InDeltaTime)
 void UBXManager::FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSectionRTData& InOutSectionData, EBXTLFinishReason InReason)
 {
 	// 时间轴静态数据
-	UBXTLAsset* Asset = InOutData.StaticData;
+	UBXTLAsset* Asset = InOutData.Timeline;
 	if (!Asset || !Asset->Sections.IsValidIndex(InOutSectionData.Index))
 	{
 		return;
@@ -512,12 +603,12 @@ void UBXManager::FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSection
 			NewHosting.LockParts.Append(InOutData.LockParts);
 			NewHosting.TaskRTData = TaskData;
 
-			Processor->ChangeTaskTickRate(TaskData, Task, 1.0f);
+			Processor->ChangeTaskTickRate(TaskData, 1.0f);
 
 			continue;
 		}
 		
-		Processor->EndTask(InOutData, InOutSectionData, TaskData, Task, InReason);
+		Processor->EndTask(InOutData, InOutSectionData, TaskData, InReason);
 	}
 
 	// 时间片段数据重置
@@ -526,12 +617,12 @@ void UBXManager::FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSection
 
 void UBXManager::ProcessTimelineSectionPendingTasks(FBXTLRunTimeData& InOutData, FBXTLSectionRTData& InOutSectionData)
 {
-	if (!InOutData.StaticData || !InOutData.StaticData->Sections.IsValidIndex(InOutSectionData.Index))
+	if (!InOutData.Timeline || !InOutData.Timeline->Sections.IsValidIndex(InOutSectionData.Index))
 	{
 		return;
 	}
 
-	const FBXTLSection& Section = InOutData.StaticData->Sections[InOutSectionData.Index];
+	const FBXTLSection& Section = InOutData.Timeline->Sections[InOutSectionData.Index];
 
 	ENetMode NetMode = ENetMode::NM_Standalone;
 	ENetRole LocalRole = ENetRole::ROLE_Authority;
@@ -550,31 +641,29 @@ void UBXManager::ProcessTimelineSectionPendingTasks(FBXTLRunTimeData& InOutData,
 			Information.LocalIndex = -1;
 			continue;
 		}
-
-		// 清理当前帧待执行队列
-		InOutSectionData.FramePendingTasks.Reset();
-
+		
 		// 判断触发时间
 		float DeltaTime = InOutSectionData.RunTime - Information.Time;
 		if (DeltaTime >= 0.0f)
 		{
 			// 将根Task加入当前帧待执行队列
-			InOutSectionData.FramePendingTasks.Add(Information.LocalIndex);
+			InOutSectionData.TaskStackInFrame.Reset();
+			InOutSectionData.TaskStackInFrame.Add(FInt64Vector2(Information.LocalIndex, Information.ParentScope));
 
 			// 执行Task
-			ExecuteTimelineTask(InOutData, InOutSectionData, Information.LocalIndex, NetMode, LocalRole, DeltaTime);
+			ExecuteTimelineTask(InOutData, InOutSectionData, Information.LocalIndex, NetMode, LocalRole, DeltaTime, Information.ParentScope);
 
 			// 标记为已执行
 			Information.LocalIndex = -1;
 
-			int32 FramePendingIndex = 1;
-			while (FramePendingIndex < InOutSectionData.FramePendingTasks.Num())
+			// 帧内触发的其他Task
+			int32 CurrentIndex = 0;
+			while (CurrentIndex < InOutSectionData.TaskStackInFrame.Num())
 			{
-				FramePendingIndex += 1;
-				int32 Index = InOutSectionData.FramePendingTasks[FramePendingIndex];
-
-				// 执行Task
-				ExecuteTimelineTask(InOutData, InOutSectionData, Index, NetMode, LocalRole, 0.0f);
+				FInt64Vector2& Stack = InOutSectionData.TaskStackInFrame[CurrentIndex];
+				ExecuteTimelineTask(InOutData, InOutSectionData, Stack.X, NetMode, LocalRole, 0.0f, Stack.Y);
+				
+				CurrentIndex += 1;
 			}
 		}
 	}
@@ -590,23 +679,20 @@ void UBXManager::ProcessTimelineSectionPendingTasks(FBXTLRunTimeData& InOutData,
 			}
 		);
 	}
-
-	// 清空帧内待执行列表
-	InOutSectionData.FramePendingTasks.Reset();
 }
 
-bool UBXManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSectionRTData& InOutSectionData, int32 InTaskIndex, ENetMode InNetMode, ENetRole InRoleType, float InStartOffset)
+bool UBXManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSectionRTData& InOutSectionData, int32 InTaskIndex, ENetMode InNetMode, ENetRole InRoleType, float InStartOffset, int64 InParentScope)
 {
-	if (!InOutData.StaticData || !InOutData.StaticData->Sections.IsValidIndex(InOutSectionData.Index) || !InOutData.StaticData->Sections[InOutSectionData.Index].TaskList.IsValidIndex(InTaskIndex))
+	if (!InOutData.Timeline || !InOutData.Timeline->Sections.IsValidIndex(InOutSectionData.Index) || !InOutData.Timeline->Sections[InOutSectionData.Index].TaskList.IsValidIndex(InTaskIndex))
 	{
 		return false;
 	}
 
-	if (!InOutData.StaticData->Sections.IsValidIndex(InOutSectionData.Index))
+	if (!InOutData.Timeline->Sections.IsValidIndex(InOutSectionData.Index))
 	{
 		return false;
 	}
-	FBXTLSection& Section = InOutData.StaticData->Sections[InOutSectionData.Index];
+	FBXTLSection& Section = InOutData.Timeline->Sections[InOutSectionData.Index];
 
 	UBXTask* InTask = Section.TaskList[InTaskIndex];
 	if (!InTask)
@@ -659,31 +745,36 @@ bool UBXManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSectionRT
 	{
 		// 创建Task运行时数据
 		FBXTLTaskRTData NewTaskData(CustomDataType);
+		NewTaskData.Task = InTask;
 		NewTaskData.Index = InTaskIndex;
-
+		NewTaskData.ParentScope = InParentScope;
+		NewTaskData.DynamicData.InitializeAs(CustomDataType);
+		
 		// 找到Task处理器
 		if (UBXTProcessor* Processor = GetTLTProcessorByTLTClass(InTask->GetClass()))
 		{
 			// 开始
-			Processor->StartTask(InOutData, InOutSectionData, NewTaskData, InTask);
+			Processor->StartTask(InOutData, InOutSectionData, NewTaskData);
 
 			// 结束
-			Processor->EndTask(InOutData, InOutSectionData, NewTaskData, InTask, EBXTLFinishReason::FR_EndOfLife);
+			Processor->EndTask(InOutData, InOutSectionData, NewTaskData, EBXTLFinishReason::FR_EndOfLife);
 		}
 	}
 	else
 	{
 		// 创建Task运行时数据
 		FBXTLTaskRTData& NewTaskData = InOutSectionData.RunningTasks.AddDefaulted_GetRef();
+		NewTaskData.Task = InTask;
 		NewTaskData.Index = InTaskIndex;
+		NewTaskData.ParentScope = InParentScope;
 		NewTaskData.RunTime = InStartOffset;
 		NewTaskData.DynamicData.InitializeAs(CustomDataType);
-
+		
 		// 找到Task处理器
 		if (UBXTProcessor* Processor = GetTLTProcessorByTLTClass(InTask->GetClass()))
 		{
 			// 开始
-			Processor->StartTask(InOutData, InOutSectionData, NewTaskData, InTask);
+			Processor->StartTask(InOutData, InOutSectionData, NewTaskData);
 		}
 	}
 
@@ -717,7 +808,7 @@ void UBXManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDel
 
 	EBXTLFinishReason FinishReason;
 
-	UBXTLAsset* Asset = InOutData.StaticData;
+	UBXTLAsset* Asset = InOutData.Timeline;
 	if (!Asset)
 	{
 		return;
@@ -777,15 +868,15 @@ void UBXManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDel
 			}
 
 			// 更新
-			if (!UBXTProcessor::IsTaskCompleted(Task, TaskData, FinishReason))
+			if (!UBXTProcessor::IsTaskCompleted(TaskData, FinishReason))
 			{
-				Processor->UpdateTask(InOutData, SectionData, TaskData, Task, FixedDeltaTime);
+				Processor->UpdateTask(InOutData, SectionData, TaskData, FixedDeltaTime);
 			}
 
 			// 结束
-			if (UBXTProcessor::IsTaskCompleted(Task, TaskData, FinishReason))
+			if (UBXTProcessor::IsTaskCompleted(TaskData, FinishReason))
 			{
-				Processor->EndTask(InOutData, SectionData, TaskData, Task, FinishReason);
+				Processor->EndTask(InOutData, SectionData, TaskData, FinishReason);
 			}
 		}
 
@@ -885,7 +976,7 @@ void UBXManager::CleanTimeline()
 		HelpHostingData2.Reset();
 
 		// 结束任务
-		Processor->EndTask(HelpHostingData1, HelpHostingData2, It->TaskRTData, Task, EBXTLFinishReason::FR_Interrupt);
+		Processor->EndTask(HelpHostingData1, HelpHostingData2, It->TaskRTData, EBXTLFinishReason::FR_Interrupt);
 	}
 	TimelineTaskHostingDatas.Empty();
 }
@@ -901,6 +992,90 @@ void UBXManager::OnWorldCleanupStart(UWorld* World, bool bSessionEnded, bool bCl
 }
 
 #pragma endregion Callback
+
+
+
+#pragma region HelperThread
+void UBXManager::RegisterHTFunction(UObject* InObject, FName InFunctionName, float InInterval)
+{
+	if (!HelperRunnable.IsValid())
+	{
+		return;
+	}
+	
+	UFunction* Function = InObject->FindFunction(InFunctionName);
+	if (!IsValid(Function))
+	{
+		return;
+	}
+	
+	HelperRunnable->HTPeddingRegisteredFunctions.Add(FHTRegisteredFunction(InObject, Function, InInterval));
+}
+
+void UBXManager::AdjustHTFunctionInterval(UObject* InObject, FName InFunctionName, float InInterval)
+{
+	if (!IsValid(InObject))
+	{
+		return;
+	}
+
+	if (!HelperRunnable.IsValid())
+	{
+		return;
+	}
+
+	UFunction* Function = InObject->FindFunction(InFunctionName);
+	if (!IsValid(Function))
+	{
+		return;
+	}
+
+	for (TArray<FHTRegisteredFunction>::TIterator It(HelperRunnable->HTRegisteredFunctions); It; ++It)
+	{
+		if (InObject == It->Object && Function == It->Function)
+		{
+			It->Interval = InInterval;
+			return;
+		}
+	}
+		
+	for (TArray<FHTRegisteredFunction>::TIterator It(HelperRunnable->HTPeddingRegisteredFunctions); It; ++It)
+	{
+		if (InObject == It->Object && Function == It->Function)
+		{
+			It->Interval = InInterval;
+			return;
+		}
+	}
+}
+
+void UBXManager::UnregisterHTFunction(UObject* InObject, FName InFunctionName)
+{
+	if (!HelperRunnable.IsValid())
+	{
+		return;
+	}
+
+	UFunction* Function = InObject->FindFunction(InFunctionName);
+	if (!IsValid(Function))
+	{
+		return;
+	}
+	
+	HelperRunnable->HTPeddingRegisteredFunctions.Add(FHTRegisteredFunction(InObject, Function));
+}
+
+void UBXManager::UnregisterHTFunctionByUObject(UObject* InObject)
+{
+	if (!HelperRunnable.IsValid())
+	{
+		return;
+	}
+	
+	HelperRunnable->HTPeddingRegisteredFunctions.Add(FHTRegisteredFunction(InObject, nullptr));
+}
+	
+#pragma endregion HelperThread
 
 
 

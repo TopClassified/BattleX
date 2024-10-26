@@ -5,6 +5,7 @@
 #include "GameplayTagContainer.h"
 
 #include "BXEnums.h"
+#include "BXGameplayTags.h"
 
 #include "BXStructs.generated.h" 
 
@@ -263,7 +264,7 @@ public:
 
 	// 部位类型
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	EBXBodyPartType BodyPart = EBXBodyPartType::BPT_Default;
+	FGameplayTag BodyPart;
 
 };
 
@@ -360,7 +361,7 @@ public:
 public:
 	// 部位类型
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	EBXBodyPartType PartType = EBXBodyPartType::BPT_Default;
+	FGameplayTag PartType = BXGameplayTags::BXBodyPart_Default;
 
 	// 组件对象
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)

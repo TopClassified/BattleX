@@ -1,23 +1,16 @@
 #include "BXTLEditor.h"
-#include "LevelEditor.h"
 #include "UObject/SavePackage.h"
 #include "Modules/ModuleManager.h"
-#include "Engine/UserDefinedEnum.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "AssetRegistry/AssetRegistryModule.h"
-#include "GameFramework/GameStateBase.h"
 #include "GameFramework/WorldSettings.h"
-#include "Components/ShapeComponent.h"
 
-#include "FileHelpers.h"
 #include "Misc/FileHelper.h"
 #include "EdGraphUtilities.h"
-#include "SourceControlHelpers.h"
 #include "HAL/PlatformFilemanager.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Framework/Commands/GenericCommands.h"
 
-#include "BXTLEditorDelegates.h"
 #include "BXTLEditorToolbar.h"
 #include "BXTLEditorCommands.h"
 #include "BXTLEditorSettings.h"
@@ -35,9 +28,9 @@
 #include "TabFactory/BXTLEditorMode.h"
 #include "TabFactory/SBXTLTaskTab.h"
 
-#include "BXSettings.h"
 #include "BXManager.h"
-#include "BXTLAsset.h" 
+#include "BXTLAsset.h"
+#include "BXGameplayTags.h"
 
 
 
@@ -635,11 +628,11 @@ TSharedPtr<FBXTLPreviewProxy> FBXTLEditor::GetPreviewProxy() const
 	return PreviewProxy; 
 }
 
-EBXBodyPartType FBXTLEditor::GetLockedBodyPartType()
+FGameplayTag FBXTLEditor::GetLockedBodyPartType()
 {
 	if (!EditAsset.IsValid())
 	{
-		return EBXBodyPartType::BPT_Default;
+		return BXGameplayTags::BXBodyPart_Default;
 	}
 
 	if (UBXTLPreviewActor* PreviewTargetInformation = Cast<UBXTLPreviewActor>(EditAsset->TargetInformation))
@@ -647,7 +640,7 @@ EBXBodyPartType FBXTLEditor::GetLockedBodyPartType()
 		return PreviewTargetInformation->LockedBodyPart;
 	}
 
-	return EBXBodyPartType::BPT_Default;
+	return BXGameplayTags::BXBodyPart_Default;
 }
 
 bool FBXTLEditor::ShouldPauseWorld() const

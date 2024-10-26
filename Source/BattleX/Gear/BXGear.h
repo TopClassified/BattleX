@@ -25,7 +25,7 @@ public:
 public:
 	// 装备类型
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	EBXGearType GearType = EBXGearType::GT_Weapon;
+	FGameplayTag GearType = BXGameplayTags::BXGearType_Weapon;
 
 	// 装备数据
 	UPROPERTY(Transient, BlueprintReadOnly)
@@ -130,21 +130,21 @@ protected:
 #pragma region State
 public:
 	// 获取当前的状态
-	EBXGearState GetCurrentState() const;
+	FGameplayTag GetCurrentState() const;
 
 	// 改变状态
 	UFUNCTION(BlueprintCallable, Category = "State")
-	void ChangeState(EBXGearState NewState);
+	void ChangeState(FGameplayTag NewState);
 
 protected:
-	virtual void InternalChangeState(EBXGearState NewState);
+	virtual void InternalChangeState(FGameplayTag NewState);
 	UFUNCTION(BlueprintImplementableEvent, Category = "State")
-	void ScriptChangeState(EBXGearState NewState);
+	void ScriptChangeState(FGameplayTag NewState);
 
 protected:
 	// 当前状态
 	UPROPERTY(Transient, BlueprintReadWrite)
-	EBXGearState CurrentState = EBXGearState::S_None;
+	FGameplayTag CurrentState = BXGameplayTags::BXGearSlot_Default;
 
 	// 要执行的函数(默认只执行C++函数)
 	UPROPERTY(EditDefaultsOnly, Category = "State", Meta = (Bitmask, BitmaskEnum = "EBXChangeStateFunction"))
@@ -170,5 +170,14 @@ public:
 	class USkeletalMeshComponent* AttachTarget = nullptr;
 
 #pragma endregion Attach
+
+
+
+#pragma region Collision
+public:
+	UFUNCTION(BlueprintCallable, Category = "Collision")
+	virtual void GetHitResults(float InStartTime, FGameplayTagContainer& BoxTags, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, const FBXCFilter& Filter, TArray<FHitResult>& OutResults);
+
+#pragma endregion Collision
 
 };

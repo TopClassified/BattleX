@@ -86,7 +86,7 @@ bool UBXTimelineComponent::IsTimelineRunning(UBXTLAsset* InAsset)
 	{
 		if (FBXTLRunTimeData* RTData = BXMgr->GetTimelineRunTimeDataByID(*It))
 		{
-			if (RTData->StaticData == InAsset)
+			if (RTData->Timeline == InAsset)
 			{
 				return true;
 			}

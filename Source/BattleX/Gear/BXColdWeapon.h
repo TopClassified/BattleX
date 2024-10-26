@@ -24,15 +24,9 @@ public:
 
 	virtual void BeginPlay() override;
 
-	virtual void TickActor(float DeltaTime, enum ELevelTick TickType, FActorTickFunction& ThisTickFunction) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 protected:
-	// 垃圾清理间隔
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	float GCInterval = 10.0f;
-	// 上一次清理垃圾的时间戳
-	float LastGCTS = 0.0f;
-
 	// 碰撞信息组件
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))
 	UBXShapeComponent* HitBoxComponent = nullptr;
@@ -41,9 +35,19 @@ protected:
 
 
 
+#pragma region Use
+public:
+	void InternalPostUsing(UPARAM(ref) FBXUsingGearInformation& UsingInfo) override;
+
+	void InternalPreUnusing(UPARAM(ref) FBXUsingGearInformation& UnusingInfo) override;
+	
+#pragma endregion Use
+
+
+
 #pragma region State
 protected:
-	virtual void InternalChangeState(EBXGearState NewState) override;
+	virtual void InternalChangeState(FGameplayTag NewState) override;
 
 #pragma endregion State
 
@@ -51,38 +55,43 @@ protected:
 
 #pragma region Collision
 public:
-	// 获取所有的碰撞盒名称
-	UFUNCTION(BlueprintCallable, Category = "Collision")
-	virtual void GetAllHitBoxNames(TArray<FName>& OutBoxNames);
-
 	// 开始记录位置
 	UFUNCTION(BlueprintCallable, Category = "Collision")
-	virtual void StartRecordLocation(const TArray<FName>& BoxNames);
+	virtual void StartRecordLocation();
 
 	// 停止记录位置
 	UFUNCTION(BlueprintCallable, Category = "Collision")
-	virtual void StopRecordLocation(const TArray<FName>& BoxNames);
+	virtual void StopRecordLocation();
 
 	// 获取N秒内，某个碰撞盒的碰撞结果信息
-	UFUNCTION(BlueprintCallable, Category = "Collision")
-	virtual void GetHitResultsInSeconds(AActor* Requester, float Seconds, const FName& BoxName, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, const FBXCFilter& Filter, TArray<FHitResult>& OutResults);
+	virtual void GetHitResults(float InStartTime, FGameplayTagContainer& BoxTags, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, const FBXCFilter& Filter, TArray<FHitResult>& OutResults) override;
 
 protected:
-	virtual void AddNewHitBoxRecord(const TArray<FName>& BoxNames);
+	// 添加新的碰撞盒位置信息，一般情况下在辅助线程调用
+	virtual void AddNewHitBoxRecord();
 
 protected:
-	// 要记录的碰撞盒名称
-	UPROPERTY(Transient, BlueprintReadWrite, Category = "Collision")
-	TArray<FName> RecordBoxNames;
+	// 位置记录间隔
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision")
+	float UpdateHitBoxRecordInterval = 0.02f;
 
 	// 1秒内碰撞盒位置信息
 	UPROPERTY(Transient, BlueprintReadWrite, Category = "Collision")
-	TMap<FName, FBXGHitBoxRecords> HitBoxRecords;
+	TMap<FGameplayTag, FBXGHitBoxRecords> HitBoxRecords;
 
 	// 辅助容器
-	UPROPERTY(Transient)
-	TMap<FName, USceneComponent*> HelpMap1;
+	TMap<FGameplayTag, TWeakObjectPtr<USceneComponent>> HBRHelpMap;
 
+private:
+	// 正在添加碰撞盒位置信息
+	bool bAddingBoxRecords = false;
+
+	// 正在清理碰撞盒位置信息
+	bool bCleaningBoxRecords = false;
+
+	// 清理碰撞盒信息时间戳
+	int64 CleanBoxRecordsTS = 0;
+	
 #pragma endregion Collision
 
 };

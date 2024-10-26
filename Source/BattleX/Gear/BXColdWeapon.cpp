@@ -2,9 +2,10 @@
 
 #include "Components/SkeletalMeshComponent.h"
 
+#include "BXManager.h"
 #include "BXCollision.h"
+#include "BXGearComponent.h"
 #include "BXFunctionLibrary.h"
-
 
 
 #pragma region Important
@@ -22,52 +23,44 @@ ABXColdWeapon::~ABXColdWeapon()
 
 void ABXColdWeapon::BeginPlay()
 {
-	SetActorTickEnabled(false);
-
+	
+	
 	Super::BeginPlay();
 }
 
-void ABXColdWeapon::TickActor(float DeltaTime, enum ELevelTick TickType, FActorTickFunction& ThisTickFunction)
+void ABXColdWeapon::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	// 记录碰撞盒的位置
-	if (RecordBoxNames.Num() > 0)
-	{
-		AddNewHitBoxRecord(RecordBoxNames);
-	}
-	else
-	{
-		SetActorTickEnabled(false);
-	}
+	Super::EndPlay(EndPlayReason);
 
-	float CurrentTime = GetWorld()->GetTimeSeconds();
-
-	// 垃圾回收
-	if (CurrentTime - LastGCTS > GCInterval)
-	{
-		LastGCTS = CurrentTime;
-
-		// 移除失效的记录
-		for (TMap<FName, FBXGHitBoxRecords>::TIterator It(HitBoxRecords); It; ++It)
-		{
-			It->Value.List.RemoveAll
-			(
-				[CurrentTime](const FBXGHitBoxRecord& Record)
-				{
-					return CurrentTime - Record.GameTime > 1.0f;
-				}
-			);
-		}
-	}
-
-	Super::TickActor(DeltaTime, TickType, ThisTickFunction);
+	StopRecordLocation();
 }
 
 #pragma endregion Important
 
 
 
+#pragma region Use
+void ABXColdWeapon::InternalPostUsing(UPARAM(ref) FBXUsingGearInformation& UsingInfo)
+{
+	// TODO：考虑角色类型决定是否开启位置记录，并将该逻辑移动到蓝图触发
+	StartRecordLocation();
+	
+	Super::InternalPostUsing(UsingInfo);
+}
+
+void ABXColdWeapon::InternalPreUnusing(UPARAM(ref) FBXUsingGearInformation& UnusingInfo)
+{
+	StopRecordLocation();
+	
+	Super::InternalPreUnusing(UnusingInfo);
+}
+	
+#pragma endregion Use
+
+
+
 #pragma region State
-void ABXColdWeapon::InternalChangeState(EBXGearState NewState)
+void ABXColdWeapon::InternalChangeState(FGameplayTag NewState)
 {
 	if (CurrentState == NewState)
 	{
@@ -85,64 +78,60 @@ void ABXColdWeapon::InternalChangeState(EBXGearState NewState)
 
 
 #pragma region Collision
-void ABXColdWeapon::GetAllHitBoxNames(TArray<FName>& OutBoxNames)
-{
-	OutBoxNames.Reset();
-
-	if (HitBoxComponent)
-	{
-		HitBoxComponent->ShapeInformations.GetKeys(OutBoxNames);
-	}
-}
-
-void ABXColdWeapon::StartRecordLocation(const TArray<FName>& BoxNames)
+void ABXColdWeapon::StartRecordLocation()
 {
 	if (!HitBoxComponent)
 	{
 		return;
 	}
-
-	for (const FName& BoxName : BoxNames)
+	
+	AddNewHitBoxRecord();
+	
+	// 使用辅助线程记录位置信息
+	if (UBXManager* Manager = UBXManager::Get(this))
 	{
-		RecordBoxNames.AddUnique(BoxName);
+		Manager->RegisterHTFunction(this, FName(TEXT("AddNewHitBoxRecord")), UpdateHitBoxRecordInterval);
 	}
-
-	AddNewHitBoxRecord(BoxNames);
-
-	SetActorTickEnabled(true);
 }
 
-void ABXColdWeapon::StopRecordLocation(const TArray<FName>& BoxNames)
+void ABXColdWeapon::StopRecordLocation()
 {
-	for (const FName& BoxName : BoxNames)
+	// 停止使用辅助线程记录位置信息
+	if (UBXManager* Manager = UBXManager::Get(this))
 	{
-		RecordBoxNames.RemoveSwap(BoxName);
+		Manager->UnregisterHTFunction(this, FName(TEXT("AddNewHitBoxRecord")));
 	}
 }
 
-void ABXColdWeapon::GetHitResultsInSeconds(AActor* Requester, float Seconds, const FName& BoxName, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, const FBXCFilter& Filter, TArray<FHitResult>& OutResults)
+void ABXColdWeapon::GetHitResults(float InStartTime, FGameplayTagContainer& BoxTags, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, const FBXCFilter& Filter, TArray<FHitResult>& OutResults)
 {
 	OutResults.Reset();
 
-	if (!RecordBoxNames.Contains(BoxName))
+	if (!IsValid(OwnerComponent))
 	{
 		return;
 	}
 	
-	float CurrentTime = GetWorld()->GetTimeSeconds();
-	float TargetTime = CurrentTime - Seconds;
+	float CurrentTime = UBXFunctionLibrary::GetClientTimeSeconds(this);
 
-	if (FBXGHitBoxRecords* Records = HitBoxRecords.Find(BoxName))
+	for (int32 Loop = 0; Loop < BoxTags.Num(); ++Loop)
 	{
-		FQuat StartQuat, EndQuat;
+		const FGameplayTag& BoxTag = BoxTags.GetByIndex(Loop);
+		
+		FBXGHitBoxRecords* Records = HitBoxRecords.Find(BoxTag);
+		if (!Records)
+		{
+			continue;
+		}
+		
 		FBXCParameter Parameter;
-		Parameter.Requester = Requester;
+		Parameter.Requester = OwnerComponent->GetOwner();
 
 		// 获取当前的位置信息
 		EBXShapeType ShapeType = EBXShapeType::ST_Sphere;
 		FVector ShapeSize(FVector::ZeroVector);
 		FTransform WTransform = FTransform::Identity;
-		if (FBXShapeInformation* Information = HitBoxComponent->ShapeInformations.Find(BoxName))
+		if (FBXShapeInformation* Information = HitBoxComponent->ShapeInformations.Find(BoxTag))
 		{
 			USceneComponent* AttachedComponent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, Information->AttachParent, nullptr, false);
 			if (!AttachedComponent)
@@ -156,103 +145,146 @@ void ABXColdWeapon::GetHitResultsInSeconds(AActor* Requester, float Seconds, con
 		}
 		else
 		{
-			return;
+			continue;
 		}
-		Parameter.EndLocation = WTransform.GetLocation();
-		EndQuat = WTransform.GetRotation();
-		Parameter.Scale = WTransform.GetScale3D();
 
 		// 查询N秒之前的位置信息
-		int32 Index = 0;
-		for (int32 i = Records->List.Num() - 1; i >= 0; --i)
+		int32 StartIndex = 0;
+		int32 EndIndex = Records->List.Num() - 1;
+		for (int32 i = EndIndex; i >= 0; --i)
 		{
-			if (Records->List[i].GameTime < TargetTime)
+			if (Records->List[i].GameTime < InStartTime)
 			{
-				Index = i;
+				StartIndex = i;
 				break;
 			}
 		}
 
-		// 计算起始位置
-		if (Index == Records->List.Num() - 1)
+		TArray<FHitResult> TempResults;
+		for (int32 i = StartIndex; i <= EndIndex; ++i)
 		{
-			const FBXGHitBoxRecord& Record = Records->List[Index];
-			Parameter.StartLocation = Record.WTransform.GetLocation();
-			StartQuat = Record.WTransform.GetRotation();
+			TempResults.Reset();
 
-			float Alpha = Seconds / FMath::Max(CurrentTime - Record.GameTime, 0.0001f);
-			Alpha = FMath::Clamp(Alpha, 0.0f, 1.0f);
-
-			Parameter.StartLocation = FMath::Lerp(Parameter.StartLocation, Parameter.EndLocation, Alpha);
-			StartQuat = FQuat::Slerp(StartQuat, EndQuat, Alpha);
-		}
-		else
-		{
-			const FBXGHitBoxRecord& Record1 = Records->List[Index];
-			const FBXGHitBoxRecord& Record2 = Records->List[Index + 1];
-
-			float Alpha = (Record2.GameTime - TargetTime) / FMath::Max(Record2.GameTime - Record1.GameTime, 0.0001f);
-			Alpha = FMath::Clamp(Alpha, 0.0f, 1.0f);
-
-			Parameter.StartLocation = FMath::Lerp(Record1.WTransform.GetLocation(), Record2.WTransform.GetLocation(), Alpha);
-			StartQuat = FQuat::Slerp(Record1.WTransform.GetRotation(), Record2.WTransform.GetRotation(), Alpha);
-		}
-
-		Parameter.StartRotation = StartQuat.Rotator();
-		Parameter.EndRotation = EndQuat.Rotator();
-
-		// 调用碰撞查询接口
-		if (ShapeType == EBXShapeType::ST_Sphere)
-		{
-			OutResults = UBXCollisionLibrary::SphereCheck(Parameter, ObjectTypes, ShapeSize.X, Filter);
-		}
-		else if (ShapeType == EBXShapeType::ST_Capsule)
-		{
-			OutResults = UBXCollisionLibrary::CapsuleCheck(Parameter, ObjectTypes, FVector2D(ShapeSize.X, ShapeSize.Y), Filter);
-		}
-		else if (ShapeType == EBXShapeType::ST_Box)
-		{
-			OutResults = UBXCollisionLibrary::BoxCheck(Parameter, ObjectTypes, ShapeSize, Filter);
-		}
-	}
-}
-
-void ABXColdWeapon::AddNewHitBoxRecord(const TArray<FName>& BoxNames)
-{
-	UClass* ActorClass = GetClass();
-	UWorld* World = GetWorld();
-
-	HelpMap1.Reset();
-	for (const FName& BoxName : BoxNames)
-	{
-		if (FBXShapeInformation* Information = HitBoxComponent->ShapeInformations.Find(BoxName))
-		{
-			// 找到挂接的父组件
-			USceneComponent* AttachedComponent = nullptr;
-			if (USceneComponent** FindResult = HelpMap1.Find(Information->AttachParent))
+			// 计算起始位置
+			if (i == Records->List.Num() - 1)
 			{
-				AttachedComponent = *FindResult;
+				const FBXGHitBoxRecord& Record = Records->List[i];
+				Parameter.StartLocation = Record.WTransform.GetLocation();
+				Parameter.StartRotation = Record.WTransform.GetRotation().Rotator();
+
+				Parameter.EndLocation = WTransform.GetLocation();
+				Parameter.EndRotation = WTransform.GetRotation().Rotator();
+
+				// 根据时间点，调整一下起始信息
+				float Alpha = FMath::Max(0.0f, (InStartTime - Record.GameTime) / (CurrentTime - Record.GameTime));
+				Parameter.StartLocation = FMath::Lerp(Parameter.StartLocation, Parameter.EndLocation, Alpha);
+				Parameter.StartRotation = FMath::Lerp(Parameter.StartRotation, Parameter.EndRotation, Alpha);
+
+				Parameter.Scale = (Record.WTransform.GetScale3D() + WTransform.GetScale3D()) * 0.5f;
 			}
 			else
 			{
-				AttachedComponent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, Information->AttachParent, nullptr, false);
+				const FBXGHitBoxRecord& Record1 = Records->List[i];
+				Parameter.StartLocation = Record1.WTransform.GetLocation();
+				Parameter.StartRotation = Record1.WTransform.GetRotation().Rotator();
+				
+				const FBXGHitBoxRecord& Record2 = Records->List[i + 1];
+				Parameter.EndLocation = Record2.WTransform.GetLocation();
+				Parameter.EndRotation = Record2.WTransform.GetRotation().Rotator();
 
-				HelpMap1.Add(Information->AttachParent, AttachedComponent);
+				// 根据时间点，调整一下起始信息
+				float Alpha = FMath::Max(0.0f, (InStartTime - Record1.GameTime) / (Record2.GameTime - Record1.GameTime));
+				Parameter.StartLocation = FMath::Lerp(Parameter.StartLocation, Parameter.EndLocation, Alpha);
+				Parameter.StartRotation = FMath::Lerp(Parameter.StartRotation, Parameter.EndRotation, Alpha);
+
+				Parameter.Scale = (Record1.WTransform.GetScale3D() + Record2.WTransform.GetScale3D()) * 0.5f;
 			}
-			if (!AttachedComponent)
+			
+			// 调用碰撞查询接口
+			if (ShapeType == EBXShapeType::ST_Sphere)
 			{
-				AttachedComponent = GetRootComponent();
+				TempResults = UBXCollisionLibrary::SphereCheck(Parameter, ObjectTypes, ShapeSize.X, Filter);
+			}
+			else if (ShapeType == EBXShapeType::ST_Capsule)
+			{
+				TempResults = UBXCollisionLibrary::CapsuleCheck(Parameter, ObjectTypes, FVector2D(ShapeSize.X, ShapeSize.Y), Filter);
+			}
+			else if (ShapeType == EBXShapeType::ST_Box)
+			{
+				TempResults = UBXCollisionLibrary::BoxCheck(Parameter, ObjectTypes, ShapeSize, Filter);
 			}
 
-			// 记录位置
-			FBXGHitBoxRecord Record;
-			Record.WTransform = Information->Relation * AttachedComponent->GetSocketTransform(Information->Socket.BoneName);
-			Record.GameTime = World->GetTimeSeconds();
+			// 结果去重合并
+			UBXCollisionLibrary::CombineCollisionResults(TempResults, OutResults);
+		}
+	}
+	
+	int64 CurrentTS = UBXFunctionLibrary::GetUtcMillisecond();
+	if (!bAddingBoxRecords && CurrentTS - CleanBoxRecordsTS > 5000)
+	{
+		bCleaningBoxRecords = true;
+		CleanBoxRecordsTS = CurrentTS;
+		
+		// 移除失效的记录
+		for (TMap<FGameplayTag, FBXGHitBoxRecords>::TIterator It(HitBoxRecords); It; ++It)
+		{
+			It->Value.List.RemoveAll
+			(
+				[CurrentTime](const FBXGHitBoxRecord& Record)
+				{
+					return CurrentTime - Record.GameTime > 1.0f;
+				}
+			);
+		}
+		bCleaningBoxRecords = false;
+	}
+}
 
-			FBXGHitBoxRecords& Records = HitBoxRecords.FindOrAdd(BoxName);
+void ABXColdWeapon::AddNewHitBoxRecord()
+{
+	// 正在清理信息队列，直接退出
+	if (bCleaningBoxRecords)
+	{
+		return;
+	}
+	
+	bAddingBoxRecords = true;
+	UClass* ActorClass = GetClass();
+
+	HBRHelpMap.Reset();
+	for (TMap<FGameplayTag, FBXShapeInformation>::TIterator It(HitBoxComponent->ShapeInformations); It; ++It)
+	{
+		const FBXShapeInformation& Information = It->Value;
+
+		// 找到挂接的父组件
+		TWeakObjectPtr<USceneComponent> AttachedComponent = nullptr;
+		if (TWeakObjectPtr<USceneComponent>* FindResult = HBRHelpMap.Find(It->Key))
+		{
+			AttachedComponent = *FindResult;
+		}
+		else
+		{
+			AttachedComponent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, Information.AttachParent, nullptr, false);
+			HBRHelpMap.Add(It->Key, AttachedComponent);
+		}
+		if (!AttachedComponent.IsValid())
+		{
+			AttachedComponent = GetRootComponent();
+		}
+			
+		// 记录位置
+		FBXGHitBoxRecord Record;
+		Record.WTransform = Information.Relation * AttachedComponent->GetSocketTransform(Information.Socket.BoneName);
+		Record.GameTime = UBXFunctionLibrary::GetClientTimeSeconds(this);
+
+		// 不要频繁记录
+		FBXGHitBoxRecords& Records = HitBoxRecords.FindOrAdd(It->Key);
+		if (Record.GameTime - Records.List.Last().GameTime > UpdateHitBoxRecordInterval * 0.5f)
+		{
 			Records.List.Add(Record);
 		}
 	}
+	bAddingBoxRecords = false;
 }
 
 #pragma endregion Collision

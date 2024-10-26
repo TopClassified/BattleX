@@ -283,6 +283,10 @@ public:
 	UFUNCTION(BlueprintCallable)
 	static bool CheckCollisionResult(AActor* InRequester, const FHitResult& InResult, const FBXCFilter& InFilter);
 
+	// 碰撞结果去重合并
+	UFUNCTION(BlueprintCallable)
+	static void CombineCollisionResults(const TArray<FHitResult>& InSourceList, TArray<FHitResult>& InOutList);
+	
 	// 球体碰撞检查
 	UFUNCTION(BlueprintCallable)
 	static TArray<FHitResult> SphereCheck(const FBXCParameter& Parameter, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, float SpereSize, const FBXCFilter& Filter);

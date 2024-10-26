@@ -21,7 +21,7 @@ public:
 public:
 	// 形状信息
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	TMap<FName, FBXShapeInformation> ShapeInformations;
+	TMap<FGameplayTag, FBXShapeInformation> ShapeInformations;
 
 #pragma endregion Important
 

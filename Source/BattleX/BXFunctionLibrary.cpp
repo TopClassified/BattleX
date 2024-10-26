@@ -28,20 +28,20 @@ int64 UBXFunctionLibrary::GetUniqueID()
 	return Result;
 }
 
-int32 UBXFunctionLibrary::GetShortUniqueID()
+float UBXFunctionLibrary::GetClientTimeSeconds(UObject* InWorldContext)
 {
-	uint64 Result = FDateTime::UtcNow().GetTicks();
+	if (!IsValid(InWorldContext))
+	{
+		return 0.0f;
+	}
 
-	// 除以8192，相当于精确到毫秒（毫秒要除以10000）
-	Result >>= 13;
-	uint32 ShortResult = Result;
-	// 将高位的无效位移除，保留大概3天的份额
-	ShortResult <<= 6;
-	// 留出符号位，最后加上循环自增计数器
-	Result = (Result >> 1) + ShortIDCreater;
-	ShortIDCreater = (ShortIDCreater % 32) + 1;
+	UWorld* World = InWorldContext->GetWorld();
+	if (!IsValid(World))
+	{
+		return 0.0f;
+	}
 
-	return ShortResult;
+	return World->GetTimeSeconds();
 }
 
 int64 UBXFunctionLibrary::GetUtcMillisecond()

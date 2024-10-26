@@ -78,6 +78,7 @@ public class BattleXEditor : ModuleRules
                 "BlueprintGraph",
                 "SequencerWidgets",
 
+                "GameplayTags",
                 "StructUtils",
 
                 "BattleX",

@@ -19,10 +19,6 @@ public:
 	UBXSettings(const FObjectInitializer& ObjectInitializer);
 
 public:
-	// 受击类型类型
-	UPROPERTY(Config, EditDefaultsOnly, Category = "Collision")
-	TEnumAsByte<ECollisionChannel> CollisionChannel;
-
 	// 碰撞Debug时长
 	UPROPERTY(Config, EditDefaultsOnly, Category = "Collision", Meta = (ClampMin = "0.1"))
 	float CollisionDebugDuration = 1.0f;
@@ -36,9 +32,5 @@ public:
 	// 任务自定义数据集映射表
 	UPROPERTY(Config, EditDefaultsOnly, Category = "Task")
 	TMap<TSoftClassPtr<UObject>, TSoftObjectPtr<UScriptStruct>> TaskCustomDataMap;
-
-	// 处理待执行任务的深度
-	UPROPERTY(Config, EditDefaultsOnly, Category = "Task")
-	int32 FramePendingTaskLimit = 6;
 
 };

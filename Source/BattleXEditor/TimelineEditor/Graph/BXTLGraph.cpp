@@ -247,7 +247,7 @@ void UBXTLGraph::GenerateGraphNodesByTasks(TArray<UBXTask*>& InTaskList)
 		if (!bGenerateNode)
 		{
 			// 自身有连接到外部的节点，需要生成自身节点
-			for (TMap<FName, FBXTEvent>::TIterator It(Task->Events); It; ++It)
+			for (TMap<FGameplayTag, FBXTEvent>::TIterator It(Task->Events); It; ++It)
 			{
 				if (It->Value.Event.Num() > 0)
 				{
@@ -268,7 +268,7 @@ void UBXTLGraph::GenerateGraphNodesByTasks(TArray<UBXTask*>& InTaskList)
 					continue;
 				}
 
-				for (TMap<FName, FBXTEvent>::TIterator It(OtherTask->Events); It; ++It)
+				for (TMap<FGameplayTag, FBXTEvent>::TIterator It(OtherTask->Events); It; ++It)
 				{
 					if (It->Value.Event.Contains(Task))
 					{
@@ -343,14 +343,14 @@ void UBXTLGraph::TryAutoConnectPin(UBXTLGraphNode* Node1, UBXTLGraphNode* Node2)
 	UEdGraphPin* Pin2 = nullptr;
 	
 	// 更新Task事件触发列表
-	for (TMap<FName, FBXTEvent>::TIterator It(Node1->CachedTask->Events); It; ++It)
+	for (TMap<FGameplayTag, FBXTEvent>::TIterator It(Node1->CachedTask->Events); It; ++It)
 	{
 		TMap<TSoftObjectPtr<UBXTask>, float> Events = It->Value.Event;
 		for (TMap<TSoftObjectPtr<UBXTask>, float>::TIterator EIt(Events); EIt; ++EIt)
 		{
 			if (EIt->Key.Get() == Node2->CachedTask)
 			{
-				Pin1 = Node1->GetPinByName(It->Key);
+				Pin1 = Node1->GetPinByName(It->Key.GetTagName());
 				Pin2 = Node2->GetPinByName(FName("Exe"));
 
 				if (Pin1 && Pin2 && !Pin1->LinkedTo.Contains(Pin2))
@@ -367,7 +367,7 @@ void UBXTLGraph::TryAutoConnectPin(UBXTLGraphNode* Node1, UBXTLGraphNode* Node2)
 		if (It->DataTask.Get() == Node2->CachedTask)
 		{
 			Pin1 = Node1->GetPinByName(It->DisplayName);
-			Pin2 = Node2->GetPinByName(It->DataDesc);
+			Pin2 = Node2->GetPinByName(It->DataTag.GetTagName());
 
 			if (Pin1 && Pin2 && !Pin1->LinkedTo.Contains(Pin2))
 			{
@@ -382,7 +382,7 @@ void UBXTLGraph::TryAutoConnectPin(UBXTLGraphNode* Node1, UBXTLGraphNode* Node2)
 		if (It->DataTask.Get() == Node2->CachedTask)
 		{
 			Pin1 = Node1->GetPinByName(It->DisplayName);
-			Pin2 = Node2->GetPinByName(It->DataDesc);
+			Pin2 = Node2->GetPinByName(It->DataTag.GetTagName());
 
 			if (Pin1 && Pin2 && !Pin1->LinkedTo.Contains(Pin2))
 			{

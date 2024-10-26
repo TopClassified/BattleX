@@ -15,14 +15,14 @@ class BATTLEX_API UBXFunctionLibrary : public UBlueprintFunctionLibrary
 
 #pragma region Misc
 public:
-	// 63位的唯一
+	// 63位的唯一ID
 	UFUNCTION(BlueprintPure, Category = "Misc")
 	static int64 GetUniqueID();
 
-	// 31位的唯一
-	UFUNCTION(BlueprintPure, Category = "Misc")
-	static int32 GetShortUniqueID();
-
+	// 获取当前客户端时间
+	UFUNCTION(BlueprintCallable, Category = "Time")
+	static float GetClientTimeSeconds(UObject* InWorldContext);
+	
 	// 获取当前时间戳（毫秒）
 	UFUNCTION(BlueprintCallable, Category = "Time")
 	static int64 GetUtcMillisecond();

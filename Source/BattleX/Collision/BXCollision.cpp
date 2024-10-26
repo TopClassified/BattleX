@@ -160,6 +160,28 @@ bool UBXCollisionLibrary::CheckCollisionResult(AActor* InRequester, const FHitRe
 	return true;
 }
 
+void UBXCollisionLibrary::CombineCollisionResults(const TArray<FHitResult>& InSourceList, TArray<FHitResult>& InOutList)
+{
+	for (int32 i = 0; i < InSourceList.Num(); ++i)
+	{
+		bool UniqueFlag = true;
+
+		for (int32 j = 0; j < InOutList.Num(); ++j)
+		{
+			if (InSourceList[i].GetComponent() == InOutList[j].GetComponent() && InSourceList[i].BoneName.IsEqual(InOutList[j].BoneName))
+			{
+				UniqueFlag = false;
+				break;
+			}
+		}
+					
+		if (UniqueFlag)
+		{
+			InOutList.Add(InSourceList[i]);
+		}
+	}
+}
+
 TArray<FHitResult> UBXCollisionLibrary::SphereCheck(const FBXCParameter& Parameter, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, float SpereSize, const FBXCFilter& Filter)
 {
 	TArray<FHitResult> OutResult;

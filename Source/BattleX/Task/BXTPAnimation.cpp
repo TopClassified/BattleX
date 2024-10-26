@@ -6,9 +6,9 @@
 
 
 
-void UBXTPPlayAnimation::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, UBXTask* InTask)
+void UBXTPPlayAnimation::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData)
 {
-	UBXTPlayAnimation* Task = Cast<UBXTPlayAnimation>(InTask);
+	UBXTPlayAnimation* Task = Cast<UBXTPlayAnimation>(InOutRTTData.Task);
 	if (!Task)
 	{
 		return;
@@ -19,7 +19,7 @@ void UBXTPPlayAnimation::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData
 
 	// 获取任务目标
 	TArray<AActor*> Targets;
-	UBXTProcessor::GetTargetActorList(InOutRTData, InTask, Targets);
+	UBXTProcessor::GetTargetActorList(InOutRTData, InOutRTTData, Targets);
 	
 	// 尝试获取播放动画的权限并进行播放
 	for (TArray<AActor*>::TIterator It(Targets); It; ++It)
@@ -76,9 +76,9 @@ void UBXTPPlayAnimation::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData
 	InOutRTTData.NextTick = Task->DelayInterruptedByMove;
 }
 
-void UBXTPPlayAnimation::Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, UBXTask* InTask, float InDeltaTime)
+void UBXTPPlayAnimation::Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, float InDeltaTime)
 {
-	UBXTPlayAnimation* Task = Cast<UBXTPlayAnimation>(InTask);
+	UBXTPlayAnimation* Task = Cast<UBXTPlayAnimation>(InOutRTTData.Task);
 	if (!Task)
 	{
 		return;
@@ -119,12 +119,12 @@ void UBXTPPlayAnimation::Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTDat
 	InOutRTTData.NextTick = 0.1f;
 }
 	
-void UBXTPPlayAnimation::End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, UBXTask* InTask, EBXTLFinishReason InReason)
+void UBXTPPlayAnimation::End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, EBXTLFinishReason InReason)
 {
 	// 获取任务的自定义数据结构
 	FBXTPPlayAnimationContext& TPC = InOutRTTData.DynamicData.GetMutable<FBXTPPlayAnimationContext>();
 
-	UBXTPlayAnimation* Task = Cast<UBXTPlayAnimation>(InTask);
+	UBXTPlayAnimation* Task = Cast<UBXTPlayAnimation>(InOutRTTData.Task);
 	float BlendOut = IsValid(Task) ? Task->InterruptedBlendOut : 0.0f;
 	
 	for (TArray<USkeletalMeshComponent*>::TIterator It(TPC.TComponents); It; ++It)
@@ -152,9 +152,9 @@ void UBXTPPlayAnimation::End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& 
 	}
 }
 
-void UBXTPPlayAnimation::ChangeTickRate(FBXTLTaskRTData& InOutRTTData, UBXTask* InTask, float InRate)
+void UBXTPPlayAnimation::ChangeTickRate(FBXTLTaskRTData& InOutRTTData, float InRate)
 {
-	UBXTPlayAnimation* Task = Cast<UBXTPlayAnimation>(InTask);
+	UBXTPlayAnimation* Task = Cast<UBXTPlayAnimation>(InOutRTTData.Task);
 	if (!Task)
 	{
 		return;

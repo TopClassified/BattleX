@@ -60,14 +60,19 @@ struct FBXTLPendingTaskInfo
 public:
 	FBXTLPendingTaskInfo() {}
 	FBXTLPendingTaskInfo(int32 InIndex, float InTime) : LocalIndex(InIndex), Time(InTime){}
+	FBXTLPendingTaskInfo(int32 InIndex, int32 InParentScope, float InTime) : LocalIndex(InIndex), ParentScope(InParentScope), Time(InTime){}
 
 public:
 	// 任务局部索引
-	UPROPERTY(BlueprintReadWrite)
+	UPROPERTY(Transient, BlueprintReadWrite)
 	int32 LocalIndex = -1;
 
+	// 父作用域
+	UPROPERTY(Transient, BlueprintReadWrite)
+	int32 ParentScope = 0;
+	
 	// 触发时间
-	UPROPERTY(BlueprintReadWrite)
+	UPROPERTY(Transient, BlueprintReadWrite)
 	float Time = 0.0f;
 };
 
@@ -81,16 +86,16 @@ struct FBXTLBroadcastTaskInfo
 
 public:
 	FBXTLBroadcastTaskInfo() {}
-	FBXTLBroadcastTaskInfo(int32 InIndex, const FName& InName) : FullIndex(InIndex), Name(InName) {}
+	FBXTLBroadcastTaskInfo(int32 InIndex, const FGameplayTag& InTag) : FullIndex(InIndex), Tag(InTag) {}
 
 public:
 	// 任务全量索引
-	UPROPERTY(BlueprintReadWrite)
+	UPROPERTY(Transient, BlueprintReadWrite)
 	int32 FullIndex = -1;
 
 	// 事件名称
-	UPROPERTY(BlueprintReadWrite)
-	FName Name;
+	UPROPERTY(Transient, BlueprintReadWrite)
+	FGameplayTag Tag;
 };
 
 
@@ -103,26 +108,31 @@ struct FBXTLDynamicDataSearchKey
 
 public:
 	FBXTLDynamicDataSearchKey() {}
-	FBXTLDynamicDataSearchKey(int32 InIndex, const FName& InName) : Index(InIndex), Name(InName) {}
+	FBXTLDynamicDataSearchKey(int32 InIndex, const FGameplayTag& InTag) : Index(InIndex), Tag(InTag) {}
+	FBXTLDynamicDataSearchKey(int32 InIndex, const FGameplayTag& InTag, int64 InScope) : Index(InIndex), Tag(InTag), Scope(InScope) {}
 
 	friend bool operator==(const FBXTLDynamicDataSearchKey& Val1, const FBXTLDynamicDataSearchKey& Val2)
 	{
-		return Val1.Index == Val2.Index && Val1.Name.IsEqual(Val2.Name);
+		return Val1.Index == Val2.Index && Val1.Tag == Val2.Tag && Val1.Scope == Val2.Scope;
 	}
 
 	friend uint32 GetTypeHash(const FBXTLDynamicDataSearchKey& Val)
 	{
-		return HashCombine(GetTypeHash(Val.Index), GetTypeHash(Val.Name));
+		return HashCombine(GetTypeHash(Val.Index), GetTypeHash(Val.Tag));
 	}
 
 public:
 	// 索引
-	UPROPERTY(BlueprintReadWrite)
+	UPROPERTY(Transient, BlueprintReadWrite)
 	int32 Index = 0;
 
 	// 名称
-	UPROPERTY(BlueprintReadWrite)
-	FName Name;
+	UPROPERTY(Transient, BlueprintReadWrite)
+	FGameplayTag Tag;
+	
+	// 任务作用域
+	UPROPERTY(Transient, BlueprintReadWrite)
+	int64 Scope = 0;
 };
 
 
@@ -140,7 +150,9 @@ public:
 
 	FBXTLTaskRTData(const FBXTLTaskRTData& InOther)
 	{
+		Task = InOther.Task;
 		Index = InOther.Index;
+		ParentScope = InOther.ParentScope;
 		RunTime = InOther.RunTime;
 		bEarlyFinish = InOther.bEarlyFinish;
 		DynamicData = InOther.DynamicData;
@@ -148,7 +160,9 @@ public:
 
 	FBXTLTaskRTData(FBXTLTaskRTData&& InOther)
 	{
+		Task = InOther.Task;
 		Index = InOther.Index;
+		ParentScope = InOther.ParentScope;
 		RunTime = InOther.RunTime;
 		bEarlyFinish = InOther.bEarlyFinish;
 		DynamicData = InOther.DynamicData;
@@ -158,7 +172,9 @@ public:
 	{
 		if (this != &InOther)
 		{
+			Task = InOther.Task;
 			Index = InOther.Index;
+			ParentScope = InOther.ParentScope;
 			RunTime = InOther.RunTime;
 			bEarlyFinish = InOther.bEarlyFinish;
 			DynamicData = InOther.DynamicData;
@@ -171,7 +187,9 @@ public:
 	{
 		if (this != &InOther)
 		{
+			Task = InOther.Task;
 			Index = InOther.Index;
+			ParentScope = InOther.ParentScope;
 			RunTime = InOther.RunTime;
 			bEarlyFinish = InOther.bEarlyFinish;
 			DynamicData = InOther.DynamicData;
@@ -182,17 +200,27 @@ public:
 
 	void Reset()
 	{
+		Task = nullptr;
 		Index = -1;
+		ParentScope = 0;
 		RunTime = 0.0f;
 		bEarlyFinish = true;
 		DynamicData.Reset();
 	}
 
 public:
+	// 静态数据
+	UPROPERTY(Transient, BlueprintReadOnly)
+	UBXTask* Task = nullptr;
+	
 	// 静态数据索引
 	UPROPERTY(Transient, BlueprintReadOnly)
 	int32 Index = -1;
 
+	// 父作用域
+	UPROPERTY(Transient, BlueprintReadOnly)
+	int64 ParentScope = 0;
+	
 	// 运行时长
 	UPROPERTY(Transient, BlueprintReadWrite)
 	float RunTime = 0.0f;
@@ -200,7 +228,7 @@ public:
 	// 下次更新间隔（-1代表无穷大）
 	UPROPERTY(Transient, BlueprintReadWrite)
 	float NextTick = 0.0f;
-
+	
 	// 是否提前结束
 	UPROPERTY(Transient, BlueprintReadWrite)
 	bool bEarlyFinish = false;
@@ -270,9 +298,6 @@ public:
 		PendingTasks.Reset();
 		PendingTasks.Append(InOther.PendingTasks);
 
-		FramePendingTasks.Reset();
-		FramePendingTasks.Append(InOther.FramePendingTasks);
-
 		BroadcastTasks.Reset();
 		BroadcastTasks.Append(InOther.BroadcastTasks);
 	}
@@ -290,10 +315,6 @@ public:
 		PendingTasks.Reset();
 		PendingTasks.Append(InOther.PendingTasks);
 		InOther.PendingTasks.Reset();
-
-		FramePendingTasks.Reset();
-		FramePendingTasks.Append(InOther.FramePendingTasks);
-		InOther.FramePendingTasks.Reset();
 
 		BroadcastTasks.Reset();
 		BroadcastTasks.Append(InOther.BroadcastTasks);
@@ -313,9 +334,6 @@ public:
 
 			PendingTasks.Reset();
 			PendingTasks.Append(InOther.PendingTasks);
-
-			FramePendingTasks.Reset();
-			FramePendingTasks.Append(InOther.FramePendingTasks);
 
 			BroadcastTasks.Reset();
 			BroadcastTasks.Append(InOther.BroadcastTasks);
@@ -340,10 +358,6 @@ public:
 			PendingTasks.Append(InOther.PendingTasks);
 			InOther.PendingTasks.Reset();
 
-			FramePendingTasks.Reset();
-			FramePendingTasks.Append(InOther.FramePendingTasks);
-			InOther.FramePendingTasks.Reset();
-
 			BroadcastTasks.Reset();
 			BroadcastTasks.Append(InOther.BroadcastTasks);
 			InOther.BroadcastTasks.Reset();
@@ -360,7 +374,6 @@ public:
 		LoopCount = 0;
 		RunningTasks.Empty();
 		PendingTasks.Empty();
-		FramePendingTasks.Empty();
 		BroadcastTasks.Empty();
 	}
 
@@ -389,13 +402,13 @@ public:
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TArray<FBXTLPendingTaskInfo> PendingTasks;
 
-	// 帧内待执行Task索引列表
-	UPROPERTY(Transient, BlueprintReadWrite)
-	TArray<int32> FramePendingTasks;
-
 	// 需要广播的Task数据 时间轴索引*1000+Task索引 触发时间点
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TArray<FBXTLBroadcastTaskInfo> BroadcastTasks;
+
+	// 帧内任务触发栈
+	TArray<FInt64Vector2> TaskStackInFrame;
+	
 };
 
 
@@ -411,8 +424,9 @@ public:
 
 	FBXTLRunTimeData(const FBXTLRunTimeData& InOther)
 	{
+		Timeline = InOther.Timeline;
+		TimelineID = InOther.TimelineID;
 		ID = InOther.ID;
-		StaticData = InOther.StaticData;
 		Owner = InOther.Owner;
 		Instigator = InOther.Instigator;
 		Triggerer = InOther.Triggerer;
@@ -425,12 +439,16 @@ public:
 
 		DynamicDatas.Reset();
 		DynamicDatas.Append(InOther.DynamicDatas);
+		
+		ScopeGraph.Reset();
+		ScopeGraph.Append(InOther.ScopeGraph);
 	}
 
 	FBXTLRunTimeData(FBXTLRunTimeData&& InOther)
 	{
+		Timeline = InOther.Timeline;
+		TimelineID = InOther.TimelineID;
 		ID = InOther.ID;
-		StaticData = InOther.StaticData;
 		Owner = InOther.Owner;
 		Instigator = InOther.Instigator;
 		Triggerer = InOther.Triggerer;
@@ -446,14 +464,19 @@ public:
 		DynamicDatas.Reset();
 		DynamicDatas.Append(InOther.DynamicDatas);
 		InOther.DynamicDatas.Reset();
+		
+		ScopeGraph.Reset();
+		ScopeGraph.Append(InOther.ScopeGraph);
+		InOther.ScopeGraph.Reset();
 	}
 
 	FBXTLRunTimeData& operator=(const FBXTLRunTimeData& InOther)
 	{
 		if (this != &InOther)
 		{
+			Timeline = InOther.Timeline;
+			TimelineID = InOther.TimelineID;
 			ID = InOther.ID;
-			StaticData = InOther.StaticData;
 			Owner = InOther.Owner;
 			Instigator = InOther.Instigator;
 			Triggerer = InOther.Triggerer;
@@ -466,6 +489,9 @@ public:
 
 			DynamicDatas.Reset();
 			DynamicDatas.Append(InOther.DynamicDatas);
+			
+			ScopeGraph.Reset();
+			ScopeGraph.Append(InOther.ScopeGraph);
 		}
 
 		return *this;
@@ -475,8 +501,9 @@ public:
 	{
 		if (this != &InOther)
 		{
+			Timeline = InOther.Timeline;
+			TimelineID = InOther.TimelineID;
 			ID = InOther.ID;
-			StaticData = InOther.StaticData;
 			Owner = InOther.Owner;
 			Instigator = InOther.Instigator;
 			Triggerer = InOther.Triggerer;
@@ -492,6 +519,10 @@ public:
 			DynamicDatas.Reset();
 			DynamicDatas.Append(InOther.DynamicDatas);
 			InOther.DynamicDatas.Reset();
+
+			ScopeGraph.Reset();
+			ScopeGraph.Append(InOther.ScopeGraph);
+			InOther.ScopeGraph.Reset();
 		}
 
 		return *this;
@@ -499,8 +530,9 @@ public:
 
 	void Reset()
 	{
+		Timeline = nullptr;
+		TimelineID = 0;
 		ID = 0;
-		StaticData = nullptr;
 		Owner = nullptr;
 		Instigator = nullptr;
 		Triggerer = nullptr;
@@ -510,16 +542,21 @@ public:
 		bEarlyFinish = false;
 		RunningSections.Empty();
 		DynamicDatas.Empty();
+		ScopeGraph.Empty();
 	}
 
 public:
+	// 静态数据
+	UPROPERTY(Transient, BlueprintReadWrite)
+	class UBXTLAsset* Timeline = nullptr;
+
+	// 静态数据ID
+	UPROPERTY(Transient, BlueprintReadWrite)
+	int64 TimelineID = 0;
+	
 	// 唯一ID
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int64 ID = 0;
-
-	// 静态数据
-	UPROPERTY(Transient, BlueprintReadWrite)
-	class UBXTLAsset* StaticData = nullptr;
 
 	// 拥有者
 	UPROPERTY(Transient, BlueprintReadWrite)
@@ -557,6 +594,9 @@ public:
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TMap<FBXTLDynamicDataSearchKey, FInstancedStruct> DynamicDatas;
 
+	// 作用域图 Key:作用域ID  Value:X:父作用域ID Y:Task的全量索引
+	TMap<int64, FInt64Vector2> ScopeGraph;
+	
 #if WITH_EDITORONLY_DATA
 	// 预览对象到任务全量索引的映射表
 	UPROPERTY(Transient)
@@ -645,6 +685,6 @@ public:
 
 	// 动态数据集
 	UPROPERTY(BlueprintReadWrite)
-	TMap<FName, FInstancedStruct> InputDatas;
+	TMap<FGameplayTag, FInstancedStruct> InputDatas;
 
 };

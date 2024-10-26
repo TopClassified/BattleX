@@ -30,7 +30,7 @@ public:
 public:
 	// 根据身体部位类型，获取身体部位数据
 	UFUNCTION(BlueprintCallable)
-	bool GetBodyPartByType(EBXBodyPartType InType, FBXBodyPartRTInformation& OutInformation);
+	bool GetBodyPartByType(FGameplayTag InPartType, FBXBodyPartRTInformation& OutInformation);
 
 	// 根据组件和骨骼名称，获取身体部位数据
 	UFUNCTION(BlueprintCallable)
@@ -39,12 +39,12 @@ public:
 public:
 	// 身体部位配置信息
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BodyPart")
-	TMap<EBXBodyPartType, FBXBodyPartConfig> BodyPartConfigs;
+	TMap<FGameplayTag, FBXBodyPartConfig> BodyPartConfigs;
 
 protected:
 	// 身体部位运行信息
 	UPROPERTY(Transient, BlueprintReadWrite, Category = "BodyPart")
-	TMap<EBXBodyPartType, FBXBodyPartRTInformation> BodyPartRTDatas;
+	TMap<FGameplayTag, FBXBodyPartRTInformation> BodyPartRTDatas;
 
 #pragma endregion BodyPart
 

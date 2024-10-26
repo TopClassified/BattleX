@@ -210,7 +210,7 @@ public:
 
 	virtual TSharedPtr<class FBXTLPreviewProxy> GetPreviewProxy() const;
 
-	virtual EBXBodyPartType GetLockedBodyPartType();
+	virtual FGameplayTag GetLockedBodyPartType();
 
 	// 是否需要暂停世界
 	bool ShouldPauseWorld() const;

@@ -1,10 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "UObject/NoExportTypes.h"
+#include "GameplayTags.h"
 #include "GameFramework/Actor.h"
 
-#include "BXEnums.h"
 #include "BXGear.h"
 #include "BXGearEnums.h"
 
@@ -26,11 +25,11 @@ public:
 
 	// 要使用的装备
 	UPROPERTY(EditDefaultsOnly)
-	TMap<EBXGearSlot, TSubclassOf<ABXGear>> UsingGears;
+	TMap<FGameplayTag, TSubclassOf<ABXGear>> UsingGears;
 
 	// 要锁定的身体部位
 	UPROPERTY(EditDefaultsOnly)
-	EBXBodyPartType LockedBodyPart = EBXBodyPartType::BPT_Default;
+	FGameplayTag LockedBodyPart;
 
 public:
 	UFUNCTION(BlueprintNativeEvent)

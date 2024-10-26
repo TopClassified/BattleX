@@ -89,7 +89,7 @@ public:
 	// 需要进行网络广播
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	bool bMulticast = false;
-
+	
 	// 触发事件，延迟触发时间
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadWrite)
 	TMap<TSoftObjectPtr<class UBXTask>, float> Event;
@@ -126,7 +126,7 @@ public:
 		UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
 		DataTask = InOther.DataTask;
-		DataDesc = InOther.DataDesc;
+		DataTag = InOther.DataTag;
 	}
 
 	FBXTInputInfo(FBXTInputInfo&& InOther)
@@ -137,7 +137,7 @@ public:
 		UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
 		DataTask = InOther.DataTask;
-		DataDesc = InOther.DataDesc;
+		DataTag = InOther.DataTag;
 	}
 
 	FBXTInputInfo& operator=(const FBXTInputInfo& InOther)
@@ -150,7 +150,7 @@ public:
 			UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
 			DataTask = InOther.DataTask;
-			DataDesc = InOther.DataDesc;
+			DataTag = InOther.DataTag;
 		}
 
 		return *this;
@@ -166,7 +166,7 @@ public:
 			UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
 			DataTask = InOther.DataTask;
-			DataDesc = InOther.DataDesc;
+			DataTag = InOther.DataTag;
 		}
 
 		return *this;
@@ -201,7 +201,7 @@ public:
 
 	// 获取名称为"xxx"的数据
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly)
-	FName DataDesc = NAME_None;
+	FGameplayTag DataTag;
 
 };
 
@@ -221,14 +221,14 @@ public:
 #endif
 	}
 
-	FBXTOutputInfo(FName InName, UScriptStruct* InStructType) : DataDesc(InName), StructType(InStructType) {}
+	FBXTOutputInfo(FGameplayTag InTag, UScriptStruct* InStructType) : DataTag(InTag), StructType(InStructType) {}
 
 	FBXTOutputInfo(const FBXTOutputInfo& InOther)
 	{
 #if WITH_EDITOR
 		UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
-		DataDesc = InOther.DataDesc;
+		DataTag = InOther.DataTag;
 		StructType = InOther.StructType;
 	}
 
@@ -237,7 +237,7 @@ public:
 #if WITH_EDITOR
 		UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
-		DataDesc = InOther.DataDesc;
+		DataTag = InOther.DataTag;
 		StructType = InOther.StructType;
 	}
 
@@ -248,7 +248,7 @@ public:
 #if WITH_EDITOR
 			UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
-			DataDesc = InOther.DataDesc;
+			DataTag = InOther.DataTag;
 			StructType = InOther.StructType;
 		}
 
@@ -262,7 +262,7 @@ public:
 #if WITH_EDITOR
 			UniqueID = UBXFunctionLibrary::GetUniqueID();
 #endif
-			DataDesc = InOther.DataDesc;
+			DataTag = InOther.DataTag;
 			StructType = InOther.StructType;
 		}
 
@@ -283,7 +283,7 @@ private:
 public:
 	// 输出的数据名称
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	FName DataDesc;
+	FGameplayTag DataTag;
 
 	// 输出的结构体类型
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
@@ -403,7 +403,7 @@ public:
 	UPROPERTY(BlueprintReadWrite)
 	TSoftObjectPtr<class UBXTask> OriginInputTask = nullptr;
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadWrite, Meta = (EditCondition = "OriginType == EBXTCoordinateType::C_Special || OriginType == EBXTCoordinateType::C_World", EditConditionHides))
-	FName OriginInputDesc = NAME_None;
+	FGameplayTag OriginInputTag = FGameplayTag::EmptyTag;
 	
 	// 原点选取的骨骼名称
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "OriginType != EBXTCoordinateType::C_LockPart && OriginType != EBXTCoordinateType::C_World", EditConditionHides))
@@ -422,7 +422,7 @@ public:
 	UPROPERTY(BlueprintReadWrite)
 	TSoftObjectPtr<class UBXTask> XAxisInputTask = nullptr;
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadWrite, Meta = (EditCondition = "XAxisType == EBXTCoordinateType::C_Special || XAxisType == EBXTCoordinateType::C_World", EditConditionHides))
-	FName XAxisInputDesc = NAME_None;
+	FGameplayTag XAxisInputTag = FGameplayTag::EmptyTag;
 
 	// X轴选取的骨骼名称
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (EditCondition = "XAxisType != EBXTCoordinateType::C_LockPart && XAxisType != EBXTCoordinateType::C_World && XAxisType != EBXTCoordinateType::C_TMax", EditConditionHides))

@@ -5,15 +5,20 @@
 #pragma region Important
 UBXGearComponent::UBXGearComponent()
 {
-	for (int32 i = 0; i < (int32)EBXGearSlot::GS_Jewelry8; ++i)
+	UGameplayTagsManager& GTMgr = UGameplayTagsManager::Get();
+
+	FGameplayTag GearSlotParent = GTMgr.RequestGameplayTag(TEXT("BXGearSlot"));
+	FGameplayTagContainer GearSlots = GTMgr.RequestGameplayTagChildren(GearSlotParent);
+
+	for (int32 i = 0; i < GearSlots.Num(); ++i)
 	{
-		SlotMaxSize.Add((EBXGearSlot)i, 1);
+		SlotMaxSize.Add(GearSlots.GetByIndex(i), 1);
 	}
 }
 
 void UBXGearComponent::BeginPlay()
 {
-	for (TMap<EBXGearSlot, int32>::TIterator It(SlotMaxSize); It; ++It)
+	for (TMap<FGameplayTag, int32>::TIterator It(SlotMaxSize); It; ++It)
 	{
 		EquipGears.Add(It->Key, FBXGears(It->Value));
 		UsingGearIndexs.Add(It->Key, -1);
@@ -44,7 +49,7 @@ void UBXGearComponent::GetEquipGearList(TArray<ABXGear*>& OutList, bool bNeedRes
 		OutList.Reset();
 	}
 
-	for (TMap<EBXGearSlot, FBXGears>::TIterator It(EquipGears); It; ++It)
+	for (TMap<FGameplayTag, FBXGears>::TIterator It(EquipGears); It; ++It)
 	{
 		for (TArray<ABXGear*>::TIterator It2(It->Value.List); It2; ++It2)
 		{
@@ -56,7 +61,7 @@ void UBXGearComponent::GetEquipGearList(TArray<ABXGear*>& OutList, bool bNeedRes
 	}
 }
 
-void UBXGearComponent::GetEquipGearsBySlot(EBXGearSlot InSlot, TArray<ABXGear*>& OutGears)
+void UBXGearComponent::GetEquipGearsBySlot(FGameplayTag InSlot, TArray<ABXGear*>& OutGears)
 {
 	OutGears.Reset();
 	if (FBXGears* Gears = EquipGears.Find(InSlot))
@@ -65,7 +70,7 @@ void UBXGearComponent::GetEquipGearsBySlot(EBXGearSlot InSlot, TArray<ABXGear*>&
 	}
 }
 
-ABXGear* UBXGearComponent::GetUsingGear(EBXGearSlot InSlot)
+ABXGear* UBXGearComponent::GetUsingGear(FGameplayTag InSlot)
 {
 	if (int32* Index = UsingGearIndexs.Find(InSlot))
 	{
@@ -78,9 +83,9 @@ ABXGear* UBXGearComponent::GetUsingGear(EBXGearSlot InSlot)
 	return nullptr;
 }
 
-EBXGearSlot UBXGearComponent::GetUsingGearSlot(ABXGear* InGear)
+FGameplayTag UBXGearComponent::GetUsingGearSlot(ABXGear* InGear)
 {
-	for (TMap<EBXGearSlot, int32>::TIterator It(UsingGearIndexs); It; ++It)
+	for (TMap<FGameplayTag, int32>::TIterator It(UsingGearIndexs); It; ++It)
 	{
 		FBXGears* GearList = EquipGears.Find(It->Key);
 		if (!GearList)
@@ -99,10 +104,10 @@ EBXGearSlot UBXGearComponent::GetUsingGearSlot(ABXGear* InGear)
 		}
 	}
 
-	return EBXGearSlot::GS_None;
+	return BXGameplayTags::BXGearSlot_Default;
 }
 
-void UBXGearComponent::SwitchUsingGear(EBXGearSlot InSlot, int32 InIndex)
+void UBXGearComponent::SwitchUsingGear(FGameplayTag InSlot, int32 InIndex)
 {
 	FBXGears* GearList = EquipGears.Find(InSlot);
 	if (!GearList)
@@ -154,7 +159,7 @@ void UBXGearComponent::SwitchUsingGear(EBXGearSlot InSlot, int32 InIndex)
 	}
 }
 
-void UBXGearComponent::ChangeUsingGearState(EBXGearSlot InSlot, EBXGearState InNewState)
+void UBXGearComponent::ChangeUsingGearState(FGameplayTag InSlot, FGameplayTag InNewState)
 {
 	FBXGears* GearList = EquipGears.Find(InSlot);
 	if (!GearList)
@@ -179,13 +184,13 @@ void UBXGearComponent::ChangeUsingGearState(EBXGearSlot InSlot, EBXGearState InN
 		return;
 	}
 
-	EBXGearState OldState = CurrentGear->GetCurrentState();
+	FGameplayTag OldState = CurrentGear->GetCurrentState();
 
 	CurrentGear->ChangeState(InNewState);
 	ChangeGearStateEvent.Broadcast(CurrentGear, OldState, InNewState);
 }
 
-void UBXGearComponent::ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGear* InGear, USkeletalMeshComponent* AttachParent)
+void UBXGearComponent::ChangeEquipGear(FGameplayTag InSlot, int32 InIndex, ABXGear* InGear, USkeletalMeshComponent* AttachParent)
 {
 	ABXGear* CurrentGear = nullptr;
 	if (FBXGears* GearList = EquipGears.Find(InSlot))
@@ -271,7 +276,7 @@ void UBXGearComponent::ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGea
 	}
 }
 
-void UBXGearComponent::ChangeEquipGearByClass(EBXGearSlot InSlot, int32 InIndex, UClass* InGearClass, USkeletalMeshComponent* AttachParent)
+void UBXGearComponent::ChangeEquipGearByClass(FGameplayTag InSlot, int32 InIndex, UClass* InGearClass, USkeletalMeshComponent* AttachParent)
 {
 	if (!InGearClass || !InGearClass->IsChildOf(ABXGear::StaticClass()))
 	{
@@ -284,7 +289,7 @@ void UBXGearComponent::ChangeEquipGearByClass(EBXGearSlot InSlot, int32 InIndex,
 	}
 }
 
-void UBXGearComponent::ChangeEquipGearByData(EBXGearSlot InSlot, int32 InIndex, UBXGearData* InGearData, USkeletalMeshComponent* AttachParent)
+void UBXGearComponent::ChangeEquipGearByData(FGameplayTag InSlot, int32 InIndex, UBXGearData* InGearData, USkeletalMeshComponent* AttachParent)
 {
 	if (!InGearData || !InGearData->GearClass)
 	{
@@ -300,7 +305,7 @@ void UBXGearComponent::ChangeEquipGearByData(EBXGearSlot InSlot, int32 InIndex, 
 
 void UBXGearComponent::UnequipAllGears(bool bForceDestroy)
 {
-	for (TMap<EBXGearSlot, FBXGears>::TIterator It(EquipGears); It; ++It)
+	for (TMap<FGameplayTag, FBXGears>::TIterator It(EquipGears); It; ++It)
 	{
 		for (TArray<ABXGear*>::TIterator GearIt(It->Value.List); GearIt; ++GearIt)
 		{

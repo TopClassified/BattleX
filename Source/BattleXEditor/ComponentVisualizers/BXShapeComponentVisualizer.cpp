@@ -46,7 +46,7 @@ void FBXShapeComponentVisualizer::DrawVisualization(const UActorComponent* Compo
 	}
 
 	USceneComponent* AttachParent = Owner->GetRootComponent();
-	for (TMap<FName, FBXShapeInformation>::TConstIterator It(ShapeComponent->ShapeInformations); It; ++It)
+	for (TMap<FGameplayTag, FBXShapeInformation>::TConstIterator It(ShapeComponent->ShapeInformations); It; ++It)
 	{
 		AttachParent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, It->Value.AttachParent, nullptr, false);
 		if (!AttachParent)

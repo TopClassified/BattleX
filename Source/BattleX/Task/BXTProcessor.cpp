@@ -26,26 +26,26 @@ UWorld* UBXTProcessor::GetWorld() const
 	return GetOuter()->GetWorld();
 }
 
-void UBXTProcessor::StartTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, UBXTask* InTask)
+void UBXTProcessor::StartTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData)
 {
 	if ((ExecuteFunctions & 1) > 0)
 	{
-		Start(InOutRTData, InOutRTSData, InOutRTTData, InTask);
+		Start(InOutRTData, InOutRTSData, InOutRTTData);
 	}
 
 	if ((ExecuteFunctions & 2) > 0)
 	{
-		ScriptStart(InOutRTData, InOutRTSData, InOutRTTData, InTask);
+		ScriptStart(InOutRTData, InOutRTSData, InOutRTTData);
 	}
 }
 
-void UBXTProcessor::UpdateTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, UBXTask* InTask, float InDeltaTime)
+void UBXTProcessor::UpdateTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, float InDeltaTime)
 {
 	if (InOutRTTData.NextTick < 0.0f)
 	{
-		if (InOutRTData.StaticData)
+		if (InOutRTData.Timeline)
 		{
-			FString OutInfo = FString::FromInt(InOutRTData.StaticData->ID) + TEXT("  Task FullIndex:") + FString::FromInt(InOutRTSData.Index * 1000 + InOutRTTData.Index);
+			FString OutInfo = FString::FromInt(InOutRTData.TimelineID) + TEXT("  Task FullIndex:") + FString::FromInt(InOutRTSData.Index * 1000 + InOutRTTData.Index);
 			UE_LOG(BX_TP, Log, TEXT("This Task(%s) Will Never Execute The Tick Logic."), *OutInfo);
 		}
 
@@ -60,38 +60,38 @@ void UBXTProcessor::UpdateTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM
 
 	if ((ExecuteFunctions & 4) > 0)
 	{
-		Update(InOutRTData, InOutRTSData, InOutRTTData, InTask, InDeltaTime);
+		Update(InOutRTData, InOutRTSData, InOutRTTData, InDeltaTime);
 	}
 
 	if ((ExecuteFunctions & 8) > 0)
 	{
-		ScriptUpdate(InOutRTData, InOutRTSData, InOutRTTData, InTask, InDeltaTime);
+		ScriptUpdate(InOutRTData, InOutRTSData, InOutRTTData, InDeltaTime);
 	}
 }
 
-void UBXTProcessor::EndTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, UBXTask* InTask, EBXTLFinishReason InReason)
+void UBXTProcessor::EndTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, EBXTLFinishReason InReason)
 {
 	if ((ExecuteFunctions & 16) > 0)
 	{
-		End(InOutRTData, InOutRTSData, InOutRTTData, InTask, InReason);
+		End(InOutRTData, InOutRTSData, InOutRTTData, InReason);
 	}
 
 	if ((ExecuteFunctions & 32) > 0)
 	{
-		ScriptEnd(InOutRTData, InOutRTSData, InOutRTTData, InTask, InReason);
+		ScriptEnd(InOutRTData, InOutRTSData, InOutRTTData, InReason);
 	}
 }
 
-void UBXTProcessor::ChangeTaskTickRate(UPARAM(ref) FBXTLTaskRTData& InOutRTTData, UBXTask* InTask, float InRate)
+void UBXTProcessor::ChangeTaskTickRate(UPARAM(ref) FBXTLTaskRTData& InOutRTTData, float InRate)
 {
 	if ((ExecuteFunctions & 64) > 0)
 	{
-		ChangeTickRate(InOutRTTData, InTask, InRate);
+		ChangeTickRate(InOutRTTData, InRate);
 	}
 
 	if ((ExecuteFunctions & 128) > 0)
 	{
-		ScriptChangeTickRate(InOutRTTData, InTask, InRate);
+		ScriptChangeTickRate(InOutRTTData, InRate);
 	}
 }
 
@@ -100,10 +100,10 @@ void UBXTProcessor::ChangeTaskTickRate(UPARAM(ref) FBXTLTaskRTData& InOutRTTData
 
 
 #pragma region GlobalAPI
-bool UBXTProcessor::IsTaskCompleted(UBXTask* InTask, const FBXTLTaskRTData& InTaskData, EBXTLFinishReason& OutReason)
+bool UBXTProcessor::IsTaskCompleted(const FBXTLTaskRTData& InTaskData, EBXTLFinishReason& OutReason)
 {
 	OutReason = EBXTLFinishReason::FR_Interrupt;
-	if (!InTask)
+	if (!InTaskData.Task)
 	{
 		return true;
 	}
@@ -114,22 +114,22 @@ bool UBXTProcessor::IsTaskCompleted(UBXTask* InTask, const FBXTLTaskRTData& InTa
 	}
 
 	OutReason = EBXTLFinishReason::FR_EndOfLife;
-	switch (InTask->LifeType)
+	switch (InTaskData.Task->LifeType)
 	{
 	case EBXTLifeType::L_Instant:
 		return true;
 	case EBXTLifeType::L_Duration:
-		return InTaskData.RunTime >= InTask->Duration;
+		return InTaskData.RunTime >= InTaskData.Task->Duration;
 	case EBXTLifeType::L_Timeline:
 		return false;
 	case EBXTLifeType::L_DurationTimeline:
-		return InTaskData.RunTime >= InTask->Duration;
+		return InTaskData.RunTime >= InTaskData.Task->Duration;
 	default:
 		return true;
 	}
 }
 
-bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, const FName& InEventName)
+bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, int64 InScope, const FGameplayTag& InEventTag)
 {
 	const UBXSettings* Settings = GetDefault<UBXSettings>();
 	if (!Settings)
@@ -137,7 +137,7 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 		return false;
 	}
 
-	UBXTLAsset* Asset = InOutRTData.StaticData;
+	UBXTLAsset* Asset = InOutRTData.Timeline;
 	if (!Asset)
 	{
 		return false;
@@ -160,7 +160,7 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 		return false;
 	}
 
-	FBXTEvent* EventPointer = Task->Events.Find(InEventName);
+	FBXTEvent* EventPointer = Task->Events.Find(InEventTag);
 	if (!EventPointer)
 	{
 		return false;
@@ -169,10 +169,9 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 	// 需要广播，则添加到广播列表
 	if (EventPointer->bMulticast)
 	{
-		InOutRTSData.BroadcastTasks.Add(FBXTLBroadcastTaskInfo(InOutRTSData.Index * 1000 + InOutRTTData.Index, InEventName));
+		InOutRTSData.BroadcastTasks.Add(FBXTLBroadcastTaskInfo(InOutRTSData.Index * 1000 + InOutRTTData.Index, InEventTag));
 	}
 
-	TArray<int32>& List = InOutRTSData.FramePendingTasks;
 	for (TMap<TSoftObjectPtr<UBXTask>, float>::TIterator It(EventPointer->Event); It; ++It)
 	{
 		// 任务全量索引
@@ -188,39 +187,62 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 		// 延迟触发的任务，添加到待处理列表
 		if (It->Value > 0.0f)
 		{
-			InOutRTSData.PendingTasks.Add(FBXTLPendingTaskInfo(LocalIndex, InOutRTSData.RunTime + It->Value));
+			InOutRTSData.PendingTasks.Add(FBXTLPendingTaskInfo(LocalIndex, InScope, InOutRTSData.RunTime + It->Value));
 
 			continue;
 		}
 
 		// 如果开启了帧内待处理列表，则添加到该列表
-		if (List.Num() > 0)
+		if (InOutRTSData.TaskStackInFrame.Num() > 0)
 		{
-			if (!List.Contains(LocalIndex) && Settings->FramePendingTaskLimit > List.Num())
+			bool Flag = true;
+			for (TArray<FInt64Vector2>::TIterator TS(InOutRTSData.TaskStackInFrame); TS; ++TS)
 			{
-				List.Add(LocalIndex);
+				if (TS->X == LocalIndex)
+				{
+					Flag = false;
+					break;
+				}
+			}
+			
+			if (Flag)
+			{
+				InOutRTSData.TaskStackInFrame.Add(FInt64Vector2(LocalIndex, InScope));
 			}
 		}
 		else
 		{
-			InOutRTSData.PendingTasks.Add(FBXTLPendingTaskInfo(LocalIndex, InOutRTSData.RunTime));
+			InOutRTSData.PendingTasks.Add(FBXTLPendingTaskInfo(LocalIndex, InScope, InOutRTSData.RunTime));
 		}
 	}
 
 	return true;
 }
 
-void UBXTProcessor::GetTargetComponentList(const FBXTLRunTimeData& InRTData, UBXTask* InTask, TArray<USceneComponent*>& OutComponents)
+int64 UBXTProcessor::GenerateContextScope(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData)
+{
+	if (!IsValid(InOutRTData.Timeline) || !IsValid(InOutRTTData.Task))
+	{
+		return 0;
+	}
+	
+	int64 NewScope = UBXFunctionLibrary::GetUniqueID();
+	InOutRTData.ScopeGraph.Add(NewScope, FInt64Vector2(InOutRTTData.ParentScope, UBXFunctionLibrary::GetTaskFullIndex(InOutRTData.Timeline, InOutRTTData.Task)));
+
+	return NewScope;
+}
+
+void UBXTProcessor::GetTargetComponentList(const FBXTLRunTimeData& InRTData, const FBXTLTaskRTData& InTaskData, TArray<USceneComponent*>& OutComponents)
 {
 	OutComponents.Reset();
-	if (!IsValid(InTask) || !IsValid(InRTData.StaticData))
+	if (!IsValid(InTaskData.Task) || !IsValid(InRTData.Timeline))
 	{
 		return;
 	}
 	
 	for (int32 i = 0; i < (int32)EBXTTargetType::T_TMax; ++i)
 	{
-		if ((InTask->TargetTypes & (1 << i)) <= 0)
+		if ((InTaskData.Task->TargetTypes & (1 << i)) <= 0)
 		{
 			continue;
 		}
@@ -263,9 +285,9 @@ void UBXTProcessor::GetTargetComponentList(const FBXTLRunTimeData& InRTData, UBX
 			}
 			break;
 		case EBXTTargetType::T_CollisionResults:
-			for (TArray<FBXTInputInfo>::TIterator It(InTask->CollisionInputDatas); It; ++It)
+			for (TArray<FBXTInputInfo>::TIterator It(InTaskData.Task->CollisionInputDatas); It; ++It)
 			{
-				FBXTHitResults* HitResults = UBXTProcessor::ReadContextData<FBXTHitResults>(InRTData, UBXFunctionLibrary::GetSoftTaskFullIndex(InRTData.StaticData, It->DataTask), It->DataDesc);
+				FBXTHitResults* HitResults = UBXTProcessor::ReadContextData<FBXTHitResults>(InRTData, UBXFunctionLibrary::GetSoftTaskFullIndex(InRTData.Timeline, It->DataTask), It->DataTag, InTaskData.ParentScope);
 				if (!HitResults)
 				{
 					continue;
@@ -283,10 +305,10 @@ void UBXTProcessor::GetTargetComponentList(const FBXTLRunTimeData& InRTData, UBX
 	}
 }
 
-void UBXTProcessor::GetTargetActorList(const FBXTLRunTimeData& InRTData, UBXTask* InTask, TArray<AActor*>& OutActors)
+void UBXTProcessor::GetTargetActorList(const FBXTLRunTimeData& InRTData, const FBXTLTaskRTData& InTaskData, TArray<AActor*>& OutActors)
 {
 	TArray<USceneComponent*> Components;
-	UBXTProcessor::GetTargetComponentList(InRTData, InTask, Components);
+	UBXTProcessor::GetTargetComponentList(InRTData, InTaskData, Components);
 
 	OutActors.Reset();
 	for (TArray<USceneComponent*>::TIterator It(Components); It; ++It)
@@ -295,7 +317,7 @@ void UBXTProcessor::GetTargetActorList(const FBXTLRunTimeData& InRTData, UBXTask
 	}
 }
 
-bool UBXTProcessor::AnalyzeTransformCreater(AActor* InTarget, const FBXTLRunTimeData& InRTData, const FBXTTransformCreater& InCreater, FBXTTransformCreaterResult& OutResult)
+bool UBXTProcessor::AnalyzeTransformCreater(const FBXTLRunTimeData& InRTData, const FBXTLTaskRTData& InTaskData, AActor* InTarget, const FBXTTransformCreater& InCreater, FBXTTransformCreaterResult& OutResult)
 {
 	USceneComponent* OriginComponent = nullptr;
 	FTransform OriginTransform = FTransform::Identity;
@@ -311,7 +333,7 @@ bool UBXTProcessor::AnalyzeTransformCreater(AActor* InTarget, const FBXTLRunTime
 	}
 	else
 	{
-		OriginComponent = UBXTProcessor::AnalyzeTransformCreaterCoordinateType(InCreater, true, InRTData, OriginTransform);
+		OriginComponent = UBXTProcessor::AnalyzeTransformCreaterCoordinateType(InRTData, InTaskData, InCreater, true, OriginTransform);
 		if (!IsValid(OriginComponent) && InCreater.OriginType != EBXTCoordinateType::C_World)
 		{
 			return false;
@@ -335,7 +357,7 @@ bool UBXTProcessor::AnalyzeTransformCreater(AActor* InTarget, const FBXTLRunTime
 		}
 		else
 		{
-			XAxisComponent = UBXTProcessor::AnalyzeTransformCreaterCoordinateType(InCreater, false, InRTData, XAxisTransform);
+			XAxisComponent = UBXTProcessor::AnalyzeTransformCreaterCoordinateType(InRTData, InTaskData, InCreater, false, XAxisTransform);
 			if (!IsValid(XAxisComponent) && InCreater.XAxisType != EBXTCoordinateType::C_World)
 			{
 				return false;
@@ -380,11 +402,11 @@ bool UBXTProcessor::AnalyzeTransformCreater(AActor* InTarget, const FBXTLRunTime
 	return true;
 }
 
-bool UBXTProcessor::AnalyzeTransformCreaterList(AActor* InTarget, const FBXTLRunTimeData& InRTData, const TArray<FBXTTransformCreater>& InCreaterList, FBXTTransformCreaterResult& OutResult)
+bool UBXTProcessor::AnalyzeTransformCreaterList(const FBXTLRunTimeData& InRTData, const FBXTLTaskRTData& InTaskData, AActor* InTarget, const TArray<FBXTTransformCreater>& InCreaterList, FBXTTransformCreaterResult& OutResult)
 {
 	for (TArray<FBXTTransformCreater>::TConstIterator It(InCreaterList); It; ++It)
 	{
-		if (UBXTProcessor::AnalyzeTransformCreater(InTarget, InRTData, *It, OutResult))
+		if (UBXTProcessor::AnalyzeTransformCreater(InRTData, InTaskData, InTarget, *It, OutResult))
 		{
 			return true;
 		}
@@ -393,11 +415,11 @@ bool UBXTProcessor::AnalyzeTransformCreaterList(AActor* InTarget, const FBXTLRun
 	return false;
 }
 
-USceneComponent* UBXTProcessor::AnalyzeTransformCreaterCoordinateType(const FBXTTransformCreater& InCreater, bool bUseOrigin, const FBXTLRunTimeData& InRTData, FTransform& OutTransform)
+USceneComponent* UBXTProcessor::AnalyzeTransformCreaterCoordinateType(const FBXTLRunTimeData& InRTData, const FBXTLTaskRTData& InTaskData, const FBXTTransformCreater& InCreater, bool bUseOrigin, FTransform& OutTransform)
 {
 	EBXTCoordinateType CoordinateType = bUseOrigin ? InCreater.OriginType : InCreater.XAxisType;
-	int32 FullIndex = bUseOrigin ? UBXFunctionLibrary::GetSoftTaskFullIndex(InRTData.StaticData, InCreater.OriginInputTask) : UBXFunctionLibrary::GetSoftTaskFullIndex(InRTData.StaticData, InCreater.XAxisInputTask);
-	FName DataName = bUseOrigin ? InCreater.OriginInputDesc : InCreater.XAxisInputDesc;
+	int32 FullIndex = bUseOrigin ? UBXFunctionLibrary::GetSoftTaskFullIndex(InRTData.Timeline, InCreater.OriginInputTask) : UBXFunctionLibrary::GetSoftTaskFullIndex(InRTData.Timeline, InCreater.XAxisInputTask);
+	const FGameplayTag& DataTag = bUseOrigin ? InCreater.OriginInputTag : InCreater.XAxisInputTag;
 	FName BoneName = bUseOrigin ? InCreater.OriginBoneName.BoneName : InCreater.XAxisBoneName.BoneName;
 
 	// 根据类型找到坐标系和坐标系参照者
@@ -455,7 +477,7 @@ USceneComponent* UBXTProcessor::AnalyzeTransformCreaterCoordinateType(const FBXT
 		}
 		break;
 	case EBXTCoordinateType::C_Special:
-		if (FBXTHitResults* HitResults = UBXTProcessor::ReadContextData<FBXTHitResults>(InRTData, FullIndex, DataName))
+		if (FBXTHitResults* HitResults = UBXTProcessor::ReadContextData<FBXTHitResults>(InRTData, FullIndex, DataTag, InTaskData.ParentScope))
 		{
 			if (HitResults->Results.Num() > 0)
 			{
@@ -468,7 +490,7 @@ USceneComponent* UBXTProcessor::AnalyzeTransformCreaterCoordinateType(const FBXT
 		}
 		break;
 	case EBXTCoordinateType::C_World:
-		if (FTransform* TransformResults = UBXTProcessor::ReadContextData<FTransform>(InRTData, FullIndex, DataName))
+		if (FTransform* TransformResults = UBXTProcessor::ReadContextData<FTransform>(InRTData, FullIndex, DataTag, InTaskData.ParentScope))
 		{
 			OutResult = nullptr;
 			OutTransform = *TransformResults;

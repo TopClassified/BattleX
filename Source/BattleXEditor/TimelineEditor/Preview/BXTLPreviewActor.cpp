@@ -24,11 +24,11 @@ AActor* UBXTLPreviewActor::CreateActor_Implementation(UWorld* InWorld)
 	{
 		if (UBXGearComponent* GearComponent = Result->FindComponentByClass<UBXGearComponent>())
 		{
-			for (TMap<EBXGearSlot, TSubclassOf<ABXGear>>::TIterator It(UsingGears); It; ++It)
+			for (TMap<FGameplayTag, TSubclassOf<ABXGear>>::TIterator It(UsingGears); It; ++It)
 			{
 				GearComponent->ChangeEquipGearByClass(It->Key, 0, It->Value.Get(), Result->FindComponentByClass<USkeletalMeshComponent>());
 				GearComponent->SwitchUsingGear(It->Key, 0);
-				GearComponent->ChangeUsingGearState(It->Key, EBXGearState::S_Open);
+				GearComponent->ChangeUsingGearState(It->Key, BXGameplayTags::BXGearState_Open);
 			}
 		}
 	}

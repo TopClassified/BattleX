@@ -37,7 +37,7 @@ void UBXTask::AlignTimeProperty(float InAlign)
 	}
 	Duration = UBXFunctionLibrary::AlignTime(Duration, InAlign);
 
-	for (TMap<FName, FBXTEvent>::TIterator It(Events); It; ++It)
+	for (TMap<FGameplayTag, FBXTEvent>::TIterator It(Events); It; ++It)
 	{
 		for (TMap<TSoftObjectPtr<class UBXTask>, float>::TIterator It2(It->Value.Event); It2; ++It2)
 		{
@@ -280,7 +280,7 @@ void UBXTask::RefreshTransformCreaters()
 				{
 					It->DisplayName = FName(CreaterName + SuffixO);
 					Creater->OriginInputTask = It->DataTask;
-					Creater->OriginInputDesc = It->DataDesc;
+					Creater->OriginInputTag = It->DataTag;
 					Flag = true;
 					break;
 				}
@@ -294,7 +294,7 @@ void UBXTask::RefreshTransformCreaters()
 				NewInfo.StructType = (Creater->OriginType == EBXTCoordinateType::C_Special) ? FBXTHitResults::StaticStruct() : TBaseStructure<FTransform>::Get();
 				NewInfo.DisplayName = FName(CreaterName + SuffixO);
 				NewInfo.DataTask = nullptr;
-				NewInfo.DataDesc = NAME_None;
+				NewInfo.DataTag = FGameplayTag::EmptyTag;
 			}
 		}
 
@@ -306,8 +306,8 @@ void UBXTask::RefreshTransformCreaters()
 				if (It->GetUniqueID() == Creater->XAxisInputUniqueID)
 				{
 					It->DisplayName = FName(CreaterName + SuffixX);
-					Creater->OriginInputTask = It->DataTask;
-					Creater->OriginInputDesc = It->DataDesc;
+					Creater->XAxisInputTask = It->DataTask;
+					Creater->XAxisInputTag = It->DataTag;
 					Flag = true;
 					break;
 				}
@@ -321,7 +321,7 @@ void UBXTask::RefreshTransformCreaters()
 				NewInfo.StructType = (Creater->XAxisType == EBXTCoordinateType::C_Special) ? FBXTHitResults::StaticStruct() : TBaseStructure<FTransform>::Get();
 				NewInfo.DisplayName = FName(CreaterName + SuffixX);
 				NewInfo.DataTask = nullptr;
-				NewInfo.DataDesc = NAME_None;
+				NewInfo.DataTag = FGameplayTag::EmptyTag;
 			}
 		}
 	}

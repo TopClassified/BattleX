@@ -168,12 +168,12 @@ void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, con
 			int32 FindIndex = SrcTasks.Find(Cast<UBXTask>(Template.DataTask.Get()));
 			if (FindIndex >= 0)
 			{
-				NewInfo.DataDesc = Template.DataDesc;
+				NewInfo.DataTag = Template.DataTag;
 				NewInfo.DataTask = DestTasks[FindIndex];
 			}
 			else
 			{
-				NewInfo.DataDesc = NAME_None;
+				NewInfo.DataTag = FGameplayTag::EmptyTag;
 				NewInfo.DataTask = nullptr;
 			}
 		}
@@ -190,12 +190,12 @@ void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, con
 			int32 FindIndex = SrcTasks.Find(Cast<UBXTask>(Template.DataTask.Get()));
 			if (FindIndex >= 0)
 			{
-				NewInfo.DataDesc = Template.DataDesc;
+				NewInfo.DataTag = Template.DataTag;
 				NewInfo.DataTask = DestTasks[FindIndex];
 			}
 			else
 			{
-				NewInfo.DataDesc = NAME_None;
+				NewInfo.DataTag = FGameplayTag::EmptyTag;
 				NewInfo.DataTask = nullptr;
 			}
 		}
@@ -209,7 +209,7 @@ void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, con
 
 		// 修复EventTaskMap
 		DestTask->Events.Empty();
-		for (TMap<FName, FBXTEvent>::TIterator It(SrcTask->Events); It; ++It)
+		for (TMap<FGameplayTag, FBXTEvent>::TIterator It(SrcTask->Events); It; ++It)
 		{
 			FBXTEvent NewEvent;
 			NewEvent.bMulticast = It->Value.bMulticast;

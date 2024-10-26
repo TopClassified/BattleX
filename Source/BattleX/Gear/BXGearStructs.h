@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BXGameplayTags.h"
+#include "GameplayTagContainer.h"
 
 #include "BXGearStructs.generated.h"
 
@@ -14,10 +16,10 @@ struct FBXGearAttachmentConfig
 
 public:
 	UPROPERTY(EditDefaultsOnly)
-	EBXGearSlot Slot = EBXGearSlot::GS_None;
+	FGameplayTag Slot = BXGameplayTags::BXGearSlot_Default;
 
 	UPROPERTY(EditDefaultsOnly)
-	EBXGearState State = EBXGearState::S_None;
+	FGameplayTag State = BXGameplayTags::BXGearState_Default;
 
 	UPROPERTY(EditDefaultsOnly)
 	TSoftObjectPtr<class USkeletalMesh> Mesh = nullptr;

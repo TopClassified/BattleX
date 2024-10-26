@@ -18,7 +18,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPreUsingGearDelegate, UPARAM(ref) F
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPostUsingGearDelegate, UPARAM(ref) FBXUsingGearInformation&, Information);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPreUnusingGearDelegate, UPARAM(ref) FBXUsingGearInformation&, Information);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPostUnusingGearDelegate, UPARAM(ref) FBXUsingGearInformation&, Information);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FChangeGearStateDelegate, ABXGear*, Gear, EBXGearState, OldState, EBXGearState, NewState);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FChangeGearStateDelegate, ABXGear*, Gear, FGameplayTag, OldState, FGameplayTag, NewState);
 
 
 
@@ -38,15 +38,15 @@ public:
 protected:
 	// 每个插槽的最大容量
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	TMap<EBXGearSlot, int32> SlotMaxSize;
+	TMap<FGameplayTag, int32> SlotMaxSize;
 
 	// 装上的装备
 	UPROPERTY(Transient, BlueprintReadWrite)
-	TMap<EBXGearSlot, FBXGears> EquipGears;
+	TMap<FGameplayTag, FBXGears> EquipGears;
 
 	// 正在使用的装备索引
 	UPROPERTY(Transient, BlueprintReadWrite)
-	TMap<EBXGearSlot, int32> UsingGearIndexs;
+	TMap<FGameplayTag, int32> UsingGearIndexs;
 
 	UPROPERTY(Transient)
 	FBXEquipGearInformation HelpEquipInformation;
@@ -108,35 +108,35 @@ public:
 
 	// 获取装备插槽的装备列表
 	UFUNCTION(BlueprintCallable)
-	virtual void GetEquipGearsBySlot(EBXGearSlot InSlot, TArray<ABXGear*>& OutGears);
+	virtual void GetEquipGearsBySlot(FGameplayTag InSlot, TArray<ABXGear*>& OutGears);
 
 	// 获取正在使用的装备
 	UFUNCTION(BlueprintCallable)
-	virtual ABXGear* GetUsingGear(EBXGearSlot InSlot);
+	virtual ABXGear* GetUsingGear(FGameplayTag InSlot);
 
 	// 获取正在使用的装备的插槽
 	UFUNCTION(BlueprintCallable)
-	virtual EBXGearSlot GetUsingGearSlot(ABXGear* InGear);
+	virtual FGameplayTag GetUsingGearSlot(ABXGear* InGear);
 
 	// 切换正在使用的装备
 	UFUNCTION(BlueprintCallable)
-	virtual void SwitchUsingGear(EBXGearSlot InSlot, int32 InIndex);
+	virtual void SwitchUsingGear(FGameplayTag InSlot, int32 InIndex);
 
 	// 改变装备状态
 	UFUNCTION(BlueprintCallable)
-	virtual void ChangeUsingGearState(EBXGearSlot InSlot, EBXGearState InNewState);
+	virtual void ChangeUsingGearState(FGameplayTag InSlot, FGameplayTag InNewState);
 
 	// 改变装备插槽
 	UFUNCTION(BlueprintCallable)
-	virtual void ChangeEquipGear(EBXGearSlot InSlot, int32 InIndex, ABXGear* InGear, class USkeletalMeshComponent* AttachParent);
+	virtual void ChangeEquipGear(FGameplayTag InSlot, int32 InIndex, ABXGear* InGear, class USkeletalMeshComponent* AttachParent);
 
 	// 改变装备插槽
 	UFUNCTION(BlueprintCallable)
-	virtual void ChangeEquipGearByClass(EBXGearSlot InSlot, int32 InIndex, UClass* InGearClass, class USkeletalMeshComponent* AttachParent);
+	virtual void ChangeEquipGearByClass(FGameplayTag InSlot, int32 InIndex, UClass* InGearClass, class USkeletalMeshComponent* AttachParent);
 
 	// 改变装备插槽
 	UFUNCTION(BlueprintCallable)
-	virtual void ChangeEquipGearByData(EBXGearSlot InSlot, int32 InIndex, UBXGearData* InGearData, class USkeletalMeshComponent* AttachParent);
+	virtual void ChangeEquipGearByData(FGameplayTag InSlot, int32 InIndex, UBXGearData* InGearData, class USkeletalMeshComponent* AttachParent);
 
 	// 卸下所有装备
 	UFUNCTION(BlueprintCallable)

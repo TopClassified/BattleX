@@ -272,10 +272,10 @@ void UBXTLGraphNode::RefreshPinInformationList(TArray<FBXTLGNodePin>& InPinInfor
 	PinInfo.ExtraName = TEXT("Exe");
 	InPinInformationList.Add(PinInfo);
 
-	for (TMap<FName, FBXTEvent>::TIterator It(CachedTask->Events); It; ++It)
+	for (TMap<FGameplayTag, FBXTEvent>::TIterator It(CachedTask->Events); It; ++It)
 	{
 		PinInfo.PinType = 1;
-		PinInfo.ExtraName = It->Key;
+		PinInfo.ExtraName = It->Key.GetTagName();
 		InPinInformationList.Add(PinInfo);
 	}
 
@@ -300,7 +300,7 @@ void UBXTLGraphNode::RefreshPinInformationList(TArray<FBXTLGNodePin>& InPinInfor
 	{
 		PinInfo.PinType = 4;
 		PinInfo.UniqueID = It->GetUniqueID();
-		PinInfo.ExtraName = It->DataDesc;
+		PinInfo.ExtraName = It->DataTag.GetTagName();
 		InPinInformationList.Add(PinInfo);
 	}
 }
@@ -413,7 +413,7 @@ void UBXTLGraphNode::RefreshGraphNodeInformation()
 		// 更新Task事件触发列表
 		if (CurPinInfo->PinType == 1)
 		{
-			if (FBXTEvent* Events = CachedTask->Events.Find(CurPinInfo->ExtraName))
+			if (FBXTEvent* Events = CachedTask->Events.Find(FGameplayTag::RequestGameplayTag(CurPinInfo->ExtraName)))
 			{
 				for (TMap<TSoftObjectPtr<UBXTask>, float>::TIterator It(Events->Event); It; ++It)
 				{
@@ -469,14 +469,14 @@ void UBXTLGraphNode::RefreshGraphNodeInformation()
 						{
 							if (FBXTLGNodePin* TargetPin = TargetNode->GetPinInformation(CurPin->LinkedTo[0]))
 							{
-								Info.DataDesc = TargetPin->ExtraName;
+								Info.DataTag = FGameplayTag::RequestGameplayTag(TargetPin->ExtraName);
 								Info.DataTask = TargetNode->CachedTask;
 							}
 						}
 					}
 					else
 					{
-						Info.DataDesc = NAME_None;
+						Info.DataTag = FGameplayTag::EmptyTag;
 						Info.DataTask = nullptr;
 					}
 
@@ -498,14 +498,14 @@ void UBXTLGraphNode::RefreshGraphNodeInformation()
 						{
 							if (FBXTLGNodePin* TargetPin = TargetNode->GetPinInformation(CurPin->LinkedTo[0]))
 							{
-								Info.DataDesc = TargetPin->ExtraName;
+								Info.DataTag = FGameplayTag::RequestGameplayTag(TargetPin->ExtraName);
 								Info.DataTask = TargetNode->CachedTask;
 							}
 						}
 					}
 					else
 					{
-						Info.DataDesc = NAME_None;
+						Info.DataTag = FGameplayTag::EmptyTag;
 						Info.DataTask = nullptr;
 					}
 

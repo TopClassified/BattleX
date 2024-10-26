@@ -16,7 +16,7 @@ void UBXHitReactionComponent::BeginPlay()
 	SetComponentTickEnabled(false);
 
 	// 初始化身体部位数据
-	for (TMap<EBXBodyPartType, FBXBodyPartConfig>::TIterator It(BodyPartConfigs); It; ++It)
+	for (TMap<FGameplayTag, FBXBodyPartConfig>::TIterator It(BodyPartConfigs); It; ++It)
 	{
 		USceneComponent* Component = UBXFunctionLibrary::GetSceneComponentByNameAndClass(GetOwner(), It->Value.ComponentName, UPrimitiveComponent::StaticClass(), false);
 		if (IsValid(Component))
@@ -44,7 +44,7 @@ void UBXHitReactionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 
 #pragma region BodyPart
-bool UBXHitReactionComponent::GetBodyPartByType(EBXBodyPartType InType, FBXBodyPartRTInformation& OutInformation)
+bool UBXHitReactionComponent::GetBodyPartByType(FGameplayTag InType, FBXBodyPartRTInformation& OutInformation)
 {
 	if (FBXBodyPartRTInformation* BodyPart = BodyPartRTDatas.Find(InType))
 	{
@@ -63,7 +63,7 @@ bool UBXHitReactionComponent::GetBodyPartByComponentAndBone(USceneComponent* InC
 		return false;
 	}
 
-	for (TMap<EBXBodyPartType, FBXBodyPartRTInformation>::TIterator It(BodyPartRTDatas); It; ++It)
+	for (TMap<FGameplayTag, FBXBodyPartRTInformation>::TIterator It(BodyPartRTDatas); It; ++It)
 	{
 		if (It->Value.Component == InComponent && (It->Value.BoneNames.Contains(InBoneName) || It->Value.BoneNames.Num() <= 0))
 		{

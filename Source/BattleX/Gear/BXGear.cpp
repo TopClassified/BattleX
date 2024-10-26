@@ -186,12 +186,12 @@ void ABXGear::InternalPostUnusing(FBXUsingGearInformation& UnusingInfo)
 
 
 #pragma region State
-EBXGearState ABXGear::GetCurrentState() const
+FGameplayTag ABXGear::GetCurrentState() const
 {
 	return CurrentState;
 }
 
-void ABXGear::ChangeState(EBXGearState NewState)
+void ABXGear::ChangeState(FGameplayTag NewState)
 {
 	if ((ChangeStateFunctions & 1) > 0)
 	{
@@ -204,7 +204,7 @@ void ABXGear::ChangeState(EBXGearState NewState)
 	}
 }
 
-void ABXGear::InternalChangeState(EBXGearState NewState)
+void ABXGear::InternalChangeState(FGameplayTag NewState)
 {
 
 }
@@ -227,7 +227,7 @@ void ABXGear::AttachToSocket()
 		return;
 	}
 
-	EBXGearSlot SlotType = OwnerComponent->GetUsingGearSlot(this);
+	FGameplayTag SlotType = OwnerComponent->GetUsingGearSlot(this);
 
 	for (TArray<FBXGearAttachmentConfig>::TIterator It(AttachmentConfigs); It; ++It)
 	{
@@ -243,3 +243,13 @@ void ABXGear::AttachToSocket()
 }
 
 #pragma endregion Attach
+
+
+
+#pragma region Collision
+void ABXGear::GetHitResults(float InStartTime, FGameplayTagContainer& BoxTags, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, const FBXCFilter& Filter, TArray<FHitResult>& OutResults)
+{
+	OutResults.Reset();
+}
+
+#pragma endregion Collision
