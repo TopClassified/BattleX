@@ -16,7 +16,7 @@ class BATTLEX_API UBXTCollision : public UBXTask
 	GENERATED_BODY()
 	
 public:
-	// 碰撞检测次数(开始一次，结束一次，检测频率=时长/次数)
+	// 碰撞检测次数(检测频率=时长/次数)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision", Meta = (ClampMin = "1"))
 	float Count = 1;
 
@@ -66,6 +66,16 @@ public:
 	// 武器碰撞盒
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	FGameplayTagContainer WeaponHitBoxTags;
+
+	/*
+	 * 覆盖武器追踪碰撞检测优化规则，武器本身也有这些参数，该数值会覆盖武器的对应参数
+	 * X:坐标共线判定误差(角度)，把在同一条直线上的位置进行排除
+	 * Y:方向判定误差(角度)，把相同方向的数据进行排除
+	 * Z:缩放判定误差(倍率)，把相同大小的数据进行排除
+	 * W:碰撞检测步进角度，数值越小误差越小
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	FVector4 CollisionOptimizationRules = FVector4(10.0f, 30.0f, 0.1f, 20.0f);
 	
 	// 是否缓存武器相对位置(非多目标时才有效)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)

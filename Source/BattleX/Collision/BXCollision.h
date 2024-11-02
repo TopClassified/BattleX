@@ -311,4 +311,8 @@ public:
 	UFUNCTION(BlueprintCallable)
 	static TArray<FHitResult> SectorCheck(const FBXCParameter& Parameter, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, FVector4 SectorSize, EBXCDirection Direction, const FBXCFilter& Filter, float AngleStep = 30.0f, int32 SweepStep = 10);
 
+	// 去重BX方位列表，获取碰撞位置列表
+	UFUNCTION(BlueprintCallable)
+	static void GetTransformListFromBXHitBoxRecords(const FBXGHitBoxRecords& InRecords, float InStartTime, float InEndTime, TArray<FTransform>& OutTransformList, FTransform LatestTransform, float InSlopeError = 5.0f, float InAngleError = 10.0f, float InScaleError = 0.1f);
+	
 };

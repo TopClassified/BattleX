@@ -85,6 +85,8 @@ namespace BXGameplayTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXGearHitBox_Main, "BXGearHitBox.Main", "主碰撞盒");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Start, "BXTEvent.Start", "开始");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_End, "BXTEvent.End", "结束");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Success, "BXTEvent.Success", "成功");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Failure, "BXTEvent.Failure", "失败");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Trigger, "BXTEvent.Trigger", "触发");
@@ -95,4 +97,14 @@ namespace BXGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTData_ColResults3, "BXTData.ColResults3", "碰撞结果3");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTData_ColResults4, "BXTData.ColResults4", "碰撞结果4");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTData_ColResults5, "BXTData.ColResults5", "碰撞结果5");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXRelationShip_Self, "BXRelationShip.Self", "自己");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXRelationShip_Friendly, "BXRelationShip.Friendly", "友好");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXRelationShip_Neutral, "BXRelationShip.Neutral", "中立");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXRelationShip_Hostile, "BXRelationShip.Hostile", "敌对");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXActorType_Player, "BXActorType.Player", "玩家");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXActorType_NPC, "BXActorType.NPC", "NPC");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXActorType_Monster, "BXActorType.Monster", "小怪");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXActorType_BOSS, "BXActorType.BOSS", "BOSS");
 }

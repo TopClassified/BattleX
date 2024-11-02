@@ -679,6 +679,9 @@ void FBXTLEditor::CreatePreviewScene()
 		FString PreviewWorldName = TEXT("BXTLEW") + FString::FromInt(FBXTLEditor::BXTLEditorIndex);
 		PreviewWorld->Rename(*PreviewWorldName, PreviewWorld->GetOuter());
 	}
+
+	// 创建BX管理器
+	GetBXManager();
 }
 
 void FBXTLEditor::CreatePreviewProxy()

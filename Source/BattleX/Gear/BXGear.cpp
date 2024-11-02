@@ -247,7 +247,7 @@ void ABXGear::AttachToSocket()
 
 
 #pragma region Collision
-void ABXGear::GetHitResults(float InStartTime, FGameplayTagContainer& BoxTags, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, const FBXCFilter& Filter, TArray<FHitResult>& OutResults)
+void ABXGear::GetHitResults(float InStartTime, FGameplayTagContainer& BoxTags, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, const FBXCFilter& Filter, TArray<FHitResult>& OutResults, FVector4 OverrideRules)
 {
 	OutResults.Reset();
 }

@@ -44,35 +44,43 @@ uint32 FBXHelperRunnable::Run()
 			}
 		}
 
-		for (TArray<FHTRegisteredFunction>::TIterator It(HTPeddingRegisteredFunctions); It; ++It)
+		int32 Count = 0;
+		while(Count < 20 && !HTPendingRegisteredFunctions.IsEmpty())
 		{
-			if (HTRegisteredFunctions.Contains(*It))
+			if (FHTRegisteredFunction* Pointer = HTPendingRegisteredFunctions.Pop())
 			{
-				continue;
-			}
-
-			HTRegisteredFunctions.Add(*It);
-		}
-		HTPeddingRegisteredFunctions.Empty();
-
-		for (TArray<FHTRegisteredFunction>::TIterator It(HTPeddingUnregisteredFunctions); It; ++It)
-		{
-			if (It->Function == nullptr)
-			{
-				for (TArray<FHTRegisteredFunction>::TIterator It2(HTRegisteredFunctions); It2; ++It2)
+				if (!HTRegisteredFunctions.Contains(*Pointer))
 				{
-					if (It->Object == It2->Object)
+					HTRegisteredFunctions.Add(*Pointer);
+				}	
+			}
+			
+			Count += 1;
+		}
+
+		Count = 0;
+		while(Count < 20 && !HTPendingUnregisteredFunctions.IsEmpty())
+		{
+			if (FHTRegisteredFunction* Pointer = HTPendingUnregisteredFunctions.Pop())
+			{
+				if (Pointer->Function == nullptr)
+				{
+					for (TArray<FHTRegisteredFunction>::TIterator It2(HTRegisteredFunctions); It2; ++It2)
 					{
-						It2.RemoveCurrentSwap();
+						if (Pointer->Object == It2->Object)
+						{
+							It2.RemoveCurrentSwap();
+						}
 					}
 				}
+				else
+				{
+					HTRegisteredFunctions.RemoveSwap(*Pointer);
+				}
 			}
-			else
-			{
-				HTRegisteredFunctions.RemoveSwap(*It);
-			}
+
+			Count += 1;
 		}
-		HTPeddingUnregisteredFunctions.Empty();
 	}
 	
 	return 0;
@@ -530,10 +538,8 @@ void UBXManager::FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSection
 	const FBXTLSection& Section = Asset->Sections[InOutSectionData.Index];
 
 	// 提炼常用数据
-	int32 SectionEndMask = (int32)EBXTTriggerType::T_SectionEnd;
-	SectionEndMask = 1 << SectionEndMask;
-	int32 SectionInterruptMask = (int32)EBXTTriggerType::T_SectionInterrupt;
-	SectionInterruptMask = 1 << SectionInterruptMask;
+	int32 SectionEndMask = 1 << (int32)EBXTTriggerType::T_SectionEnd;
+	int32 SectionInterruptMask = 1 << (int32)EBXTTriggerType::T_SectionInterrupt;
 	ENetMode NetMode = ENetMode::NM_Standalone;
 	ENetRole LocalRole = ENetRole::ROLE_Authority;
 	if (AActor* Owner = Cast<AActor>(InOutData.Owner))
@@ -553,14 +559,14 @@ void UBXManager::FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSection
 
 		if (InReason == EBXTLFinishReason::FR_EndOfLife)
 		{
-			if (SectionEndMask > 0)
+			if ((Task->TriggerTypes & SectionEndMask) > 0)
 			{
 				ExecuteTimelineTask(InOutData, InOutSectionData, It.GetIndex(), NetMode, LocalRole, 0.0f);
 			}
 		}
 		else if (InReason == EBXTLFinishReason::FR_Interrupt)
 		{
-			if (SectionInterruptMask > 0)
+			if ((Task->TriggerTypes & SectionInterruptMask) > 0)
 			{
 				ExecuteTimelineTask(InOutData, InOutSectionData, It.GetIndex(), NetMode, LocalRole, 0.0f);
 			}
@@ -1008,45 +1014,13 @@ void UBXManager::RegisterHTFunction(UObject* InObject, FName InFunctionName, flo
 	{
 		return;
 	}
+
+	TSharedPtr<FHTRegisteredFunction> Task = MakeShared<FHTRegisteredFunction>();
+	Task->Object = InObject;
+	Task->Function = Function;
+	Task->Interval = InInterval;
 	
-	HelperRunnable->HTPeddingRegisteredFunctions.Add(FHTRegisteredFunction(InObject, Function, InInterval));
-}
-
-void UBXManager::AdjustHTFunctionInterval(UObject* InObject, FName InFunctionName, float InInterval)
-{
-	if (!IsValid(InObject))
-	{
-		return;
-	}
-
-	if (!HelperRunnable.IsValid())
-	{
-		return;
-	}
-
-	UFunction* Function = InObject->FindFunction(InFunctionName);
-	if (!IsValid(Function))
-	{
-		return;
-	}
-
-	for (TArray<FHTRegisteredFunction>::TIterator It(HelperRunnable->HTRegisteredFunctions); It; ++It)
-	{
-		if (InObject == It->Object && Function == It->Function)
-		{
-			It->Interval = InInterval;
-			return;
-		}
-	}
-		
-	for (TArray<FHTRegisteredFunction>::TIterator It(HelperRunnable->HTPeddingRegisteredFunctions); It; ++It)
-	{
-		if (InObject == It->Object && Function == It->Function)
-		{
-			It->Interval = InInterval;
-			return;
-		}
-	}
+	HelperRunnable->HTPendingRegisteredFunctions.Push(Task.Get());
 }
 
 void UBXManager::UnregisterHTFunction(UObject* InObject, FName InFunctionName)
@@ -1061,8 +1035,12 @@ void UBXManager::UnregisterHTFunction(UObject* InObject, FName InFunctionName)
 	{
 		return;
 	}
+
+	TSharedPtr<FHTRegisteredFunction> Task = MakeShared<FHTRegisteredFunction>();
+	Task->Object = InObject;
+	Task->Function = Function;
 	
-	HelperRunnable->HTPeddingRegisteredFunctions.Add(FHTRegisteredFunction(InObject, Function));
+	HelperRunnable->HTPendingUnregisteredFunctions.Push(Task.Get());
 }
 
 void UBXManager::UnregisterHTFunctionByUObject(UObject* InObject)
@@ -1072,7 +1050,11 @@ void UBXManager::UnregisterHTFunctionByUObject(UObject* InObject)
 		return;
 	}
 	
-	HelperRunnable->HTPeddingRegisteredFunctions.Add(FHTRegisteredFunction(InObject, nullptr));
+	TSharedPtr<FHTRegisteredFunction> Task = MakeShared<FHTRegisteredFunction>();
+	Task->Object = InObject;
+	Task->Function = nullptr;
+	
+	HelperRunnable->HTPendingUnregisteredFunctions.Push(Task.Get());
 }
 	
 #pragma endregion HelperThread

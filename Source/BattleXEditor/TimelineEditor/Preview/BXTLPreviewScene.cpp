@@ -237,6 +237,7 @@ void FBXTLPreviewScene::DestroyPreviewActors()
 		if (UBXGearComponent* GearComp = ActorPtr->FindComponentByClass<UBXGearComponent>())
 		{
 			GearComp->GetEquipGearList(GearList);
+			GearComp->UnequipAllGears();
 		}
 		for (TArray<ABXGear*>::TIterator It(GearList); It; ++It)
 		{

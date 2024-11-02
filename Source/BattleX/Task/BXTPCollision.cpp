@@ -240,7 +240,7 @@ void UBXTPTrackWeaponCollision::CollisionCheck(FBXTPTrackWeaponCollisionContext&
 			}
 
 			// 获取武器碰撞盒的命中数据
-			Gear->GetHitResults(InOutContext.LastCheckTime, InTask->WeaponHitBoxTags, InTask->ObjectTypes, InTask->EngineFilter, TempResults);
+			Gear->GetHitResults(InOutContext.LastCheckTime, InTask->WeaponHitBoxTags, InTask->ObjectTypes, InTask->EngineFilter, TempResults, InTask->CollisionOptimizationRules);
 
 			// 检查角色合法性
 			for (TArray<FHitResult>::TIterator HR(TempResults); HR; ++HR)

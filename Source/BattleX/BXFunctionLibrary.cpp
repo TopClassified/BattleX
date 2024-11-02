@@ -320,6 +320,28 @@ int32 UBXFunctionLibrary::GetSoftTaskFullIndex(UBXTLAsset* InAsset, TSoftObjectP
 
 
 #pragma region Math
+bool UBXFunctionLibrary::AreCollinear(const FVector& A, const FVector& B, const FVector& C, float AngleTolerance)
+{
+	FVector V1 = B - A;
+	FVector V2 = C - A;
+
+	// 计算向量的单位长度
+	float LenV1 = V1.Size();
+	float LenV2 = V2.Size();
+
+	// 处理长度为零的情况
+	if (LenV1 == 0 || LenV2 == 0) 
+	{
+		return false;
+	}
+
+	// 计算角度
+	float Angle = FMath::RadiansToDegrees(FMath::Acos(V1.Dot(V2) / (LenV1 * LenV2)));
+
+	// 判断夹角是否在允许的范围内
+	return Angle < AngleTolerance;
+}
+
 float UBXFunctionLibrary::PointToSegment(const FVector& InP, const FVector& InLS, const FVector& InLE)
 {
 	float ResultParameter;

@@ -7,6 +7,7 @@
 
 #include "BXSettings.h"
 #include "BXFunctionLibrary.h"
+#include "BXGearStructs.h"
 
 #if WITH_EDITOR
 #include "DrawDebugHelpers.h"
@@ -1027,4 +1028,104 @@ TArray<FHitResult> UBXCollisionLibrary::SectorCheck(const FBXCParameter& Paramet
 #endif
 
 	return OutResult;
+}
+
+void UBXCollisionLibrary::GetTransformListFromBXHitBoxRecords(const FBXGHitBoxRecords& InRecords, float InStartTime, float InEndTime, TArray<FTransform>& OutTransformList, FTransform LatestTransform, float InSlopeError, float InAngleError, float InScaleError)
+{
+	OutTransformList.Reset();
+	if (InStartTime < 0.0f || InEndTime < 0.0f || InStartTime > InEndTime)
+	{
+		UE_LOG(BXCOLLISION, Warning, TEXT("Start Time Or End Time Error In GetTransformListFromBXHitBoxRecords, Please Check The Input Value!"));
+		return;
+	}
+	
+	// 从记录列表中选取合法时间段的方位
+	bool bBreaked = false;
+	TArray<FTransform> TransformList;
+	int32 Size = InRecords.List.Num() - 1;
+	for (int32 i = 0; i <= Size; ++i)
+	{
+		const FBXGHitBoxRecord& ERecord = InRecords.List[i];
+		// 记录时间大于起始时间
+		if (ERecord.GameTime >= InStartTime)
+		{
+			FTransform NewTransform = ERecord.WTransform;
+			
+			if (i > 0)
+			{
+				const FBXGHitBoxRecord& SRecord = InRecords.List[i - 1];
+				// 如果是起始时间点，或者是结束时间点，可能要插值
+				if (SRecord.GameTime < InStartTime || ERecord.GameTime > InEndTime)
+				{
+					float Alpha = (InStartTime - SRecord.GameTime) / (ERecord.GameTime - SRecord.GameTime);
+					NewTransform.SetLocation(FMath::Lerp(SRecord.WTransform.GetLocation(), ERecord.WTransform.GetLocation(), Alpha));
+					NewTransform.SetRotation(FQuat::Slerp(SRecord.WTransform.GetRotation(), ERecord.WTransform.GetRotation(), Alpha));
+					NewTransform.SetScale3D(FMath::Lerp(SRecord.WTransform.GetScale3D(), ERecord.WTransform.GetScale3D(), Alpha));
+				}
+			}
+
+			TransformList.Add(NewTransform);
+
+			// 记录时间超过终止时间，则退出
+			if (ERecord.GameTime > InEndTime)
+			{
+				bBreaked = true;
+				break;
+			}
+		}
+	}
+
+	// 如果记录列表中，不存在时间大于终止时间的记录，则尝试把最新的位置塞入列表
+	if (!bBreaked && !LatestTransform.Equals(FTransform::Identity))
+	{
+		TransformList.Add(LatestTransform);
+	}
+	
+	// 共线合并
+	TArray<int32> SlopeIndexList;
+	SlopeIndexList.Add(0);
+	for (int32 i = 1; i < TransformList.Num() - 1; ++i)
+	{
+		// 如果不共线，则塞入列表
+		if (!UBXFunctionLibrary::AreCollinear(TransformList[SlopeIndexList.Last()].GetLocation(), TransformList[i].GetLocation(), TransformList[i + 1].GetLocation(), InSlopeError))
+		{
+			SlopeIndexList.Add(i);
+		}
+	}
+	SlopeIndexList.Add(TransformList.Num() - 1);
+
+	// 相同角度合并
+	TArray<int32> AngleIndexList;
+	AngleIndexList.Add(0);
+	float RadiansError = FMath::DegreesToRadians(InAngleError);
+	for (int32 i = 1; i < TransformList.Num() - 1; ++i)
+	{
+		// 如果角度相差大，则塞入列表
+		if (RadiansError < TransformList[AngleIndexList.Last()].GetRotation().AngularDistance(TransformList[i].GetRotation()))
+		{
+			AngleIndexList.Add(i);
+		}
+	}
+	AngleIndexList.Add(TransformList.Num() - 1);
+
+	// 相同大小合并
+	TArray<int32> ScaleIndexList;
+	ScaleIndexList.Add(0);
+	for (int32 i = 1; i < TransformList.Num() - 1; ++i)
+	{
+		if (!TransformList[AngleIndexList.Last()].GetScale3D().Equals(TransformList[i].GetScale3D(), InScaleError))
+		{
+			ScaleIndexList.Add(i);
+		}
+	}
+	ScaleIndexList.Add(TransformList.Num() - 1);
+
+	// 最终结果
+	for (int32 i = 0; i < TransformList.Num(); ++i)
+	{
+		if (SlopeIndexList.Contains(i) || AngleIndexList.Contains(i) || ScaleIndexList.Contains(i))
+		{
+			OutTransformList.Add(TransformList[i]);
+		}
+	}
 }

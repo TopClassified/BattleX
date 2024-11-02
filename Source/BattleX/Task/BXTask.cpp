@@ -8,7 +8,8 @@
 #pragma region Important
 UBXTask::UBXTask()
 {
-	
+	Events.Add(BXGameplayTags::BXTEvent_Start);
+	Events.Add(BXGameplayTags::BXTEvent_End);
 }
 #pragma endregion Important
 

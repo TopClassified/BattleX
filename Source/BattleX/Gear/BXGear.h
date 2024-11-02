@@ -176,7 +176,7 @@ public:
 #pragma region Collision
 public:
 	UFUNCTION(BlueprintCallable, Category = "Collision")
-	virtual void GetHitResults(float InStartTime, FGameplayTagContainer& BoxTags, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, const FBXCFilter& Filter, TArray<FHitResult>& OutResults);
+	virtual void GetHitResults(float InStartTime, FGameplayTagContainer& BoxTags, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, const FBXCFilter& Filter, TArray<FHitResult>& OutResults, FVector4 OverrideRules);
 
 #pragma endregion Collision
 

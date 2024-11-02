@@ -72,6 +72,10 @@ public:
 
 #pragma region Math
 public:
+	// 判断三点是否共线
+	UFUNCTION(BlueprintCallable, Category = "Math")
+	static bool AreCollinear(const FVector& A, const FVector& B, const FVector& C, float AngleTolerance);
+	
 	// 计算点到线段的最短距离
 	UFUNCTION(BlueprintCallable, Category = "Math")
 	static float PointToSegment(const FVector& InP, const FVector& InLS, const FVector& InLE);

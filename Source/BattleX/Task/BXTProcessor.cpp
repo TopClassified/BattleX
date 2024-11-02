@@ -37,10 +37,15 @@ void UBXTProcessor::StartTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(
 	{
 		ScriptStart(InOutRTData, InOutRTSData, InOutRTTData);
 	}
+
+	UBXTProcessor::AddPendingTask(InOutRTData, InOutRTSData, InOutRTTData, UBXTProcessor::GenerateContextScope(InOutRTData, InOutRTTData), BXGameplayTags::BXTEvent_Start);
 }
 
 void UBXTProcessor::UpdateTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, float InDeltaTime)
 {
+	// 更新运行时间
+	InOutRTTData.RunTime += InDeltaTime;
+	
 	if (InOutRTTData.NextTick < 0.0f)
 	{
 		if (InOutRTData.Timeline)
@@ -79,6 +84,18 @@ void UBXTProcessor::EndTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(re
 	if ((ExecuteFunctions & 32) > 0)
 	{
 		ScriptEnd(InOutRTData, InOutRTSData, InOutRTTData, InReason);
+	}
+
+	UBXTProcessor::AddPendingTask(InOutRTData, InOutRTSData, InOutRTTData, UBXTProcessor::GenerateContextScope(InOutRTData, InOutRTTData), BXGameplayTags::BXTEvent_End);
+
+	for (TArray<FBXTLTaskRTData>::TIterator It(InOutRTSData.RunningTasks); It; ++It)
+	{
+		// 判断地址是否相同
+		if ((&(*It)) == (&InOutRTTData))
+		{
+			It.RemoveCurrent();
+			break;
+		}
 	}
 }
 

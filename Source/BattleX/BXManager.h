@@ -78,8 +78,8 @@ public:
 public:
 	bool bShouldStop = false;
 	TArray<FHTRegisteredFunction> HTRegisteredFunctions;
-	TArray<FHTRegisteredFunction> HTPeddingRegisteredFunctions;
-	TArray<FHTRegisteredFunction> HTPeddingUnregisteredFunctions;
+	TLockFreePointerListFIFO<FHTRegisteredFunction, 32> HTPendingRegisteredFunctions;
+	TLockFreePointerListFIFO<FHTRegisteredFunction, 32> HTPendingUnregisteredFunctions;
 	
 };
 
@@ -261,9 +261,6 @@ protected:
 public:
 	UFUNCTION(BlueprintCallable)
 	void RegisterHTFunction(UObject* InObject, FName InFunctionName, float InInterval);
-
-	UFUNCTION(BlueprintCallable)
-	void AdjustHTFunctionInterval(UObject* InObject, FName InFunctionName, float InInterval);
 	
 	UFUNCTION(BlueprintCallable)
 	void UnregisterHTFunction(UObject* InObject, FName InFunctionName);
