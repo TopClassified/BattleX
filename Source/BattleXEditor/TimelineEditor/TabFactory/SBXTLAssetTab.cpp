@@ -389,7 +389,7 @@ ECheckBoxState SBXTLAssetTimelineTab::IsSectionChecked(int32 Index) const
 
 void SBXTLAssetTimelineTab::AddSection()
 {
-	if (!CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -403,7 +403,7 @@ void SBXTLAssetTimelineTab::AddSection()
 
 void SBXTLAssetTimelineTab::DeleteSection(int32 Index)
 {
-	if (!CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}

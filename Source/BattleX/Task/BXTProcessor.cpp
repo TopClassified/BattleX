@@ -48,12 +48,6 @@ void UBXTProcessor::UpdateTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM
 	
 	if (InOutRTTData.NextTick < 0.0f)
 	{
-		if (InOutRTData.Timeline)
-		{
-			FString OutInfo = FString::FromInt(InOutRTData.TimelineID) + TEXT("  Task FullIndex:") + FString::FromInt(InOutRTSData.Index * 1000 + InOutRTTData.Index);
-			UE_LOG(BX_TP, Log, TEXT("This Task(%s) Will Never Execute The Tick Logic."), *OutInfo);
-		}
-
 		return;
 	}
 	

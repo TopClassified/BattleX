@@ -96,6 +96,13 @@ void FBXTLEditorToolbar::FillTimelineModeToolbar(FToolBarBuilder& ToolbarBuilder
 			LOCTEXT("Toolbar_ResetWorld", "ResetWorld"),
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), "ContentBrowser.AssetActions.ReimportAsset")
 		);
+		ToolbarBuilder.AddToolBarButton
+		(
+			Commands.ShowCollision, NAME_None,
+			LOCTEXT("Toolbar_ShowCollision", "ShowCollision"),
+			LOCTEXT("Toolbar_ShowCollision", "ShowCollision"),
+			FSlateIcon(FAppStyle::GetAppStyleSetName(), "ContentBrowser.AssetActions.ReimportAsset")
+		);
 	}
 	ToolbarBuilder.EndSection();
 
@@ -119,6 +126,14 @@ void FBXTLEditorToolbar::FillTimelineModeToolbar(FToolBarBuilder& ToolbarBuilder
 			LOCTEXT("Refresh All Timeline", "Refresh All Timeline"),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateRaw(CachedEditor.Pin().Get(), &FBXTLEditor::RefreshTimelineAssetProperty), FCanExecuteAction())
+		);
+		Section.AddMenuEntry
+		(
+			"Bake Timeline Data",
+			LOCTEXT("Bake Timeline Data", "Bake Timeline"),
+			LOCTEXT("Bake Timeline Data", "Bake Timeline"),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateRaw(CachedEditor.Pin().Get(), &FBXTLEditor::Bake), FCanExecuteAction())
 		);
 	}
 	ToolbarBuilder.EndSection();

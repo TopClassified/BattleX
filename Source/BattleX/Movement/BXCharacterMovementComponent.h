@@ -118,5 +118,18 @@ public:
 	virtual bool DoJump(bool bReplayingMoves) override;
 	
 #pragma endregion Override
+
+
+
+#pragma region Record
+public:
+	UFUNCTION(BlueprintCallable, Category = "Record")
+	FTransform GetTransformHistoryByTime(float InTime);
+	
+protected:
+	UPROPERTY(Transient)
+	TArray<>
+	
+#pragma endregion Record
 	
 };

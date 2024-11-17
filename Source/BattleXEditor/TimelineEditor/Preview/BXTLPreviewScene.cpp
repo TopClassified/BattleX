@@ -334,7 +334,7 @@ void FBXTLPreviewScene::OnActorMoving(AActor* InActor)
 
 	if (InActor == PreviewPlayer)
 	{
-		if (CachedEditor.Pin()->IsStopped())
+		if (!CachedEditor.Pin()->IsRunning())
 		{
 			if (UBXTLPreviewActor* PInfo = Cast<UBXTLPreviewActor>(Asset->PlayerInformation))
 			{
@@ -344,7 +344,7 @@ void FBXTLPreviewScene::OnActorMoving(AActor* InActor)
 	}
 	else if (InActor == PreviewTarget)
 	{
-		if (CachedEditor.Pin()->IsStopped())
+		if (!CachedEditor.Pin()->IsRunning())
 		{
 			if (UBXTLPreviewActor* PInfo = Cast<UBXTLPreviewActor>(Asset->TargetInformation))
 			{

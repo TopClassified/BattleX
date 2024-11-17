@@ -16,6 +16,26 @@ UBXTask::UBXTask()
 
 
 #pragma region Editor
+void UBXTask::CleanBakedData_Implementation()
+{
+	
+}
+
+void UBXTask::BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData)
+{
+	
+}
+
+void UBXTask::PostBakeData_Implementation()
+{
+	
+}
+
+void UBXTask::GetDynamicObjectByRuntimeData_Implementation(UBXManager* InBXMgr, const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData)
+{
+	
+}
+
 #if WITH_EDITOR
 void UBXTask::PreSave(FObjectPreSaveContext SaveContext)
 {
@@ -55,7 +75,13 @@ FText UBXTask::GetDisplayName() const
 
 	if (!DisplayName.IsEmpty())
 	{
-		Name = Name + TEXT("  ") + DisplayName.ToString();
+		int32 Index = 0;
+		if (Name.FindLastChar('_', Index))
+		{
+			Name = Name.Right(Name.Len() - Index);
+		}
+		
+		Name = DisplayName.ToString() + Name;
 	}
 
 	return FText::FromString(Name);
@@ -82,11 +108,6 @@ bool UBXTask::RefreshProperty()
 	return false;
 }
 
-void UBXTask::RefreshDataByPreviewObject_Implementation(UObject* InObject, const FBXTLPreviewObjectData& InData)
-{
-
-}
-
 void UBXTask::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	if (PropertyChangedEvent.GetPropertyName().IsEqual(TEXT("TargetTypes")))
@@ -102,8 +123,8 @@ void UBXTask::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent
 
 		for (int32 i = 0; i < CollisionInputDatas.Num(); ++i)
 		{
-			CollisionInputDatas[i].DisplayName = FName(TEXT("InCol") + FString::FromInt(i));
-			CollisionInputDatas[i].StructType = FBXTHitResults::StaticStruct();
+			CollisionInputDatas[i].SetDisplayName(FName(TEXT("InCol") + FString::FromInt(i)));
+			CollisionInputDatas[i].SetStructType(FBXTHitResults::StaticStruct());
 		}
 		
 		RefreshInputOutput.Broadcast();
@@ -112,8 +133,8 @@ void UBXTask::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent
 	{
 		for (int32 i = 0; i < CollisionInputDatas.Num(); ++i)
 		{
-			CollisionInputDatas[i].DisplayName = FName(TEXT("InCol") + FString::FromInt(i));
-			CollisionInputDatas[i].StructType = FBXTHitResults::StaticStruct();
+			CollisionInputDatas[i].SetDisplayName(FName(TEXT("InCol") + FString::FromInt(i)));
+			CollisionInputDatas[i].SetStructType(FBXTHitResults::StaticStruct());
 		}
 		
 		RefreshInputOutput.Broadcast();
@@ -140,6 +161,11 @@ void UBXTask::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent
 	}
 
 	bNeedCollisionInput = (TargetTypes & (1 << (int32)EBXTTargetType::T_CollisionResults)) > 0;
+
+	if (!EnablePassiveTrigger())
+	{
+		TriggerTypes = (1 << (int32)EBXTTriggerType::T_Timeline);
+	}
 	
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 }
@@ -201,7 +227,7 @@ void UBXTask::RefreshTransformCreaters()
 
 	for (TArray<FBXTInputInfo>::TIterator It(InputDatas); It; ++It)
 	{
-		FString InfoDisplayName = It->DisplayName.ToString();
+		FString InfoDisplayName = It->GetDisplayName().ToString();
 		if (!InfoDisplayName.Contains(PrefixS) && !InfoDisplayName.Contains(PrefixW))
 		{
 			continue;
@@ -216,7 +242,7 @@ void UBXTask::RefreshTransformCreaters()
 				continue;
 			}
 
-			if (InfoDisplayName.Contains(SuffixO) && It->GetUniqueID() == Creater->OriginInputUniqueID)
+			if (InfoDisplayName.Contains(SuffixO) && It->GetUniqueID() == Creater->GetOriginInputUniqueID())
 			{
 				if (Creater->OriginType == EBXTCoordinateType::C_Special && InfoDisplayName.Contains(PrefixS))
 				{
@@ -231,7 +257,7 @@ void UBXTask::RefreshTransformCreaters()
 				}
 			}
 			
-			if (It->DisplayName.ToString().Contains(SuffixX) && It->GetUniqueID() == Creater->XAxisInputUniqueID)
+			if (It->GetDisplayName().ToString().Contains(SuffixX) && It->GetUniqueID() == Creater->GetXAxisInputUniqueID())
 			{
 				if (Creater->XAxisType == EBXTCoordinateType::C_Special && InfoDisplayName.Contains(PrefixS))
 				{
@@ -277,9 +303,9 @@ void UBXTask::RefreshTransformCreaters()
 			bool Flag = false;
 			for (TArray<FBXTInputInfo>::TIterator It(InputDatas); It; ++It)
 			{
-				if (It->GetUniqueID() == Creater->OriginInputUniqueID)
+				if (It->GetUniqueID() == Creater->GetOriginInputUniqueID())
 				{
-					It->DisplayName = FName(CreaterName + SuffixO);
+					It->SetDisplayName(FName(CreaterName + SuffixO));
 					Creater->OriginInputTask = It->DataTask;
 					Creater->OriginInputTag = It->DataTag;
 					Flag = true;
@@ -291,9 +317,9 @@ void UBXTask::RefreshTransformCreaters()
 			{
 				bBroadCast = true;
 				FBXTInputInfo& NewInfo = InputDatas.AddDefaulted_GetRef();
-				NewInfo.SetUniqueID(Creater->OriginInputUniqueID);
-				NewInfo.StructType = (Creater->OriginType == EBXTCoordinateType::C_Special) ? FBXTHitResults::StaticStruct() : TBaseStructure<FTransform>::Get();
-				NewInfo.DisplayName = FName(CreaterName + SuffixO);
+				NewInfo.SetUniqueID(Creater->GetOriginInputUniqueID());
+				NewInfo.SetStructType((Creater->OriginType == EBXTCoordinateType::C_Special) ? FBXTHitResults::StaticStruct() : TBaseStructure<FTransform>::Get());
+				NewInfo.SetDisplayName(FName(CreaterName + SuffixO));
 				NewInfo.DataTask = nullptr;
 				NewInfo.DataTag = FGameplayTag::EmptyTag;
 			}
@@ -304,9 +330,9 @@ void UBXTask::RefreshTransformCreaters()
 			bool Flag = false;
 			for (TArray<FBXTInputInfo>::TIterator It(InputDatas); It; ++It)
 			{
-				if (It->GetUniqueID() == Creater->XAxisInputUniqueID)
+				if (It->GetUniqueID() == Creater->GetXAxisInputUniqueID())
 				{
-					It->DisplayName = FName(CreaterName + SuffixX);
+					It->SetDisplayName(FName(CreaterName + SuffixX));
 					Creater->XAxisInputTask = It->DataTask;
 					Creater->XAxisInputTag = It->DataTag;
 					Flag = true;
@@ -318,9 +344,9 @@ void UBXTask::RefreshTransformCreaters()
 			{
 				bBroadCast = true;
 				FBXTInputInfo& NewInfo = InputDatas.AddDefaulted_GetRef();
-				NewInfo.SetUniqueID(Creater->XAxisInputUniqueID);
-				NewInfo.StructType = (Creater->XAxisType == EBXTCoordinateType::C_Special) ? FBXTHitResults::StaticStruct() : TBaseStructure<FTransform>::Get();
-				NewInfo.DisplayName = FName(CreaterName + SuffixX);
+				NewInfo.SetUniqueID(Creater->GetXAxisInputUniqueID());
+				NewInfo.SetStructType((Creater->XAxisType == EBXTCoordinateType::C_Special) ? FBXTHitResults::StaticStruct() : TBaseStructure<FTransform>::Get());
+				NewInfo.SetDisplayName(FName(CreaterName + SuffixX));
 				NewInfo.DataTask = nullptr;
 				NewInfo.DataTag = FGameplayTag::EmptyTag;
 			}
@@ -331,6 +357,11 @@ void UBXTask::RefreshTransformCreaters()
 	{
 		RefreshInputOutput.Broadcast();
 	}
+}
+
+bool UBXTask::EnablePassiveTrigger()
+{
+	return true;
 }
 #endif
 #pragma endregion Editor

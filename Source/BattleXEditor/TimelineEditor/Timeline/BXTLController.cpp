@@ -185,7 +185,7 @@ FFrameNumber FBXTLController::GetScrubPosition() const
 		return FFrameNumber();
 	}
 
-	if (CachedPreviewProxy->IsStopped())
+	if (!CachedPreviewProxy->IsRunning())
 	{
 		return FFrameNumber(FMath::RoundToInt(ScrubPosition * GetTickResolution()));
 	}
@@ -199,7 +199,7 @@ void FBXTLController::SetScrubPosition(FFrameTime NewScrubPosition) const
 {
 	if (CachedPreviewProxy.IsValid())
 	{
-		if (!CachedPreviewProxy->IsStopped())
+		if (CachedPreviewProxy->IsRunning())
 		{
 			CachedPreviewProxy->Stop();
 		}
@@ -276,7 +276,7 @@ void FBXTLController::ChangeTaskSelection(const TArray<UBXTask*>& Tasks)
 
 void FBXTLController::ChangeTaskPosition(UBXTask* SrcTask, UBXTask* DestTask)
 {
-	if (!CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -374,7 +374,7 @@ FBXTLTaskGroup* FBXTLController::GetTaskGroup(UBXTask* TheTask) const
 
 void FBXTLController::ChangeTaskGroup(UBXTask* SrcTask, FBXTLTaskGroup& DestGroupData)
 {
-	if (!CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -419,7 +419,7 @@ void FBXTLController::ChangeTaskGroup(UBXTask* SrcTask, FBXTLTaskGroup& DestGrou
 
 void FBXTLController::AddNewTaskGroup(const FText& Name)
 {
-	if (!CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -436,7 +436,7 @@ void FBXTLController::AddNewTaskGroup(const FText& Name)
 
 void FBXTLController::DeleteTaskGroup(FBXTLTaskGroup& InGroup)
 {
-	if (!CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -466,7 +466,7 @@ void FBXTLController::DeleteTaskGroup(FBXTLTaskGroup& InGroup)
 
 UBXTask* FBXTLController::AddNewTask(FBXTLTaskGroup& InGroup, UClass* InTaskClass, float StartTime)
 {
-	if (!CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.Pin()->IsRunning())
 	{
 		return nullptr;
 	}
@@ -526,7 +526,7 @@ void FBXTLController::CreateTaskGraphNode(UBXTask* TheTask)
 
 void FBXTLController::DeleteTask(UBXTask* TheTask)
 {
-	if (!CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -553,7 +553,7 @@ void FBXTLController::DeleteTask(UBXTask* TheTask)
 
 void FBXTLController::DeleteSelectedTasks()
 {
-	if (!CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -620,7 +620,7 @@ TArray<UBXTask*> FBXTLController::GetSelectedTasks()
 
 void FBXTLController::CopySelectedTasks()
 {
-	if (!CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -697,7 +697,7 @@ void FBXTLController::PasteSelectedTasks(FString InPasteMsg, int32 InGroupID)
 	}
 	InPasteMsg = InPasteMsg.Replace(*FBXTLController::PasteHead, TEXT(""));
 
-	if (!CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -906,7 +906,7 @@ void FBXTLController::InternalExportSelectedTaskTemplate()
 
 void FBXTLController::ImportTaskTemplate(FName InTemplateName, int32 InGroupID)
 {
-	if (!CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}

@@ -362,11 +362,11 @@ void UBXTLGraph::TryAutoConnectPin(UBXTLGraphNode* Node1, UBXTLGraphNode* Node2)
 	}
 
 	// 更新碰撞信息列表
-	for (TArray<FBXTInputInfo>::TConstIterator It(Node1->CachedTask->CollisionInputDatas); It; ++It)
+	for (TArray<FBXTInputInfo>::TIterator It(Node1->CachedTask->CollisionInputDatas); It; ++It)
 	{
 		if (It->DataTask.Get() == Node2->CachedTask)
 		{
-			Pin1 = Node1->GetPinByName(It->DisplayName);
+			Pin1 = Node1->GetPinByName(It->GetDisplayName());
 			Pin2 = Node2->GetPinByName(It->DataTag.GetTagName());
 
 			if (Pin1 && Pin2 && !Pin1->LinkedTo.Contains(Pin2))
@@ -377,11 +377,11 @@ void UBXTLGraph::TryAutoConnectPin(UBXTLGraphNode* Node1, UBXTLGraphNode* Node2)
 	}
 
 	// 修复InputDatas
-	for (TArray<FBXTInputInfo>::TConstIterator It(Node1->CachedTask->InputDatas); It; ++It)
+	for (TArray<FBXTInputInfo>::TIterator It(Node1->CachedTask->InputDatas); It; ++It)
 	{
 		if (It->DataTask.Get() == Node2->CachedTask)
 		{
-			Pin1 = Node1->GetPinByName(It->DisplayName);
+			Pin1 = Node1->GetPinByName(It->GetDisplayName());
 			Pin2 = Node2->GetPinByName(It->DataTag.GetTagName());
 
 			if (Pin1 && Pin2 && !Pin1->LinkedTo.Contains(Pin2))

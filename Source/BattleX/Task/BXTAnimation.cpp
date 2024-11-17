@@ -2,8 +2,18 @@
 
 
 
+UBXTPlayAnimation::UBXTPlayAnimation()
+{
+	DisplayName = FText::FromString(TEXT("播放动画"));
+}
+
 #pragma region Editor
 #if WITH_EDITOR
+bool UBXTPlayAnimation::EnablePassiveTrigger()
+{
+	return false;
+}
+
 void UBXTPlayAnimation::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
 	if (LifeType == EBXTLifeType::L_Instant || LifeType == EBXTLifeType::L_Timeline)

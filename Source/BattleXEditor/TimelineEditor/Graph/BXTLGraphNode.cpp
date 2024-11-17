@@ -210,13 +210,13 @@ void UBXTLGraphNode::GetPinDataType(const UEdGraphPin* InPin, UScriptStruct*& Ou
 	{
 		if (PinInfo->PinType == 2)
 		{
-			const TArray<FBXTInputInfo>& CollisionInfos = CachedTask->CollisionInputDatas;
+			TArray<FBXTInputInfo>& CollisionInfos = CachedTask->CollisionInputDatas;
 			for (int32 i = 0; i < CollisionInfos.Num(); ++i)
 			{
-				const FBXTInputInfo& CurInfo = CollisionInfos[i];
+				FBXTInputInfo& CurInfo = CollisionInfos[i];
 				if (CurInfo.GetUniqueID() == PinInfo->UniqueID)
 				{
-					OutStructType = CurInfo.StructType;
+					OutStructType = CurInfo.GetStructType();
 
 					return;
 				}
@@ -226,10 +226,10 @@ void UBXTLGraphNode::GetPinDataType(const UEdGraphPin* InPin, UScriptStruct*& Ou
 		{
 			for (int32 i = 0; i < CachedTask->InputDatas.Num(); ++i)
 			{
-				const FBXTInputInfo& CurInfo = CachedTask->InputDatas[i];
+				FBXTInputInfo& CurInfo = CachedTask->InputDatas[i];
 				if (CurInfo.GetUniqueID() == PinInfo->UniqueID)
 				{
-					OutStructType = CurInfo.StructType;
+					OutStructType = CurInfo.GetStructType();
 
 					return;
 				}
@@ -239,7 +239,7 @@ void UBXTLGraphNode::GetPinDataType(const UEdGraphPin* InPin, UScriptStruct*& Ou
 		{
 			for (int32 i = 0; i < CachedTask->OutputDatas.Num(); ++i)
 			{
-				const FBXTOutputInfo& CurInfo = CachedTask->OutputDatas[i];
+				FBXTOutputInfo& CurInfo = CachedTask->OutputDatas[i];
 				if (CurInfo.GetUniqueID() == PinInfo->UniqueID)
 				{
 					OutStructType = CurInfo.StructType;
@@ -267,10 +267,13 @@ void UBXTLGraphNode::RefreshPinInformationList(TArray<FBXTLGNodePin>& InPinInfor
 
 	FBXTLGNodePin PinInfo;
 
-	PinInfo.PinType = 0;
-	PinInfo.UniqueID = 0;
-	PinInfo.ExtraName = TEXT("Exe");
-	InPinInformationList.Add(PinInfo);
+	if (CachedTask->EnablePassiveTrigger())
+	{
+		PinInfo.PinType = 0;
+		PinInfo.UniqueID = 0;
+		PinInfo.ExtraName = TEXT("Exe");
+		InPinInformationList.Add(PinInfo);
+	}
 
 	for (TMap<FGameplayTag, FBXTEvent>::TIterator It(CachedTask->Events); It; ++It)
 	{
@@ -279,12 +282,12 @@ void UBXTLGraphNode::RefreshPinInformationList(TArray<FBXTLGNodePin>& InPinInfor
 		InPinInformationList.Add(PinInfo);
 	}
 
-	const TArray<FBXTInputInfo>& CollisionInfos = CachedTask->CollisionInputDatas;
-	for (TArray<FBXTInputInfo>::TConstIterator It(CollisionInfos); It; ++It)
+	TArray<FBXTInputInfo>& CollisionInfos = CachedTask->CollisionInputDatas;
+	for (TArray<FBXTInputInfo>::TIterator It(CollisionInfos); It; ++It)
 	{
 		PinInfo.PinType = 2;
 		PinInfo.UniqueID = It->GetUniqueID();
-		PinInfo.ExtraName = It->DisplayName;
+		PinInfo.ExtraName = It->GetDisplayName();
 		InPinInformationList.Add(PinInfo);
 	}
 
@@ -292,7 +295,7 @@ void UBXTLGraphNode::RefreshPinInformationList(TArray<FBXTLGNodePin>& InPinInfor
 	{
 		PinInfo.PinType = 3;
 		PinInfo.UniqueID = It->GetUniqueID();
-		PinInfo.ExtraName = It->DisplayName;
+		PinInfo.ExtraName = It->GetDisplayName();
 		InPinInformationList.Add(PinInfo);
 	}
 
@@ -356,7 +359,7 @@ void UBXTLGraphNode::CreatePinByInformation(FBXTLGNodePin& InInformation)
 	}
 
 	FName PinName = InInformation.ExtraName;
-	if (InInformation.PinType == 4)
+	if (InInformation.PinType == 1 || InInformation.PinType == 4)
 	{
 		PinName = GetPinNameFromTagName(PinName);
 	}

@@ -162,7 +162,7 @@ void FBXTLEditor::Tick(float DeltaTime)
 	PreviewProxy->Tick(DeltaTime);
 
 	// 对齐时间属性
-	if (PreviewProxy->IsStopped())
+	if (!PreviewProxy->IsRunning())
 	{
 		int64 CurrentTS = UBXFunctionLibrary::GetUtcMillisecond();
 		if (CurrentTS - AlignTimePropertyTS > 125 && EditAsset.IsValid())
@@ -183,7 +183,7 @@ void FBXTLEditor::Tick(float DeltaTime)
 
 	// 检查是否要刷新时间轴
 	bool bNeedRefreshPanel = false;
-	if (PreviewProxy->IsStopped())
+	if (!PreviewProxy->IsRunning())
 	{
 		for (int32 i = 0; i < EditSectionsToShow.Num(); ++i)
 		{
@@ -282,6 +282,12 @@ UBXTLAsset* FBXTLEditor::GetEditingAsset()
 
 void FBXTLEditor::SaveAsset_Execute()
 {
+	// 正在播放 或 正在烘焙 时，不允许保存
+	if (IsPlaying() || IsBaking())
+	{
+		return;
+	}
+	
 	if (AutoOptimize() <= 5)
 	{
 		FAssetEditorToolkit::SaveAsset_Execute();
@@ -429,24 +435,6 @@ void FBXTLEditor::GetEditSectionsToShow(TArray<int32>& OutSectionsToShow) const
 
 
 #pragma region Command
-void FBXTLEditor::BindCommands()
-{
-	// 注册指令
-	FBXTLEditorCommands::Register();
-
-	const FBXTLEditorCommands& Commands = FBXTLEditorCommands::Get();
-	const TSharedRef<FUICommandList>& UICommandsList = GetToolkitCommands();
-
-	UICommandsList->MapAction(Commands.Play, FExecuteAction::CreateSP(this, &FBXTLEditor::Play));
-	UICommandsList->MapAction(Commands.Stop, FExecuteAction::CreateSP(this, &FBXTLEditor::Stop));
-	UICommandsList->MapAction(Commands.Step, FExecuteAction::CreateSP(this, &FBXTLEditor::Step));
-
-	UICommandsList->MapAction(Commands.ResetWorld, FExecuteAction::CreateSP(this, &FBXTLEditor::ResetWorld));
-	UICommandsList->MapAction(Commands.ShowCollision, FExecuteAction::CreateSP(this, &FBXTLEditor::ShowCollision));
-
-	UICommandsList->MapAction(FGenericCommands::Get().Delete, FExecuteAction::CreateRaw(this, &FBXTLEditor::OnSelectedNodesDeleted));
-}
-
 void FBXTLEditor::Play()
 {
 	if (!PreviewScene.IsValid())
@@ -478,13 +466,18 @@ bool FBXTLEditor::IsPaused() const
 	return PreviewProxy->IsPaused();
 }
 
-bool FBXTLEditor::IsStopped() const
+bool FBXTLEditor::IsRunning() const
 {
-	return PreviewProxy->IsStopped();
+	return PreviewProxy->IsRunning();
 }
 
 void FBXTLEditor::Pause()
 {
+	if (!PreviewScene.IsValid())
+	{
+		return;
+	}
+	
 	if (PreviewProxy->IsPaused())
 	{
 		PreviewProxy->Resume();
@@ -497,13 +490,25 @@ void FBXTLEditor::Pause()
 
 void FBXTLEditor::Stop()
 {
-	if (!PreviewProxy->IsStopped())
+	if (!PreviewScene.IsValid())
+	{
+		return;
+	}
+	
+	if (PreviewProxy->IsRunning())
+	{
 		PreviewProxy->Stop();
+	}
 }
 
 void FBXTLEditor::Step()
 {
-	if (PreviewProxy->IsStopped())
+	if (!PreviewScene.IsValid())
+	{
+		return;
+	}
+	
+	if (!PreviewProxy->IsRunning())
 	{
 		PreviewProxy->Play();
 		PreviewProxy->Pause();
@@ -525,6 +530,21 @@ void FBXTLEditor::Step()
 			ViewportClient->TickWorld(1.0f / 60.0f);
 		}
 	}
+}
+
+void FBXTLEditor::Bake()
+{
+	if (!PreviewScene.IsValid())
+	{
+		return;
+	}
+	
+	PreviewProxy->Bake();
+}
+
+bool FBXTLEditor::IsBaking() const
+{
+	return PreviewProxy->IsBaking();
 }
 
 void FBXTLEditor::ResetWorld()
@@ -613,6 +633,24 @@ int32 FBXTLEditor::AutoOptimize()
 	return 0;
 }
 
+void FBXTLEditor::BindCommands()
+{
+	// 注册指令
+	FBXTLEditorCommands::Register();
+
+	const FBXTLEditorCommands& Commands = FBXTLEditorCommands::Get();
+	const TSharedRef<FUICommandList>& UICommandsList = GetToolkitCommands();
+
+	UICommandsList->MapAction(Commands.Play, FExecuteAction::CreateSP(this, &FBXTLEditor::Play));
+	UICommandsList->MapAction(Commands.Stop, FExecuteAction::CreateSP(this, &FBXTLEditor::Stop));
+	UICommandsList->MapAction(Commands.Step, FExecuteAction::CreateSP(this, &FBXTLEditor::Step));
+
+	UICommandsList->MapAction(Commands.ResetWorld, FExecuteAction::CreateSP(this, &FBXTLEditor::ResetWorld));
+	UICommandsList->MapAction(Commands.ShowCollision, FExecuteAction::CreateSP(this, &FBXTLEditor::ShowCollision));
+
+	UICommandsList->MapAction(FGenericCommands::Get().Delete, FExecuteAction::CreateRaw(this, &FBXTLEditor::OnSelectedNodesDeleted));
+}
+
 #pragma endregion Command
 
 
@@ -641,6 +679,15 @@ FGameplayTag FBXTLEditor::GetLockedBodyPartType()
 	}
 
 	return BXGameplayTags::BXBodyPart_Default;
+}
+
+void FBXTLEditor::SetPreviewFPS(double InFPS)
+{
+	TSharedPtr<FBXTLEditorViewportClient> ViewportClient = StaticCastSharedPtr<FBXTLEditorViewportClient>(Viewport.Get()->GetViewportClient());
+	if (ViewportClient.IsValid())
+	{
+		ViewportClient->SetForceFPS(InFPS);
+	}
 }
 
 bool FBXTLEditor::ShouldPauseWorld() const

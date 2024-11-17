@@ -27,13 +27,17 @@ public:
 
 	void TickWorld(float DeltaSeconds);
 
+	void SetForceFPS(double InFPS);
+	
 private:
 	void HandlerPreviewScenePreTick();
 
 	void HandlerPreviewScenePostTick();
 
 private:
-	float RemainTick = 0.0f;
+	double ForceFPS = 0.0f;
+	
+	double RemainTime = 0.0f;
 
 	TWeakPtr<class FBXTLEditor> CachedEditor = nullptr;
 

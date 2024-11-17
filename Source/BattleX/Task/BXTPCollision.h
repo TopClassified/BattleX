@@ -69,10 +69,10 @@ public:
 	TArray<ABXGear*> Gears;
 
 	UPROPERTY(Transient, BlueprintReadWrite)
-	float UpdateInterval = 0.0f;
-
+	float StartCheckTime = 0.0f;
+	
 	UPROPERTY(Transient, BlueprintReadWrite)
-	float LastCheckTime = 0.0f;
+	float UpdateInterval = 0.0f;
 	
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int32 CurrentCount = 0;
@@ -92,6 +92,6 @@ public:
 	virtual void End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, EBXTLFinishReason InReason) override;
 
 protected:
-	virtual void CollisionCheck(FBXTPTrackWeaponCollisionContext& InOutContext, class UBXTTrackWeaponCollision* InTask, TArray<FHitResult>& OutHitResults);
+	virtual void CollisionCheck(const TArray<ABXGear*>& InGears, float InStartTime, float InEndTime, class UBXTTrackWeaponCollision* InTask, TArray<FHitResult>& OutHitResults);
 	
 };

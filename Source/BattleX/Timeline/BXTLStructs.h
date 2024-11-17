@@ -292,6 +292,8 @@ public:
 		KeyFrameIndex = InOther.KeyFrameIndex;
 		RunTime = InOther.RunTime;
 		LoopCount = InOther.LoopCount;
+		bEarlyFinish = InOther.bEarlyFinish;
+		ForceJumpSection = InOther.ForceJumpSection;
 		RunningTasks.Reset();
 		RunningTasks.Append(InOther.RunningTasks);
 
@@ -308,6 +310,8 @@ public:
 		KeyFrameIndex = InOther.KeyFrameIndex;
 		RunTime = InOther.RunTime;
 		LoopCount = InOther.LoopCount;
+		bEarlyFinish = InOther.bEarlyFinish;
+		ForceJumpSection = InOther.ForceJumpSection;
 		RunningTasks.Reset();
 		RunningTasks.Append(InOther.RunningTasks);
 		InOther.RunningTasks.Reset();
@@ -329,6 +333,8 @@ public:
 			KeyFrameIndex = InOther.KeyFrameIndex;
 			RunTime = InOther.RunTime;
 			LoopCount = InOther.LoopCount;
+			bEarlyFinish = InOther.bEarlyFinish;
+			ForceJumpSection = InOther.ForceJumpSection;
 			RunningTasks.Reset();
 			RunningTasks.Append(InOther.RunningTasks);
 
@@ -350,6 +356,8 @@ public:
 			KeyFrameIndex = InOther.KeyFrameIndex;
 			RunTime = InOther.RunTime;
 			LoopCount = InOther.LoopCount;
+			bEarlyFinish = InOther.bEarlyFinish;
+			ForceJumpSection = InOther.ForceJumpSection;
 			RunningTasks.Reset();
 			RunningTasks.Append(InOther.RunningTasks);
 			InOther.RunningTasks.Reset();
@@ -372,6 +380,8 @@ public:
 		KeyFrameIndex = 0;
 		RunTime = 0.0f;
 		LoopCount = 0;
+		bEarlyFinish = false;
+		ForceJumpSection = -1;
 		RunningTasks.Empty();
 		PendingTasks.Empty();
 		BroadcastTasks.Empty();
@@ -393,6 +403,14 @@ public:
 	// 循环次数
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int32 LoopCount = 0;
+
+	// 提前结束
+	UPROPERTY(Transient, BlueprintReadWrite)
+	bool bEarlyFinish = false;
+	
+	// 强制跳转片段(大于等于0时起效)
+	UPROPERTY(Transient, BlueprintReadWrite)
+	int32 ForceJumpSection = -1;
 
 	// 正在运行的Task数据
 	UPROPERTY(Transient, BlueprintReadWrite)
@@ -596,12 +614,6 @@ public:
 
 	// 作用域图 Key:作用域ID  Value:X:父作用域ID Y:Task的全量索引
 	TMap<int64, FInt64Vector2> ScopeGraph;
-	
-#if WITH_EDITORONLY_DATA
-	// 预览对象到任务全量索引的映射表
-	UPROPERTY(Transient)
-	TMap<UObject*, FBXTLPreviewObjectData> PreviewObjects;
-#endif
 
 };
 

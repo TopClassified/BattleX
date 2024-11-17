@@ -48,7 +48,7 @@ protected:
 
 protected:
 	// 要执行的函数(默认只执行C++函数)
-	UPROPERTY(EditDefaultsOnly, Category = "Important", Meta = (Bitmask, BitmaskEnum = "EBXTProcessorFunction"))
+	UPROPERTY(EditDefaultsOnly, Category = "Important", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXTProcessorFunction"))
 	int32 ExecuteFunctions = 85;
 
 #pragma endregion Important

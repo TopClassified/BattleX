@@ -73,6 +73,29 @@ float UBXFunctionLibrary::AlignTime(float InTime, float InAlign)
 
 
 
+#pragma region GameplayTag
+FName UBXFunctionLibrary::GetLastGameplayTagSubName(const FGameplayTag& InTag)
+{
+	TArray<FGameplayTag> Tags;
+	InTag.ParseParentTags(Tags);
+
+	if (Tags.Num() <= 0)
+	{
+		return InTag.GetTagName();
+	}
+
+	FString Name = InTag.ToString();
+	int32 LastPoint;
+	Name.FindLastChar('.', LastPoint);
+	Name = Name.Right(Name.Len() - LastPoint);
+
+	return FName(Name);
+}
+
+#pragma endregion GameplayTag
+
+
+
 #pragma region Property
 void UBXFunctionLibrary::CopyStruct(void* DestAddress, void* SrcAddress, UScriptStruct* StructType, UObject* Dest, UObject* Src)
 {
@@ -332,7 +355,7 @@ bool UBXFunctionLibrary::AreCollinear(const FVector& A, const FVector& B, const 
 	// 处理长度为零的情况
 	if (LenV1 == 0 || LenV2 == 0) 
 	{
-		return false;
+		return true;
 	}
 
 	// 计算角度

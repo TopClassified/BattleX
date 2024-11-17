@@ -4,6 +4,8 @@
 #include "UObject/NoExportTypes.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 
+#include "GameplayTagContainer.h"
+
 #include "BXFunctionLibrary.generated.h" 
 
 
@@ -40,6 +42,16 @@ protected:
 	static int32 ShortIDCreater;
 
 #pragma endregion Misc
+
+
+
+#pragma region GameplayTag
+public:
+	// 获取GameplayTag的最后子标签的名称
+	UFUNCTION(BlueprintCallable, Category = "GameplayTag")
+	static FName GetLastGameplayTagSubName(const FGameplayTag& InTag);
+	
+#pragma endregion GameplayTag
 
 
 

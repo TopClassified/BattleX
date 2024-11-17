@@ -76,7 +76,7 @@ protected:
 
 protected:
 	// 要执行的函数(默认只执行C++函数)
-	UPROPERTY(EditDefaultsOnly, Category = "Equip", Meta = (Bitmask, BitmaskEnum = "EBXEquipFunction"))
+	UPROPERTY(EditDefaultsOnly, Category = "Equip", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXEquipFunction"))
 	int32 EquipFunctions = 85;
 
 #pragma endregion Equip
@@ -120,7 +120,7 @@ protected:
 
 protected:
 	// 要执行的函数(默认只执行C++函数)
-	UPROPERTY(EditDefaultsOnly, Category = "Use", Meta = (Bitmask, BitmaskEnum = "EBXUseFunction"))
+	UPROPERTY(EditDefaultsOnly, Category = "Use", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXUseFunction"))
 	int32 UseFunctions = 85;
 
 #pragma endregion Use
@@ -147,7 +147,7 @@ protected:
 	FGameplayTag CurrentState = BXGameplayTags::BXGearSlot_Default;
 
 	// 要执行的函数(默认只执行C++函数)
-	UPROPERTY(EditDefaultsOnly, Category = "State", Meta = (Bitmask, BitmaskEnum = "EBXChangeStateFunction"))
+	UPROPERTY(EditDefaultsOnly, Category = "State", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXChangeStateFunction"))
 	int32 ChangeStateFunctions = 1;
 
 #pragma endregion State
@@ -170,14 +170,5 @@ public:
 	class USkeletalMeshComponent* AttachTarget = nullptr;
 
 #pragma endregion Attach
-
-
-
-#pragma region Collision
-public:
-	UFUNCTION(BlueprintCallable, Category = "Collision")
-	virtual void GetHitResults(float InStartTime, FGameplayTagContainer& BoxTags, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, const FBXCFilter& Filter, TArray<FHitResult>& OutResults, FVector4 OverrideRules);
-
-#pragma endregion Collision
 
 };

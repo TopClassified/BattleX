@@ -54,12 +54,20 @@ public:
 
 	void Stop();
 
-	bool IsStopped() const;
+	void Bake();
 
+	bool IsBaking() const;
+
+	bool IsRunning() const;
+	
 	void ResetWorld();
 
 protected:
+	void InternalPlay();
+	
 	FBXTLRunTimeData* GetTimelineRunTimeData();
+	
+	void BakeNextSection();
 
 private:
 	// 开始播放的时间戳
@@ -70,6 +78,13 @@ private:
 
 	// 正在暂停
 	bool bPause = false;
+
+	// 正在烘焙的时间片段
+	TArray<FIntVector2> BakingSections;
+	// 正在烘焙第几个时间片段
+	int32 BakingSectionsHead = 0;
+	// 记录原始的起始片段数据
+	TArray<int32> OriginStartStartSectionIndexes;
 
 	// 时间轴运行数据ID
 	int64 TimelineRunTimeDataID = 0;

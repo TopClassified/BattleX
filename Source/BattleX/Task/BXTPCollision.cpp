@@ -60,11 +60,6 @@ void UBXTPTrackWeaponCollision::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 		return;
 	}
 
-	// 获取任务的自定义数据结构
-	FBXTPTrackWeaponCollisionContext& TPC = InOutRTTData.DynamicData.GetMutable<FBXTPTrackWeaponCollisionContext>();
-	TPC.CurrentCount = 0;
-	TPC.UpdateInterval = (Task->Duration - 0.005f) / FMath::Max(Task->Count, 1);
-
 	// 获取任务目标
 	TArray<AActor*> Targets;
 	UBXTProcessor::GetTargetActorList(InOutRTData, InOutRTTData, Targets);
@@ -72,6 +67,12 @@ void UBXTPTrackWeaponCollision::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 	{
 		return;
 	}
+
+	// 获取任务的自定义数据结构
+	FBXTPTrackWeaponCollisionContext& TPC = InOutRTTData.DynamicData.GetMutable<FBXTPTrackWeaponCollisionContext>();
+	TPC.CurrentCount = 0;
+	TPC.StartCheckTime = UBXFunctionLibrary::GetClientTimeSeconds(Targets[0]) - InOutRTTData.RunTime;
+	TPC.UpdateInterval = (Task->Duration - 0.005f) / FMath::Max(Task->Count, 1);
 	
 	// 获取对应的装备
 	TPC.Gears.Reset();
@@ -91,9 +92,6 @@ void UBXTPTrackWeaponCollision::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 
 		TPC.Gears.AddUnique(Gear);
 	}
-
-	// 记录时间点
-	TPC.LastCheckTime = UBXFunctionLibrary::GetClientTimeSeconds(Targets[0]) - InOutRTTData.RunTime;
 	
 	// 设置下一次更新时间
 	InOutRTTData.NextTick = FMath::Max(0.0f, TPC.UpdateInterval - InOutRTTData.RunTime);
@@ -109,7 +107,7 @@ void UBXTPTrackWeaponCollision::Update(FBXTLRunTimeData& InOutRTData, FBXTLSecti
 
 	// 获取任务的自定义数据结构
 	FBXTPTrackWeaponCollisionContext& TPC = InOutRTTData.DynamicData.GetMutable<FBXTPTrackWeaponCollisionContext>();
-	if (TPC.Gears.Num() <= 0)
+	if (TPC.Gears.Num() <= 0 || TPC.CurrentCount >= Task->Count)
 	{
 		// 不再更新
 		InOutRTTData.NextTick = -1.0f;
@@ -117,26 +115,27 @@ void UBXTPTrackWeaponCollision::Update(FBXTLRunTimeData& InOutRTData, FBXTLSecti
 	}
 	
 	// 计算理想检测次数
-	float ExpectTime = TPC.LastCheckTime;
-	int32 TargetCount = FMath::FloorToInt(InOutRTTData.RunTime / TPC.UpdateInterval);
+	int32 TargetCount = FMath::Min(FMath::FloorToInt(InOutRTTData.RunTime / TPC.UpdateInterval), Task->Count);
+	float StartTime = TPC.StartCheckTime + TPC.CurrentCount * TPC.UpdateInterval;
+	float EndTime = TPC.StartCheckTime + TargetCount * TPC.UpdateInterval;
 	
 	// 进行碰撞检测
 	FBXTHitResults FinalResults;
 	TArray<FHitResult> HitResults;
-	CollisionCheck(TPC, Task, HitResults);
+	CollisionCheck(TPC.Gears, StartTime, EndTime, Task, HitResults);
 
 	// 根据次数以及冷却，来触发事件
 	int32 FullIndex = UBXFunctionLibrary::GetTaskFullIndex(InOutRTData.Timeline, Task);
 	while (TPC.CurrentCount < TargetCount)
 	{
 		TPC.CurrentCount += 1;
-		ExpectTime += TPC.UpdateInterval;
+		StartTime += TPC.UpdateInterval;
 
 		// 根据冷却，决定是否合法
 		FinalResults.Results.Reset();
 		for (TArray<FHitResult>::TIterator It(HitResults); It; ++It)
 		{
-			if (CheckCoolDownCompleted(Task, *It, ExpectTime, TPC))
+			if (CheckCoolDownCompleted(Task, *It, StartTime, TPC))
 			{
 				FinalResults.Results.Add(*It);
 			}
@@ -170,28 +169,31 @@ void UBXTPTrackWeaponCollision::End(FBXTLRunTimeData& InOutRTData, FBXTLSectionR
 
 	// 获取任务的自定义数据结构
 	FBXTPTrackWeaponCollisionContext& TPC = InOutRTTData.DynamicData.GetMutable<FBXTPTrackWeaponCollisionContext>();
+	if (TPC.CurrentCount >= Task->Count)
+	{
+		return;
+	}
 
-	// 计算理想检测次数
-	float ExpectTime = TPC.LastCheckTime;
-	int32 TargetCount = FMath::FloorToInt(InOutRTTData.RunTime / TPC.UpdateInterval);
+	float StartTime = TPC.StartCheckTime + TPC.CurrentCount * TPC.UpdateInterval;
+	float EndTime = TPC.StartCheckTime + Task->Count * TPC.UpdateInterval;
 	
 	// 进行碰撞检测
 	FBXTHitResults FinalResults;
 	TArray<FHitResult> HitResults;
-	CollisionCheck(TPC, Task, HitResults);
+	CollisionCheck(TPC.Gears, StartTime, EndTime, Task, HitResults);
 
 	// 根据次数以及冷却，来触发事件
 	int32 FullIndex = UBXFunctionLibrary::GetTaskFullIndex(InOutRTData.Timeline, Task);
-	while (TPC.CurrentCount < TargetCount)
+	while (TPC.CurrentCount < Task->Count)
 	{
 		TPC.CurrentCount += 1;
-		ExpectTime += TPC.UpdateInterval;
+		StartTime += TPC.UpdateInterval;
 
 		// 根据冷却，决定是否合法
 		FinalResults.Results.Reset();
 		for (TArray<FHitResult>::TIterator It(HitResults); It; ++It)
 		{
-			if (CheckCoolDownCompleted(Task, *It, ExpectTime, TPC))
+			if (CheckCoolDownCompleted(Task, *It, StartTime, TPC))
 			{
 				FinalResults.Results.Add(*It);
 			}
@@ -212,56 +214,14 @@ void UBXTPTrackWeaponCollision::End(FBXTLRunTimeData& InOutRTData, FBXTLSectionR
 	}
 }
 
-void UBXTPTrackWeaponCollision::CollisionCheck(FBXTPTrackWeaponCollisionContext& InOutContext, UBXTTrackWeaponCollision* InTask, TArray<FHitResult>& OutHitResults)
+void UBXTPTrackWeaponCollision::CollisionCheck(const TArray<ABXGear*>& InGears, float InStartTime, float InEndTime, UBXTTrackWeaponCollision* InTask, TArray<FHitResult>& OutHitResults)
 {
 	OutHitResults.Reset();
-
-	if (InOutContext.Gears.Num() <= 0)
+	
+	if (InGears.Num() <= 0)
 	{
 		return;
 	}
 	
-	// 如果使用缓存数据
-	if (InTask->bCacheRTransform && InTask->CacheRTransfomList.Num() > 0)
-	{
-		
-	}
-	// 从武器中获取
-	else
-	{
-		// 遍历所有的装备对象
-		TArray<FHitResult> TempResults;
-		for (TArray<ABXGear*>::TIterator It(InOutContext.Gears); It; ++It)
-		{
-			ABXGear* Gear = *It;
-			if (!IsValid(Gear))
-			{
-				continue;
-			}
-
-			// 获取武器碰撞盒的命中数据
-			Gear->GetHitResults(InOutContext.LastCheckTime, InTask->WeaponHitBoxTags, InTask->ObjectTypes, InTask->EngineFilter, TempResults, InTask->CollisionOptimizationRules);
-
-			// 检查角色合法性
-			for (TArray<FHitResult>::TIterator HR(TempResults); HR; ++HR)
-			{
-				if (!CheckActor(InTask, Gear->OwnerComponent->GetOwner(), *HR))
-				{
-					HR.RemoveCurrentSwap();
-				}
-			}
-			
-			// 结果去重合并
-			UBXCollisionLibrary::CombineCollisionResults(TempResults, OutHitResults);
-		}
-
-		// 进行数量限制
-		if (OutHitResults.Num() > InTask->Limit)
-		{
-			LimitHitResults(InTask->LimitLogic, InTask->Limit, OutHitResults);
-		}
-	}
 	
-	// 更新检测时间点
-	InOutContext.LastCheckTime = UBXFunctionLibrary::GetClientTimeSeconds(InOutContext.Gears[0]);
 }

@@ -380,3 +380,36 @@ public:
 	FName LockBoneName = NAME_None;
 
 };
+
+
+
+// 轨迹点
+USTRUCT(BlueprintType)
+struct FBXTrajectoryPoint
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	// 位置
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	FTransform Transform = FTransform::Identity;
+
+	// 时间
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	float Time = 0.0f;
+	
+};
+
+// 轨迹点列表
+USTRUCT(BlueprintType)
+struct FBXTrajectoryPoints
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	// 轨迹列表
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	TArray<FBXTrajectoryPoint> List;
+	
+};
+

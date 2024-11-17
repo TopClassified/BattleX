@@ -10,6 +10,8 @@
 #include "Serialization/JsonSerializer.h"
 #include "Subsystems/SubsystemCollection.h"
 
+#include "GameplayTags.h"
+
 #include "BXEnums.h"
 
 #include "BXTLEditorDelegates.h" 
@@ -168,8 +170,8 @@ public:
 	// 是否暂停播放技能
 	bool IsPaused() const;
 
-	// 是否停止播放技能
-	bool IsStopped() const;
+	// 是否正在运行时间轴
+	bool IsRunning() const;
 
 	// 暂停技能
 	void Pause();
@@ -179,6 +181,12 @@ public:
 
 	// 步进技能
 	void Step();
+
+	// 烘焙数据
+	void Bake();
+
+	// 正在烘焙数据
+	bool IsBaking() const;
 
 	// 重置世界
 	void ResetWorld();
@@ -212,6 +220,9 @@ public:
 
 	virtual FGameplayTag GetLockedBodyPartType();
 
+	// 强制设置预览的帧率
+	void SetPreviewFPS(double InFPS);
+	
 	// 是否需要暂停世界
 	bool ShouldPauseWorld() const;
 
@@ -248,7 +259,7 @@ public:
 
 	// Task选取发生改变
 	void SetTaskSelection(TArray<class UBXTask*> InSelection, bool bIsOverride = true);
-
+	
 protected:
 	// 收集Task类型
 	void CollectAllTaskClass();

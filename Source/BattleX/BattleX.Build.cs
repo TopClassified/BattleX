@@ -38,7 +38,14 @@ public class BattleX : ModuleRules
 		(
 			new string[]
 			{
-				"Core",
+				"Core", 
+				"CoreUObject", 
+				"Engine", 
+				"InputCore", 
+				"EnhancedInput",
+				"Slate",
+				"SlateCore",
+				"DeveloperSettings",
 			}
 		);
 		
@@ -46,12 +53,6 @@ public class BattleX : ModuleRules
 		(
 			new string[]
 			{
-				"CoreUObject",
-				"Engine",
-				"Slate",
-				"SlateCore",
-                "DeveloperSettings",
-
                 "GameplayTags",
                 "StructUtils",
             }

@@ -23,27 +23,16 @@ struct FBXTEvent
 	GENERATED_USTRUCT_BODY()
 
 public:
-	FBXTEvent()
-	{
-#if WITH_EDITOR
-		UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
-	}
-
+	FBXTEvent() {}
+	
 	FBXTEvent(const FBXTEvent& InOther)
 	{
-#if WITH_EDITOR
-		UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
 		bMulticast = InOther.bMulticast;
 		Event.Append(InOther.Event);
 	}
 
 	FBXTEvent(FBXTEvent&& InOther)
 	{
-#if WITH_EDITOR
-		UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
 		bMulticast = InOther.bMulticast;
 		Event.Reset();
 		Event.Append(InOther.Event);
@@ -54,9 +43,6 @@ public:
 	{
 		if (this != &InOther)
 		{
-#if WITH_EDITOR
-			UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
 			bMulticast = InOther.bMulticast;
 			Event.Append(InOther.Event);
 		}
@@ -68,9 +54,6 @@ public:
 	{
 		if (this != &InOther)
 		{
-#if WITH_EDITOR
-			UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
 			bMulticast = InOther.bMulticast;
 			Event.Reset();
 			Event.Append(InOther.Event);
@@ -79,11 +62,6 @@ public:
 
 		return *this;
 	}
-
-#if WITH_EDITOR
-public:
-	int64 GetUniqueID() const { return UniqueID; }
-#endif
 
 public:
 	// 需要进行网络广播
@@ -94,7 +72,19 @@ public:
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadWrite)
 	TMap<TSoftObjectPtr<class UBXTask>, float> Event;
 
+	
 #if WITH_EDITORONLY_DATA
+public:
+	int64 GetUniqueID()
+	{
+		if (UniqueID <= 0)
+		{
+			UniqueID = UBXFunctionLibrary::GetUniqueID();
+		}
+		
+		return UniqueID;
+	}
+	
 private:
 	UPROPERTY()
 	int64 UniqueID = 0;
@@ -111,31 +101,26 @@ struct BATTLEX_API FBXTInputInfo
 	GENERATED_USTRUCT_BODY()
 
 public:
-	FBXTInputInfo()
-	{
-#if WITH_EDITOR
-		UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
-	}
-
+	FBXTInputInfo() {}
+	
 	FBXTInputInfo(const FBXTInputInfo& InOther)
 	{
-#if WITH_EDITOR
+	#if WITH_EDITORONLY_DATA
 		DisplayName = InOther.DisplayName;
 		StructType = InOther.StructType;
-		UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
+	#endif
+		
 		DataTask = InOther.DataTask;
 		DataTag = InOther.DataTag;
 	}
 
 	FBXTInputInfo(FBXTInputInfo&& InOther)
 	{
-#if WITH_EDITOR
+	#if WITH_EDITORONLY_DATA
 		DisplayName = InOther.DisplayName;
 		StructType = InOther.StructType;
-		UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
+	#endif
+		
 		DataTask = InOther.DataTask;
 		DataTag = InOther.DataTag;
 	}
@@ -144,11 +129,11 @@ public:
 	{
 		if (this != &InOther)
 		{
-#if WITH_EDITOR
+		#if WITH_EDITORONLY_DATA
 			DisplayName = InOther.DisplayName;
 			StructType = InOther.StructType;
-			UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
+		#endif
+			
 			DataTask = InOther.DataTask;
 			DataTag = InOther.DataTag;
 		}
@@ -160,39 +145,17 @@ public:
 	{
 		if (this != &InOther)
 		{
-#if WITH_EDITOR
+		#if WITH_EDITORONLY_DATA
 			DisplayName = InOther.DisplayName;
 			StructType = InOther.StructType;
-			UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
+		#endif
+			
 			DataTask = InOther.DataTask;
 			DataTag = InOther.DataTag;
 		}
 
 		return *this;
 	}
-
-#if WITH_EDITOR
-public:
-	void SetUniqueID(int64 InID) { UniqueID = InID; }
-	
-	int64 GetUniqueID() const { return UniqueID; }
-#endif
-
-#if WITH_EDITORONLY_DATA
-public:
-	// 输入的针脚名称
-	UPROPERTY(EditDefaultsOnly)
-	FName DisplayName = NAME_None;
-
-	// 输入的结构体类型
-	UPROPERTY(EditDefaultsOnly)
-	UScriptStruct* StructType = nullptr;
-
-private:
-	UPROPERTY()
-	int64 UniqueID = 0;
-#endif
 
 public:
 	// 获取哪个任务生产的数据
@@ -202,6 +165,60 @@ public:
 	// 获取名称为"xxx"的数据
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly)
 	FGameplayTag DataTag;
+
+	
+#if WITH_EDITORONLY_DATA
+public:
+	void SetDisplayName(const FName& InName)
+	{
+		DisplayName = InName;
+	}
+	
+	FName GetDisplayName()
+	{
+		return DisplayName;
+	}
+	
+	void SetStructType(UScriptStruct* InStructType)
+	{
+		StructType = InStructType;
+	}
+	
+	UScriptStruct* GetStructType()
+	{
+		return StructType;
+	}
+	
+	void SetUniqueID(int64 InID)
+	{
+		if (InID > 0)
+		{
+			UniqueID = InID;
+		}
+	}
+	
+	int64 GetUniqueID()
+	{
+		if (UniqueID <= 0)
+		{
+			UniqueID = UBXFunctionLibrary::GetUniqueID();
+		}
+		
+		return UniqueID;
+	}
+
+private:
+	// 输入的针脚名称
+	UPROPERTY(EditDefaultsOnly)
+	FName DisplayName = NAME_None;
+
+	// 输入的结构体类型
+	UPROPERTY(EditDefaultsOnly)
+	UScriptStruct* StructType = nullptr;
+	
+	UPROPERTY()
+	int64 UniqueID = 0;
+#endif
 
 };
 
@@ -214,29 +231,18 @@ struct BATTLEX_API FBXTOutputInfo
 	GENERATED_USTRUCT_BODY()
 
 public:
-	FBXTOutputInfo()
-	{ 
-#if WITH_EDITOR
-		UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
-	}
+	FBXTOutputInfo() {}
 
 	FBXTOutputInfo(FGameplayTag InTag, UScriptStruct* InStructType) : DataTag(InTag), StructType(InStructType) {}
 
 	FBXTOutputInfo(const FBXTOutputInfo& InOther)
 	{
-#if WITH_EDITOR
-		UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
 		DataTag = InOther.DataTag;
 		StructType = InOther.StructType;
 	}
 
 	FBXTOutputInfo(FBXTOutputInfo&& InOther)
 	{
-#if WITH_EDITOR
-		UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
 		DataTag = InOther.DataTag;
 		StructType = InOther.StructType;
 	}
@@ -245,9 +251,6 @@ public:
 	{
 		if (this != &InOther)
 		{
-#if WITH_EDITOR
-			UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
 			DataTag = InOther.DataTag;
 			StructType = InOther.StructType;
 		}
@@ -259,26 +262,12 @@ public:
 	{
 		if (this != &InOther)
 		{
-#if WITH_EDITOR
-			UniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
 			DataTag = InOther.DataTag;
 			StructType = InOther.StructType;
 		}
 
 		return *this;
 	}
-
-#if WITH_EDITOR
-public:
-	int64 GetUniqueID() const { return UniqueID; }
-#endif
-
-#if WITH_EDITORONLY_DATA
-private:
-	UPROPERTY()
-	int32 UniqueID = 0;
-#endif
 
 public:
 	// 输出的数据名称
@@ -289,6 +278,24 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	UScriptStruct* StructType = nullptr;
 
+	
+#if WITH_EDITORONLY_DATA
+public:
+	int64 GetUniqueID()
+	{
+		if (UniqueID <= 0)
+		{
+			UniqueID = UBXFunctionLibrary::GetUniqueID();
+		}
+		
+		return UniqueID;
+	}
+
+private:
+	UPROPERTY()
+	int64 UniqueID = 0;
+#endif
+	
 };
 
 
@@ -379,20 +386,9 @@ struct BATTLEX_API FBXTTransformCreater
 	GENERATED_USTRUCT_BODY()
 
 public:
-	FBXTTransformCreater()
-	{
-#if WITH_EDITOR
-		OriginInputUniqueID = UBXFunctionLibrary::GetUniqueID();
-		XAxisInputUniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
-	}
-	FBXTTransformCreater(EBXTCoordinateType InOrigin)
-	{
-#if WITH_EDITOR
-		OriginInputUniqueID = UBXFunctionLibrary::GetUniqueID();
-		XAxisInputUniqueID = UBXFunctionLibrary::GetUniqueID();
-#endif
-	}
+	FBXTTransformCreater() {}
+	
+	FBXTTransformCreater(EBXTCoordinateType InOrigin) : OriginType(InOrigin) {}
 
 public:
 	// 原点选取规则
@@ -440,13 +436,34 @@ public:
 
 #if WITH_EDITORONLY_DATA
 public:
+	int64 GetOriginInputUniqueID()
+	{
+		if (OriginInputUniqueID <= 0)
+		{
+			OriginInputUniqueID = UBXFunctionLibrary::GetUniqueID();
+		}
+
+		return OriginInputUniqueID;
+	}
+
+	int64 GetXAxisInputUniqueID()
+	{
+		if (XAxisInputUniqueID <= 0)
+		{
+			XAxisInputUniqueID = UBXFunctionLibrary::GetUniqueID();
+		}
+
+		return XAxisInputUniqueID;
+	}
+	
+private:
 	UPROPERTY()
 	int64 OriginInputUniqueID = 0;
 
 	UPROPERTY()
 	int64 XAxisInputUniqueID = 0;
-	
 #endif
+	
 };
 
 

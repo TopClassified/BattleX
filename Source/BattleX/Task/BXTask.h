@@ -27,11 +27,11 @@ public:
 
 public:
 	// 网络类型
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Important", Meta = (Bitmask, BitmaskEnum = "EBXTNetType"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Important", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXTNetType"))
 	int32 NetTypes = 7;
 
 	// 触发方式
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Important", Meta = (Bitmask, BitmaskEnum = "EBXTTriggerType"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Important", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXTTriggerType"))
 	int32 TriggerTypes = 1;
 
 	// 开始时间
@@ -47,7 +47,7 @@ public:
 	float Duration = 1.0f;
 
 	// 选取的目标
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Important", Meta = (Bitmask, BitmaskEnum = "EBXTTargetType"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Important", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXTTargetType"))
 	int32 TargetTypes = 1;
 	// 如果目标类型包含"碰撞目标"，在这里添加碰撞数据来源
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Important", Meta = (EditCondition = "bNeedCollisionInput", EditConditionHides))
@@ -114,6 +114,35 @@ public:
 	bool bNeedCollisionInput = false;
 #endif
 
+public:
+	// 刷新脚本属性
+	UFUNCTION(BlueprintImplementableEvent)
+	bool ScriptRefreshProperty();
+	
+	// 是否需要烘焙数据
+	UFUNCTION(BlueprintImplementableEvent)
+	bool NeedBakeData();
+
+	// 清理烘焙的旧数据
+	UFUNCTION(BlueprintNativeEvent)
+	void CleanBakedData();
+	virtual void CleanBakedData_Implementation();
+	
+	// 烘焙数据
+	UFUNCTION(BlueprintNativeEvent)
+	void BakingData(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData);
+	virtual void BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData);
+
+	// 烘焙数据后处理
+	UFUNCTION(BlueprintNativeEvent)
+	void PostBakeData();
+	virtual void PostBakeData_Implementation();
+	
+	// 根据动态数据，获取动态对象信息
+	UFUNCTION(BlueprintNativeEvent)
+	void GetDynamicObjectByRuntimeData(class UBXManager* InBXMgr, const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData);
+	virtual void GetDynamicObjectByRuntimeData_Implementation(class UBXManager* InBXMgr, const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData);
+	
 #if WITH_EDITOR
 public:
 	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
@@ -127,19 +156,16 @@ public:
 	virtual void CopyDataFromOther(UBXTask* Other);
 
 	virtual bool RefreshProperty();
-	UFUNCTION(BlueprintImplementableEvent)
-	bool ScriptRefreshProperty();
-
-	UFUNCTION(BlueprintNativeEvent)
-	void RefreshDataByPreviewObject(UObject* InObject, const struct FBXTLPreviewObjectData& InData);
 
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 	
 	virtual void RefreshTransformCreaters();
 
+	// 允许被动触发
+	virtual bool EnablePassiveTrigger();
+
 public:
 	FBXTRefreshInputOutput RefreshInputOutput;
-	
 #endif
 #pragma endregion Editor
 

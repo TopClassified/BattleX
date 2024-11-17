@@ -195,6 +195,9 @@ public:
 
 	// 根据ID获取时间轴运行数据
 	FBXTLRunTimeData* GetTimelineRunTimeDataByID(int64 InID);
+
+	// 开启/关闭时间片段跳转
+	void CloseSectionJump(bool InClose);
 	
 protected:
 	void InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDeltaTime);
@@ -231,6 +234,9 @@ protected:
 
 	// 正在更新时间轴运行数据
 	bool bUpdatingTimeline = false;
+
+	// 关闭时间片段跳转
+	bool bCloseSectionJump = false;
 
 #pragma endregion Timeline
 

@@ -75,11 +75,27 @@ FBXTLEditorViewportClient::~FBXTLEditorViewportClient()
 
 void FBXTLEditorViewportClient::Tick(float DeltaSeconds)
 {
-	FSimpleEditorViewportClient::Tick(DeltaSeconds);
+	double TickDelta = DeltaSeconds;
+	if (const UBXTLEditorSettings* Settings = GetDefault<UBXTLEditorSettings>())
+	{
+		TickDelta = 1.0f / Settings->PreviewTickRate;
+		TickDelta = FMath::FloorToDouble((RemainTime + DeltaSeconds) / TickDelta) * TickDelta;
+		RemainTime = RemainTime + DeltaSeconds - TickDelta;
+	}
+	if (ForceFPS > 0.0f)
+	{
+		TickDelta = 1.0f / ForceFPS;
+	}
+	if (TickDelta <= 0.0f)
+	{
+		return;
+	}
+	
+	FSimpleEditorViewportClient::Tick(TickDelta);
 
 	if (CachedEditor.IsValid() && !CachedEditor.Pin()->ShouldPauseWorld())
 	{
-		TickWorld(DeltaSeconds);
+		TickWorld(TickDelta);
 	}
 }
 
@@ -98,6 +114,11 @@ void FBXTLEditorViewportClient::TickWorld(float DeltaSeconds)
 	}
 
 	HandlerPreviewScenePostTick();
+}
+
+void FBXTLEditorViewportClient::SetForceFPS(double InFPS)
+{
+	ForceFPS = InFPS;
 }
 
 void FBXTLEditorViewportClient::HandlerPreviewScenePreTick()
@@ -127,7 +148,7 @@ void FBXTLEditorViewportClient::HandlerPreviewScenePostTick()
 void FBXTLEditorViewportClient::ProcessClick(FSceneView& View, HHitProxy* HitProxy, FKey Key, EInputEvent Event, uint32 HitX, uint32 HitY)
 {
 	// 处于运行时，屏蔽点击逻辑
-	if (CachedEditor.IsValid() && !CachedEditor.Pin()->IsStopped())
+	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}

@@ -807,6 +807,11 @@ FBXTLRunTimeData* UBXManager::GetTimelineRunTimeDataByID(int64 InID)
 	return TimelineRTDatas.Find(InID);
 }
 
+void UBXManager::CloseSectionJump(bool InClose)
+{
+	bCloseSectionJump = InClose;
+}
+
 void UBXManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDeltaTime)
 {
 	// 标记为更新中
@@ -890,20 +895,46 @@ void UBXManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDel
 		SectionData.RunTime += FixedDeltaTime;
 
 		// 结束时间片段
-		if (SectionData.RunTime >= Section.Duration)
+		if (bCloseSectionJump)
 		{
-			FinishTimelineSection(InOutData, SectionData, EBXTLFinishReason::FR_EndOfLife);
+			if (SectionData.RunTime >= Section.Duration || SectionData.bEarlyFinish)
+			{
+				FinishTimelineSection(InOutData, SectionData, EBXTLFinishReason::FR_EndOfLife);
+			}
+		}
+		else
+		{
+			if (SectionData.RunTime >= Section.Duration || SectionData.bEarlyFinish || SectionData.ForceJumpSection >= 0)
+			{
+				if (SectionData.bEarlyFinish || SectionData.ForceJumpSection >= 0)
+				{
+					FinishTimelineSection(InOutData, SectionData, EBXTLFinishReason::FR_Interrupt);
+				}
+				else
+				{
+					FinishTimelineSection(InOutData, SectionData, EBXTLFinishReason::FR_EndOfLife);
+				}
 
-			// 开始下一次循环 或 下一个时间片段
-			if (SectionData.LoopCount < Section.LoopTime)
-			{
-				SectionData.LoopCount += 1;
-			}
-			else if (Section.NextIndex >= 0)
-			{
-				SectionData.LoopCount = 1;
-				SectionData.Index = Section.NextIndex;
-			}
+				// 跳转到强制执行片段
+				if (SectionData.ForceJumpSection < 0)
+				{
+					SectionData.LoopCount = 1;
+					SectionData.Index = SectionData.ForceJumpSection;
+				}
+				// 开始下一次循环 或 下一个时间片段
+				else
+				{
+					if (SectionData.LoopCount < Section.LoopTime && !SectionData.bEarlyFinish)
+					{
+						SectionData.LoopCount += 1;
+					}
+					else if (Section.NextIndex >= 0)
+					{
+						SectionData.LoopCount = 1;
+						SectionData.Index = Section.NextIndex;
+					}	
+				}
+			}	
 		}
 
 		// 旧时间片段已经结束，且没有开启新的时间片段
