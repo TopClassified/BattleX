@@ -12,7 +12,7 @@
 
 
 
-UCLASS(Config = Editor, DefaultConfig, meta = (DisplayName = "BSA Editor Settings"))
+UCLASS(Config = Editor, DefaultConfig, meta = (DisplayName = "BXTLEditorSettings"))
 class BATTLEXEDITOR_API UBXTLEditorSettings : public UDeveloperSettings
 {
 	GENERATED_BODY()

@@ -10,48 +10,40 @@
 
 
 
-UBXTTrackWeaponCollision::UBXTTrackWeaponCollision()
+UBXTTrackHitBox::UBXTTrackHitBox()
 {
-	DisplayName = FText::FromString(TEXT("武器路径碰撞检测"));
+	DisplayName = FText::FromString(TEXT("碰撞盒轨迹命中检测"));
 }
 
-
-
 #pragma region Editor
-void UBXTTrackWeaponCollision::CleanBakedData_Implementation()
+void UBXTTrackHitBox::CleanBakedData_Implementation()
 {
 	BakedHBTrajectoryPoints.Reset();
 }
 
-void UBXTTrackWeaponCollision::BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData)
+void UBXTTrackHitBox::BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData)
 {
-	const FBXTPTrackWeaponCollisionContext& TPC = InOutRTTData.DynamicData.Get<FBXTPTrackWeaponCollisionContext>();
+	const FBXTPTrackHitBoxContext& TPC = InOutRTTData.DynamicData.Get<FBXTPTrackHitBoxContext>();
 	
-	for (TArray<ABXGear*>::TConstIterator It(TPC.Gears); It; ++It)
+	for (TArray<UBXShapeComponent*>::TConstIterator It(TPC.ShapeComponents); It; ++It)
 	{
-		ABXColdWeapon* CWeapon = Cast<ABXColdWeapon>(*It);
-		if (!CWeapon->IsValidLowLevelFast())
+		UBXShapeComponent* ShapeComponent = (*It);
+		if (!IsValid(ShapeComponent))
 		{
 			continue;
 		}
-
-		AActor* GearOwner = CWeapon->OwnerComponent->GetOwner();
-		if (!GearOwner->IsValidLowLevelFast())
-		{
-			continue;
-		}
-
-		USceneComponent* AnchorComp = UBXFunctionLibrary::GetSceneComponentByNameAndClass(GearOwner, AnchorComponent, nullptr);
-		if (!AnchorComp->IsValidLowLevelFast())
+		
+		AActor* HitBoxOwner = ShapeComponent->GetOwner();
+		if (!IsValid(HitBoxOwner))
 		{
 			continue;
 		}
 
 		FTransform Transform;
-		for (int32 i = 0; i < WeaponHitBoxTags.Num(); ++i)
+		for (int32 i = 0; i < HitBoxTags.Num(); ++i)
 		{
-			const FGameplayTag& Tag = WeaponHitBoxTags.GetByIndex(i);
-			if (!CWeapon->GetHitBoxTransform(Tag, Transform))
+			const FGameplayTag& Tag = HitBoxTags.GetByIndex(i);
+			if (!ShapeComponent->GetShapeTransformByTag(Tag, Transform))
 			{
 				continue;
 			}
@@ -69,14 +61,14 @@ void UBXTTrackWeaponCollision::BakingData_Implementation(const FBXTLRunTimeData&
 
 			FBXTrajectoryPoint NewPoint;
 			NewPoint.Time = InOutRTTData.RunTime;
-			NewPoint.Transform = Transform * AnchorComp->GetSocketTransform(AnchorSocket.BoneName).Inverse();
+			NewPoint.Transform = Transform * HitBoxOwner->GetTransform().Inverse();
 			
 			Points->List.Add(NewPoint);
 		}
 	}
 }
 
-void UBXTTrackWeaponCollision::PostBakeData_Implementation()
+void UBXTTrackHitBox::PostBakeData_Implementation()
 {
 	Super::PostBakeData_Implementation();
 
@@ -138,13 +130,13 @@ void UBXTTrackWeaponCollision::PostBakeData_Implementation()
 }
 
 #if WITH_EDITOR
-void UBXTTrackWeaponCollision::PreSave(FObjectPreSaveContext SaveContext)
+void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 {
 	Super::PreSave(SaveContext);
 	
 }
 
-void UBXTTrackWeaponCollision::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+void UBXTTrackHitBox::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	if (LifeType == EBXTLifeType::L_Instant)
 	{
@@ -157,9 +149,68 @@ void UBXTTrackWeaponCollision::PostEditChangeProperty(FPropertyChangedEvent& Pro
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 }
 
-bool UBXTTrackWeaponCollision::EnablePassiveTrigger()
+bool UBXTTrackHitBox::EnablePassiveTrigger()
 {
 	return false;
 }
 #endif
+#pragma endregion Editor
+
+
+
+
+
+
+UBXTTrackWeaponHitBox::UBXTTrackWeaponHitBox()
+{
+	DisplayName = FText::FromString(TEXT("武器碰撞盒轨迹命中检测"));
+}
+
+#pragma region Editor
+void UBXTTrackWeaponHitBox::BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData)
+{
+	const FBXTPTrackHitBoxContext& TPC = InOutRTTData.DynamicData.Get<FBXTPTrackHitBoxContext>();
+	
+	for (TArray<UBXShapeComponent*>::TConstIterator It(TPC.ShapeComponents); It; ++It)
+	{
+		ABXColdWeapon* CWeapon = Cast<ABXColdWeapon>((*It)->GetOwner());
+		if (!IsValid(CWeapon))
+		{
+			continue;
+		}
+
+		AActor* GearOwner = CWeapon->OwnerComponent->GetOwner();
+		if (!IsValid(GearOwner))
+		{
+			continue;
+		}
+
+		FTransform Transform;
+		for (int32 i = 0; i < HitBoxTags.Num(); ++i)
+		{
+			const FGameplayTag& Tag = HitBoxTags.GetByIndex(i);
+			if (!CWeapon->GetHitBoxTransform(Tag, Transform))
+			{
+				continue;
+			}
+			
+			FBXTrajectoryPoints* Points = BakedHBTrajectoryPoints.Find(Tag);
+			if (!Points)
+			{
+				BakedHBTrajectoryPoints.Add(Tag);
+				Points = BakedHBTrajectoryPoints.Find(Tag);
+			}
+			if (!Points)
+			{
+				continue;
+			}
+
+			FBXTrajectoryPoint NewPoint;
+			NewPoint.Time = InOutRTTData.RunTime;
+			NewPoint.Transform = Transform * GearOwner->GetTransform().Inverse();
+			
+			Points->List.Add(NewPoint);
+		}
+	}
+}
 #pragma endregion Editor

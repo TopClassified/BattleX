@@ -1,6 +1,32 @@
 #include "BXCharacterMovementComponent.h"
 
+#include "BXStructs.h"
 #include "GameFramework/Character.h"
+
+
+
+#pragma region Important
+void UBXCharacterMovementComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	UWorld* World = GetWorld();
+	if (IsValid(World) && IsValid(UpdatedComponent))
+	{
+		float CurrentTime = World->GetTimeSeconds();
+		TrajectoryPoints.Add(FBXTrajectoryPoint(UpdatedComponent->GetComponentTransform(), CurrentTime));
+	}
+
+	CleanTimer += DeltaTime;
+	if (CleanTimer > CleanInterval)
+	{
+		CleanTimer = 0.0f;
+
+		CleanTrajectoryPoints();
+	}
+}
+	
+#pragma endregion Important
 
 
 
@@ -405,3 +431,57 @@ bool UBXCharacterMovementComponent::DoJump(bool bReplayingMoves)
 }
 
 #pragma endregion Override
+
+
+
+#pragma region Record
+FTransform UBXCharacterMovementComponent::GetHistoryTransformByTime(float InTime)
+{
+	for (TArray<FBXTrajectoryPoint>::TIterator It(TrajectoryPoints); It; ++It)
+	{
+		if (It->Time >= InTime)
+		{
+			int32 CurrentIndex = It.GetIndex();
+			if (TrajectoryPoints.IsValidIndex(CurrentIndex - 1))
+			{
+				FTransform Start = TrajectoryPoints[CurrentIndex - 1].Transform;
+				float StartTime = TrajectoryPoints[CurrentIndex - 1].Time;
+				
+				FTransform End = TrajectoryPoints[CurrentIndex].Transform;
+				float EndTime = TrajectoryPoints[CurrentIndex].Time;
+				
+				return FTransform
+				(
+					FQuat::Slerp(Start.GetRotation(), End.GetRotation(), (InTime - StartTime) / (EndTime - StartTime + 1e-8)),
+					FMath::Lerp(Start.GetLocation(), End.GetLocation(), (InTime - StartTime) / (EndTime - StartTime + 1e-8)),
+					FMath::Lerp(Start.GetScale3D(), End.GetScale3D(), (InTime - StartTime) / (EndTime - StartTime + 1e-8))
+				);
+			}
+			else
+			{
+				return It->Transform;
+			}
+		}
+	}
+
+	if (IsValid(UpdatedComponent))
+	{
+		return UpdatedComponent->GetComponentTransform();
+	}
+
+	return FTransform();
+}
+
+void UBXCharacterMovementComponent::CleanTrajectoryPoints()
+{
+	float CurrentTime = GetWorld()->GetTimeSeconds();
+	TrajectoryPoints.RemoveAll
+	(
+		[&](const FBXTrajectoryPoint& A)
+		{
+			return CurrentTime - A.Time >= RecordTime;
+		}
+	);
+}
+
+#pragma endregion Record

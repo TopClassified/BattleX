@@ -53,36 +53,27 @@ public:
 
 
 
+
+
+
 UCLASS(BlueprintType, Blueprintable)
-class BATTLEX_API UBXTTrackWeaponCollision : public UBXTCollision
+class BATTLEX_API UBXTTrackHitBox : public UBXTCollision
 {
 	GENERATED_BODY()
 
 public:
-	UBXTTrackWeaponCollision();
+	UBXTTrackHitBox();
 
 public:
-	// 武器插槽
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	FGameplayTag WeaponSlot = BXGameplayTags::BXGearSlot_RightHand;
-
-	// 武器碰撞盒
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	FGameplayTagContainer WeaponHitBoxTags;
+	// 碰撞盒名称
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision")
+	FGameplayTagContainer HitBoxTags;
 
 	// 碰撞检测角度步进(当路径上点的角度差异过大时，数值越小，步进次数越多，性能消耗越大)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, AdvancedDisplay)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision", AdvancedDisplay)
 	float SweepAngleStep = 20.0f;
 
 	
-	// 锚点组件名称
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Bake")
-	FName AnchorComponent = NAME_None;
-
-	// 锚点插槽名称
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Bake")
-	FBXBoneSelector AnchorSocket;
-
 	/*
 	 * 对烘焙轨迹进行冗余点去除的规则
 	 * X:坐标共线判定误差(角度)，把在同一条直线上的位置进行排除
@@ -100,11 +91,11 @@ public:
 	
 #pragma region Editor
 public:
-	void CleanBakedData_Implementation() override;
+	virtual void CleanBakedData_Implementation() override;
 	
-	void BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData) override;
+	virtual void BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData) override;
 
-	void PostBakeData_Implementation() override;
+	virtual void PostBakeData_Implementation() override;
 	
 #if WITH_EDITOR
 public:
@@ -115,5 +106,30 @@ public:
 	virtual bool EnablePassiveTrigger() override;
 #endif
 #pragma endregion Editor
+};
 
+
+
+
+
+
+UCLASS(BlueprintType, Blueprintable)
+class BATTLEX_API UBXTTrackWeaponHitBox : public UBXTTrackHitBox
+{
+	GENERATED_BODY()
+
+public:
+	UBXTTrackWeaponHitBox();
+
+public:
+	// 武器插槽
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision")
+	FGameplayTag WeaponSlot = BXGameplayTags::BXGearSlot_RightHand;
+
+
+	
+#pragma region Editor
+public:
+	virtual void BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData) override;
+#pragma endregion Editor
 };

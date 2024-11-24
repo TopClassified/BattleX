@@ -76,29 +76,29 @@ public:
 #pragma region GlobalAPI
 public:
 	// 任务是否结束
-	UFUNCTION(BlueprintCallable, Category = "API")
+	UFUNCTION(BlueprintCallable, Category = "GlobalAPI")
 	static bool IsTaskCompleted(const FBXTLTaskRTData& InTaskData, EBXTLFinishReason& OutReason);
 
 	// 添加被动触发任务
-	UFUNCTION(BlueprintCallable, Category = "API")
+	UFUNCTION(BlueprintCallable, Category = "GlobalAPI")
 	static bool AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, int64 InScope, const FGameplayTag& InEventTag);
 
 	// 创建上下文数据作用域
-	UFUNCTION(BlueprintCallable, Category = "API")
+	UFUNCTION(BlueprintCallable, Category = "GlobalAPI")
 	static int64 GenerateContextScope(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData);
 	
 	// 根据目标掩码获取组件列表
-	UFUNCTION(BlueprintCallable, Category = "API")
+	UFUNCTION(BlueprintCallable, Category = "GlobalAPI")
 	static void GetTargetComponentList(const FBXTLRunTimeData& InRTData, const FBXTLTaskRTData& InTaskData, TArray<USceneComponent*>& OutComponents);
 	// 根据目标掩码获取角色列表
-	UFUNCTION(BlueprintCallable, Category = "API")
+	UFUNCTION(BlueprintCallable, Category = "GlobalAPI")
 	static void GetTargetActorList(const FBXTLRunTimeData& InRTData, const FBXTLTaskRTData& InTaskData, TArray<AActor*>& OutActors);
 	
 	// 解析坐标系创建器
-	UFUNCTION(BlueprintCallable, Category = "API")
+	UFUNCTION(BlueprintCallable, Category = "GlobalAPI")
 	static bool AnalyzeTransformCreater(const FBXTLRunTimeData& InRTData, const FBXTLTaskRTData& InTaskData, AActor* InTarget, const FBXTTransformCreater& InCreater, FBXTTransformCreaterResult& OutResult);
 	// 解析坐标系创建器列表
-	UFUNCTION(BlueprintCallable, Category = "API")
+	UFUNCTION(BlueprintCallable, Category = "GlobalAPI")
 	static bool AnalyzeTransformCreaterList(const FBXTLRunTimeData& InRTData, const FBXTLTaskRTData& InTaskData, AActor* InTarget, const TArray<FBXTTransformCreater>& InCreaterList, FBXTTransformCreaterResult& OutResult);
 	
 	// 写入上下文数据
@@ -113,7 +113,7 @@ public:
 		InOutRTData.DynamicDatas.Add(FBXTLDynamicDataSearchKey(InFullIndex, InDataTag), FInstancedStruct::Make<T>(InData));
 		InOutRTData.DynamicDatas.Add(FBXTLDynamicDataSearchKey(InFullIndex, InDataTag, InParentScope), FInstancedStruct::Make<T>(InData));
 	}
-	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CustomStructureParam = "InValue"), Category = "API")
+	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CustomStructureParam = "InValue"), Category = "GlobalAPI")
 	static void WriteContextData(UPARAM(ref) FBXTLRunTimeData& InOutRTData, int32 InFullIndex, FGameplayTag InDataTag, int64 InParentScope, int32 InValue);
 	DECLARE_FUNCTION(execWriteContextData)
 	{
@@ -206,7 +206,7 @@ public:
 
 		return nullptr;
 	}
-	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CustomStructureParam = "OutValue"), Category = "API")
+	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CustomStructureParam = "OutValue"), Category = "GlobalAPI")
 	static bool ReadContextData(const FBXTLRunTimeData& InOutRTData, int32 InFullIndex, FGameplayTag InDataTag, int64 InParentScope, int32& OutValue);
 	DECLARE_FUNCTION(execReadContextData)
 	{
@@ -289,6 +289,10 @@ public:
 		*(bool*)RESULT_PARAM = bResult;
 	}
 
+	// 根据特定世界时间(20秒以内)获取位置
+	UFUNCTION(BlueprintCallable, Category = "GlobalAPI")
+	static bool GetTargetTransformByWorldTime(AActor* InTarget, float InWorldTime, FTransform& OutTransform);
+	
 protected:
 	static USceneComponent* AnalyzeTransformCreaterCoordinateType(const FBXTLRunTimeData& InRTData, const FBXTLTaskRTData& InTaskData, const FBXTTransformCreater& InCreater, bool bUseOrigin, FTransform& OutTransform);
 	

@@ -1,5 +1,6 @@
 #include "BXTProcessor.h"
 
+#include "BXCharacterMovementComponent.h"
 #include "BXSettings.h"
 #include "BXTLAsset.h"
 #include "BXTLStructs.h"
@@ -527,6 +528,24 @@ USceneComponent* UBXTProcessor::AnalyzeTransformCreaterCoordinateType(const FBXT
 	}
 
 	return OutResult;
-} 
+}
+
+bool UBXTProcessor::GetTargetTransformByWorldTime(AActor* InTarget, float InWorldTime, FTransform& OutTransform)
+{
+	if (!IsValid(InTarget))
+	{
+		return false;
+	}
+
+	UBXCharacterMovementComponent* CMC = InTarget->FindComponentByClass<UBXCharacterMovementComponent>();
+	if (!IsValid(CMC))
+	{
+		return false;
+	}
+
+	OutTransform = CMC->GetHistoryTransformByTime(InWorldTime);
+
+	return true;
+}
 
 #pragma endregion GlobalAPI

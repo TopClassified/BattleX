@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 
 #include "BXGear.h"
+#include "BXShapeComponent.h"
 #include "BXTCollision.h"
 #include "BXTProcessor.h"
 
@@ -37,6 +38,10 @@ protected:
 	bool bUseScriptCheckCoolDown = false;
 	
 protected:
+	// 获取碰撞请求者
+	UFUNCTION(BlueprintCallable)
+	virtual AActor* GetCollisionRequester(UActorComponent* InComponent);
+	
 	// 检查冷却
 	UFUNCTION(BlueprintCallable)
 	bool CheckCoolDownCompleted(UBXTCollision* InTask, const FHitResult& InHitResult, float InCheckTime, FBXTPCollisionContext& InOutRTData);
@@ -60,27 +65,31 @@ protected:
 
 
 USTRUCT(BlueprintType)
-struct FBXTPTrackWeaponCollisionContext : public FBXTPCollisionContext
+struct FBXTPTrackHitBoxContext : public FBXTPCollisionContext
 {
 	GENERATED_USTRUCT_BODY()
 
 public:
+	// 碰撞盒管理组件列表
 	UPROPERTY(Transient, BlueprintReadWrite)
-	TArray<ABXGear*> Gears;
+	TArray<UBXShapeComponent*> ShapeComponents;
 
+	// 开始时间
 	UPROPERTY(Transient, BlueprintReadWrite)
-	float StartCheckTime = 0.0f;
+	float StartTime = 0.0f;
 	
+	// 检测间隔
 	UPROPERTY(Transient, BlueprintReadWrite)
 	float UpdateInterval = 0.0f;
-	
+
+	// 当前检测次数
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int32 CurrentCount = 0;
 	
 };
 
 UCLASS(BlueprintType, Blueprintable)
-class BATTLEX_API UBXTPTrackWeaponCollision : public UBXTPCollision
+class BATTLEX_API UBXTPTrackHitBox : public UBXTPCollision
 {
 	GENERATED_BODY()
 	
@@ -92,6 +101,24 @@ public:
 	virtual void End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, EBXTLFinishReason InReason) override;
 
 protected:
-	virtual void CollisionCheck(const TArray<ABXGear*>& InGears, float InStartTime, float InEndTime, class UBXTTrackWeaponCollision* InTask, TArray<FHitResult>& OutHitResults);
+	virtual void CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, int32 InTargetCheckCount);
+	
+};
+
+
+
+
+
+
+UCLASS(BlueprintType, Blueprintable)
+class BATTLEX_API UBXTPTrackWeaponHitBox : public UBXTPTrackHitBox
+{
+	GENERATED_BODY()
+	
+public:
+	virtual void Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData) override;
+
+protected:
+	virtual AActor* GetCollisionRequester(UActorComponent* InComponent) override;
 	
 };

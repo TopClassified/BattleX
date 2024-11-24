@@ -368,7 +368,7 @@ void FBXTLPreviewProxy::Bake()
 	CachedEditor.Pin()->GetBXManager()->CloseSectionJump(true);
 
 	// 设置烘焙时的帧率
-	CachedEditor.Pin()->SetPreviewFPS(200.0f);
+	CachedEditor.Pin()->SetPreviewFPS(100.0f);
 	
 	// 烘焙时间片段
 	BakeNextSection();
@@ -475,7 +475,7 @@ void FBXTLPreviewProxy::BakeNextSection()
 			FBXTLSection& Section = CachedAsset->Sections[i];
 			for (int32 j = 0; j < Section.TaskList.Num(); ++j)
 			{
-				if (!Section.TaskList[j]->IsValidLowLevelFast())
+				if (!IsValid(Section.TaskList[j]))
 				{
 					continue;
 				}

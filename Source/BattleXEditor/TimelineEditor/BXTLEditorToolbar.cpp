@@ -118,7 +118,7 @@ void FBXTLEditorToolbar::FillTimelineModeToolbar(FToolBarBuilder& ToolbarBuilder
 		);
 
 		UToolMenu* ProcessDataMenu = UToolMenus::Get()->ExtendMenu("BXTLEditor.BXTLEditorToolBar.ProcessData");
-		FToolMenuSection& Section = ProcessDataMenu->AddSection("ProcessData", LOCTEXT("BSAEditor.ProcessData", "ProcessData"));
+		FToolMenuSection& Section = ProcessDataMenu->AddSection("ProcessData", LOCTEXT("BXTLEditor.ProcessData", "ProcessData"));
 		Section.AddMenuEntry
 		(
 			"Refresh All Timeline Asset",

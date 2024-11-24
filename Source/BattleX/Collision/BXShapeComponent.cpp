@@ -1,5 +1,7 @@
 #include "BXShapeComponent.h"
 
+#include "BXFunctionLibrary.h"
+
 
 
 #pragma region Important 
@@ -9,6 +11,38 @@ UBXShapeComponent::UBXShapeComponent()
 }
 
 #pragma endregion Important
+
+
+
+#pragma region API
+bool UBXShapeComponent::GetShapeTransformByTag(const FGameplayTag& InTag, FTransform& OutTransform)
+{
+	FBXShapeInformation* Information = ShapeInformations.Find(InTag);
+	if (!Information)
+	{
+		return false;
+	}
+
+	AActor* Owner = GetOwner();
+	if (!IsValid(Owner))
+	{
+		return false;
+	}
+	
+	// 找到挂接的父组件
+	TWeakObjectPtr<USceneComponent> AttachedComponent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, Information->AttachParent, nullptr, false);;
+	if (!AttachedComponent.IsValid())
+	{
+		AttachedComponent = Owner->GetRootComponent();
+	}
+
+	// 计算碰撞盒世界位置
+	OutTransform = Information->Relation * AttachedComponent->GetSocketTransform(Information->Socket.BoneName);
+
+	return true;
+}
+	
+#pragma endregion API
 
 
 

@@ -50,6 +50,10 @@ protected:
 
 #pragma region HitBox
 public:
+	// 获取碰撞盒管理组件
+	UFUNCTION(BlueprintCallable)
+	UBXShapeComponent* GetHitBoxComponent();
+	
 	// 获取碰撞盒当前位置
 	UFUNCTION(BlueprintCallable)
 	bool GetHitBoxTransform(const FGameplayTag& InTag, FTransform& OutTransform);

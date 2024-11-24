@@ -27,6 +27,15 @@ public:
 
 
 
+#pragma region API
+public:
+	UFUNCTION(BlueprintCallable)
+	bool GetShapeTransformByTag(const FGameplayTag& InTag, FTransform& OutTransform);
+	
+#pragma endregion API
+
+
+
 #pragma region Editor
 #if WITH_EDITOR
 public:

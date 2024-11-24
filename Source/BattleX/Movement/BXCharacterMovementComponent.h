@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
+#include "BXStructs.h"
+
 #include "BXCharacterMovementComponent.generated.h"
 
 
@@ -23,8 +25,16 @@ class BATTLEX_API UBXCharacterMovementComponent : public UCharacterMovementCompo
 	
 #pragma region Important
 public:
-
+	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction) override;
+	
 protected:
+	// 清理时间间隔
+	UPROPERTY(EditDefaultsOnly)
+	float CleanInterval = 30.0f;
+
+	// 清理计时器
+	UPROPERTY(Transient)
+	float CleanTimer = 0.0f;
 	
 #pragma endregion Important
 
@@ -123,12 +133,22 @@ public:
 
 #pragma region Record
 public:
+	// 根据时间获取历史位置
 	UFUNCTION(BlueprintCallable, Category = "Record")
-	FTransform GetTransformHistoryByTime(float InTime);
+	FTransform GetHistoryTransformByTime(float InTime);
+
+	// 清理超时运行轨迹
+	UFUNCTION(BlueprintCallable, Category = "Record")
+	void CleanTrajectoryPoints();
 	
 protected:
+	// 记录时长
+	UPROPERTY(EditDefaultsOnly, Category = "Record")
+	float RecordTime = 20.0f;
+	
+	// 角色运行轨迹
 	UPROPERTY(Transient)
-	TArray<>
+	TArray<FBXTrajectoryPoint> TrajectoryPoints;
 	
 #pragma endregion Record
 	

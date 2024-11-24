@@ -53,7 +53,7 @@ TSharedRef< FSlateStyleSet > FBXTLEditorStyle::Create()
 	FString ResPath = FPaths::ProjectContentDir() + FString(TEXT("Editor"));
 	Style->SetContentRoot(ResPath);
 
-	Style->Set("BSAEditor.DataProcess", new IMAGE_PLUGIN_BRUSH(TEXT("Icons/DataProcess"), Icon40x40));
+	Style->Set("BXTLEditor.DataProcess", new IMAGE_PLUGIN_BRUSH(TEXT("Icons/DataProcess"), Icon40x40));
 	Style->Set("Sequencer.PhotoStudio", new IMAGE_PLUGIN_BRUSH(TEXT("Icons/PhotoStudio"), Icon16x16));
 
 	FTextBlockStyle NormalText = FTextBlockStyle()

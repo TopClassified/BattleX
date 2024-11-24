@@ -390,6 +390,10 @@ struct FBXTrajectoryPoint
 	GENERATED_USTRUCT_BODY()
 
 public:
+	FBXTrajectoryPoint() {}
+	FBXTrajectoryPoint(const FTransform& InTransform, const float& InTime) : Transform(InTransform), Time(InTime) {}
+
+public:
 	// 位置
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	FTransform Transform = FTransform::Identity;

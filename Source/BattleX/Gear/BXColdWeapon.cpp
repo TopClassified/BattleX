@@ -8,6 +8,7 @@
 #include "BXFunctionLibrary.h"
 
 
+
 #pragma region Important
 ABXColdWeapon::ABXColdWeapon(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
@@ -73,6 +74,16 @@ void ABXColdWeapon::InternalChangeState(FGameplayTag NewState)
 
 
 #pragma region HitBox
+UBXShapeComponent* ABXColdWeapon::GetHitBoxComponent()
+{
+	if (!IsValid(HitBoxComponent))
+	{
+		return nullptr;
+	}
+	
+	return HitBoxComponent;
+}
+
 bool ABXColdWeapon::GetHitBoxTransform(const FGameplayTag& InTag, FTransform& OutTransform)
 {
 	if (!IsValid(HitBoxComponent))
@@ -80,18 +91,8 @@ bool ABXColdWeapon::GetHitBoxTransform(const FGameplayTag& InTag, FTransform& Ou
 		return false;
 	}
 
-	if (FBXShapeInformation* SInfo = HitBoxComponent->ShapeInformations.Find(InTag))
+	if (HitBoxComponent->GetShapeTransformByTag(InTag, OutTransform))
 	{
-		// 找到挂接的父组件
-		TWeakObjectPtr<USceneComponent> AttachedComponent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, SInfo->AttachParent, nullptr, false);;
-		if (!AttachedComponent.IsValid())
-		{
-			AttachedComponent = GetRootComponent();
-		}
-
-		// 计算碰撞盒世界位置
-		OutTransform = SInfo->Relation * AttachedComponent->GetSocketTransform(SInfo->Socket.BoneName);
-
 		return true;
 	}
 
