@@ -10,6 +10,29 @@
 
 
 
+#pragma region Editor
+#if WITH_EDITOR
+void UBXTCollision::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+{
+	if (LifeType == EBXTLifeType::L_Duration || LifeType == EBXTLifeType::L_DurationTimeline)
+	{
+		Count = FMath::Floor(Duration / Interval);
+	}
+	else
+	{
+		Count = 0;
+	}
+	
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+}
+#endif
+#pragma endregion Editor
+
+
+
+
+
+
 UBXTTrackHitBox::UBXTTrackHitBox()
 {
 	DisplayName = FText::FromString(TEXT("碰撞盒轨迹命中检测"));

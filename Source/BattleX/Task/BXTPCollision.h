@@ -77,10 +77,6 @@ public:
 	// 开始时间
 	UPROPERTY(Transient, BlueprintReadWrite)
 	float StartTime = 0.0f;
-	
-	// 检测间隔
-	UPROPERTY(Transient, BlueprintReadWrite)
-	float UpdateInterval = 0.0f;
 
 	// 当前检测次数
 	UPROPERTY(Transient, BlueprintReadWrite)

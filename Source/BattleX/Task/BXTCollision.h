@@ -16,10 +16,14 @@ class BATTLEX_API UBXTCollision : public UBXTask
 	GENERATED_BODY()
 	
 public:
-	// 碰撞检测次数(检测频率=时长/次数)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision", Meta = (ClampMin = "1"))
-	float Count = 1;
+	// 碰撞检测间隔
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision", Meta = (ClampMin = "0.001"))
+	float Interval = 0.1f;
 
+	// 碰撞检测次数(小于等于0时，代表次数不定)
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadWrite, Category = "Collision")
+	int32 Count = 0;
+	
 	// 碰撞检测冷却
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision", Meta = (ClampMin = "0.1"))
 	float CoolDown = 10.0f;
@@ -48,7 +52,14 @@ public:
 	// 碰撞结果引擎层筛选
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter")
 	FBXCFilter EngineFilter;
-	
+
+
+#pragma region Editor
+#if WITH_EDITOR
+public:
+	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
+#pragma endregion Editor
 };
 
 
@@ -88,7 +99,6 @@ public:
 	TMap<FGameplayTag, FBXTrajectoryPoints> BakedHBTrajectoryPoints;
 
 
-	
 #pragma region Editor
 public:
 	virtual void CleanBakedData_Implementation() override;
@@ -127,7 +137,6 @@ public:
 	FGameplayTag WeaponSlot = BXGameplayTags::BXGearSlot_RightHand;
 
 
-	
 #pragma region Editor
 public:
 	virtual void BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData) override;

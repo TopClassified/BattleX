@@ -82,7 +82,6 @@ void UBXTPTrackHitBox::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& 
 	FBXTPTrackHitBoxContext& TPC = InOutRTTData.DynamicData.GetMutable<FBXTPTrackHitBoxContext>();
 	TPC.CurrentCount = 0;
 	TPC.StartTime = Targets[0]->GetWorld()->GetTimeSeconds() - InOutRTTData.RunTime;
-	TPC.UpdateInterval = (Task->Duration - 0.005f) / FMath::Max(Task->Count, 1);
 
 	// 当前时间
 	float CurrentTime = FPlatformTime::Seconds();
@@ -103,7 +102,7 @@ void UBXTPTrackHitBox::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& 
 	}
 	
 	// 设置下一次更新时间
-	InOutRTTData.NextTick = FMath::Max(0.0f, TPC.UpdateInterval - InOutRTTData.RunTime);
+	InOutRTTData.NextTick = FMath::Max(0.0f, Task->Interval - InOutRTTData.RunTime);
 }
 
 void UBXTPTrackHitBox::Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, float InDeltaTime)
@@ -124,13 +123,13 @@ void UBXTPTrackHitBox::Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData&
 	}
 	
 	// 计算理想检测次数
-	int32 TargetCount = FMath::Min(FMath::FloorToInt(InOutRTTData.RunTime / TPC.UpdateInterval), Task->Count);
+	int32 TargetCount = FMath::Min(FMath::FloorToInt(InOutRTTData.RunTime / Task->Interval), Task->Count);
 
 	// 碰撞检测 并 触发事件
 	CollisionCheck(InOutRTData, InOutRTSData, InOutRTTData, TargetCount);
 
 	// 设置下一次更新间隔
-	InOutRTTData.NextTick = TPC.UpdateInterval - (InOutRTTData.RunTime - TargetCount * TPC.UpdateInterval);
+	InOutRTTData.NextTick = Task->Interval - (InOutRTTData.RunTime - TargetCount * Task->Interval);
 }
 	
 void UBXTPTrackHitBox::End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, EBXTLFinishReason InReason)
@@ -141,10 +140,18 @@ void UBXTPTrackHitBox::End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& In
 		return;
 	}
 
-	// 碰撞检测 并 触发事件
-	CollisionCheck(InOutRTData, InOutRTSData, InOutRTTData, Task->Count);
+	// 补全碰撞检测次数 并 触发事件
+	if (InReason == EBXTLFinishReason::FR_EndOfLife && Task->Count > 0)
+	{
+		CollisionCheck(InOutRTData, InOutRTSData, InOutRTTData, Task->Count);
+	}
+	else
+	{
+		CollisionCheck(InOutRTData, InOutRTSData, InOutRTTData, FMath::Min(FMath::FloorToInt(InOutRTTData.RunTime / Task->Interval), Task->Count));
+	}
 }
 
+#pragma optimize("", off)
 void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, int32 InTargetCheckCount)
 {
 	UBXTTrackHitBox* Task = Cast<UBXTTrackHitBox>(InOutRTTData.Task);
@@ -166,13 +173,13 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 	TArray<FHitResult> HitResults;
 	TArray<FHitResult> TempHitResults;
 	TArray<FTransform> HitBoxTransforms;
-	int32 Step = FMath::Floor(TPC.UpdateInterval / 0.1f) + 1;
-	float StepTime = TPC.UpdateInterval / Step;
+	int32 Step = FMath::FloorToInt(Task->Interval / 0.1f) + 1;
+	float StepTime = Task->Interval / Step;
 
 	// 碰撞查询
-	float StartTime = TPC.CurrentCount * TPC.UpdateInterval;
-	float StopTime = InTargetCheckCount * TPC.UpdateInterval;
-	for (float CurrentTime = StartTime; CurrentTime < StopTime + 1e-6; CurrentTime = CurrentTime + TPC.UpdateInterval)
+	float StartTime = TPC.CurrentCount * Task->Interval;
+	float StopTime = InTargetCheckCount * Task->Interval;
+	for (float CurrentTime = StartTime; CurrentTime < StopTime - 1e-6; CurrentTime = CurrentTime + Task->Interval)
 	{
 		for (TArray<UBXShapeComponent*>::TIterator SComp(TPC.ShapeComponents); SComp; ++SComp)
 		{
@@ -330,7 +337,7 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 
 	TPC.CurrentCount = InTargetCheckCount;
 }
-
+#pragma optimize("", on)
 
 
 
@@ -356,7 +363,6 @@ void UBXTPTrackWeaponHitBox::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRT
 	FBXTPTrackHitBoxContext& TPC = InOutRTTData.DynamicData.GetMutable<FBXTPTrackHitBoxContext>();
 	TPC.CurrentCount = 0;
 	TPC.StartTime = Targets[0]->GetWorld()->GetTimeSeconds() - InOutRTTData.RunTime;
-	TPC.UpdateInterval = (Task->Duration - 0.002f) / FMath::Max(Task->Count, 1);
 	
 	// 当前时间
 	float CurrentTime = FPlatformTime::Seconds();
@@ -383,7 +389,7 @@ void UBXTPTrackWeaponHitBox::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRT
 	}
 	
 	// 设置下一次更新时间
-	InOutRTTData.NextTick = FMath::Max(0.0f, TPC.UpdateInterval - InOutRTTData.RunTime);
+	InOutRTTData.NextTick = FMath::Max(0.0f, Task->Interval - InOutRTTData.RunTime);
 }
 
 AActor* UBXTPTrackWeaponHitBox::GetCollisionRequester(UActorComponent* InComponent)
