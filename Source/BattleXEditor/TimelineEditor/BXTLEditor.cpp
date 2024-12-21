@@ -1,5 +1,6 @@
 #include "BXTLEditor.h"
 #include "UObject/SavePackage.h"
+#include "UObject/ObjectSaveContext.h"
 #include "Modules/ModuleManager.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -28,10 +29,10 @@
 #include "TabFactory/BXTLEditorMode.h"
 #include "TabFactory/SBXTLTaskTab.h"
 
-#include "BXManager.h"
+#include "BXTLManager.h"
 #include "BXTLAsset.h"
 #include "BXGameplayTags.h"
-
+#include "BXSettings.h"
 
 
 const FName BXTLEditorAppIdentifier = TEXT("BXTLEditor");
@@ -130,8 +131,7 @@ void FBXTLEditor::InitializeEditor(UBXTLAsset* InAsset, const TSharedPtr<IToolki
 	{
 		BXTLGraph->Init();
 	}
-		
-
+	
 	// 初始化UE的资源编辑器
 	const bool bCreateDefaultStandaloneMenu = true;
 	const bool bCreateDefaultToolbar = true;
@@ -144,6 +144,8 @@ void FBXTLEditor::InitializeEditor(UBXTLAsset* InAsset, const TSharedPtr<IToolki
 
 	// 创建预览场景
 	CreatePreviewScene();
+	// 初始化管理器
+	InitializeManager();
 	// 初始化预览场景
 	InitPreviewContext();
 
@@ -257,13 +259,19 @@ void FBXTLEditor::OnClose()
 		PreviewScene->Finish();
 	}
 
-	if (CachedManager.IsValid())
+	for (int32 i = CachedManagers.Num() - 1; i >= 0; --i)
 	{
-		CachedManager->Deinitialize();
-		CachedManager->RemoveFromRoot();
-		CachedManager->MarkAsGarbage();
-		CachedManager = nullptr;
+		UBXManager* Manager = CachedManagers[i].Get();
+		if (!IsValid(Manager))
+		{
+			continue;
+		}
+
+		Manager->Deinitialize();
+		Manager->RemoveFromRoot();
+		Manager->MarkAsGarbage();
 	}
+	CachedManagers.Empty();
 
 	if (UBXTLGraph* BXTLGraph = Cast<UBXTLGraph>(EditAsset->Graph))
 	{
@@ -278,6 +286,32 @@ void FBXTLEditor::OnClose()
 UBXTLAsset* FBXTLEditor::GetEditingAsset()
 {
 	return Cast<UBXTLAsset>(GetEditingObject());
+}
+
+void FBXTLEditor::InitializeManager()
+{
+	if (const UBXSettings* Settings = GetDefault<UBXSettings>())
+	{
+		for (TArray<TSubclassOf<UBXManager>>::TConstIterator It(Settings->ManagerClasses); It; ++It)
+		{
+			UClass* ClassType = *It;
+			if (!IsValid(ClassType))
+			{
+				continue;
+			}
+		
+			UBXManager* Manager = NewObject<UBXManager>(PreviewScene->GetWorld(), ClassType);
+			if (!IsValid(Manager))
+			{
+				continue;
+			}
+
+			Manager->AddToRoot();
+			Manager->Initialize();
+
+			CachedManagers.Add(Manager);
+		}
+	}
 }
 
 void FBXTLEditor::SaveAsset_Execute()
@@ -555,10 +589,10 @@ void FBXTLEditor::ResetWorld()
 void FBXTLEditor::ShowCollision()
 {
 	bShowCollision = !bShowCollision;
-
-	if (CachedManager.IsValid())
+	
+	if (UBXTLManager* Manager = GetCachedManager<UBXTLManager>())
 	{
-		CachedManager->ChangeShowCollision(bShowCollision);
+		Manager->ChangeShowCollision(bShowCollision);
 	}
 
 	TSharedPtr<FBXTLEditorViewportClient> ViewportClient = StaticCastSharedPtr<FBXTLEditorViewportClient>(Viewport.Get()->GetViewportClient());
@@ -570,16 +604,17 @@ void FBXTLEditor::ShowCollision()
 
 void FBXTLEditor::RefreshTimelineAssetProperty()
 {
-	if (!CachedManager.IsValid())
+	UBXTLManager* Manager = GetCachedManager<UBXTLManager>();
+	if (!Manager)
 	{
 		return;
 	}
 
 	bool Flag = false;
-	TArray<int32> IDs = CachedManager->GetTimelineAssetIDs();
+	TArray<int32> IDs = Manager->GetTimelineAssetIDs();
 	for (int32 i = 0; i < IDs.Num(); ++i)
 	{
-		TSoftObjectPtr<UBXTLAsset> AssetPath = CachedManager->GetTimelineAssetByID(IDs[i]);
+		TSoftObjectPtr<UBXTLAsset> AssetPath = Manager->GetTimelineAssetByID(IDs[i]);
 		if (AssetPath.IsNull())
 		{
 			continue;
@@ -726,9 +761,6 @@ void FBXTLEditor::CreatePreviewScene()
 		FString PreviewWorldName = TEXT("BXTLEW") + FString::FromInt(FBXTLEditor::BXTLEditorIndex);
 		PreviewWorld->Rename(*PreviewWorldName, PreviewWorld->GetOuter());
 	}
-
-	// 创建BX管理器
-	GetBXManager();
 }
 
 void FBXTLEditor::CreatePreviewProxy()
@@ -759,18 +791,6 @@ void FBXTLEditor::ResetPreviewContext()
 
 
 #pragma region Core
-UBXManager* FBXTLEditor::GetBXManager()
-{ 
-	if (!CachedManager.IsValid())
-	{
-		CachedManager = NewObject<UBXManager>(PreviewScene.IsValid() ? PreviewScene->GetWorld() : nullptr);
-		CachedManager->Initialize();
-		CachedManager->AddToRoot();
-	}
-
-	return CachedManager.Get();
-}
-
 void FBXTLEditor::CollectAllTaskClass()
 {
 	// 筛选出Task蓝图资源

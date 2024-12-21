@@ -700,3 +700,25 @@ public:
 	TMap<FGameplayTag, FInstancedStruct> InputDatas;
 
 };
+
+
+
+// 时间轴事件广播参数
+USTRUCT(BlueprintType)
+struct FBXTLEventParameter
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	FBXTLEventParameter() {}
+	FBXTLEventParameter(int64 InID, EBXTLFinishReason InReason) : UniqueID(InID), FinishReason(InReason) {}
+	
+public:
+	// 时间轴唯一ID
+	UPROPERTY(Transient, BlueprintReadWrite)
+	int64 UniqueID = 0;
+
+	// 时间轴结束原因
+	UPROPERTY(Transient, BlueprintReadWrite)
+	EBXTLFinishReason FinishReason = EBXTLFinishReason::FR_TMax;
+};

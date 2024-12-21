@@ -4,16 +4,13 @@
 #include "UObject/GCObject.h"
 #include "EditorUndoClient.h"
 #include "GraphEditor.h"
-#include "WorkflowOrientedApp/WorkflowTabManager.h"
 #include "WorkflowOrientedApp/WorkflowCentricApplication.h"
-#include "AdvancedPreviewSceneModule.h"
 #include "Serialization/JsonSerializer.h"
 #include "Subsystems/SubsystemCollection.h"
 
 #include "GameplayTags.h"
 
-#include "BXEnums.h"
-
+#include "BXManager.h"
 #include "BXTLEditorDelegates.h" 
 
 
@@ -69,6 +66,9 @@ public:
 
 	// 获取正在编辑的资源
 	class UBXTLAsset* GetEditingAsset();
+
+	// 初始化管理器
+	void InitializeManager();
 
 	// 保存
 	void SaveAsset_Execute() override;
@@ -252,7 +252,27 @@ private:
 
 #pragma region Core
 public:
-	class UBXManager* GetBXManager();
+	template<typename T>
+	T* GetCachedManager()
+	{
+		for (int32 i = 0; i < CachedManagers.Num(); ++i)
+		{
+			UBXManager* Manager = CachedManagers[i].Get();
+			if (!IsValid(Manager))
+			{
+				continue;
+			}
+
+			if (!Manager->GetClass()->IsChildOf(T::StaticClass()))
+			{
+				continue;
+			}
+
+			return Cast<T>(Manager);
+		}
+
+		return nullptr;
+	}
 
 	// 获取当前选中的Task
 	TArray<class UBXTask*> GetTaskSelection();
@@ -270,7 +290,8 @@ public:
 	TArray<class UUserDefinedEnum*> EnumList;
 
 private:
-	TWeakObjectPtr<class UBXManager> CachedManager = nullptr;
+	// 缓存的管理器列表
+	TArray<TWeakObjectPtr<UBXManager>> CachedManagers;
 
 	struct FSelectedTaskInfo
 	{

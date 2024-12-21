@@ -4,7 +4,7 @@
 #include "UObject/NoExportTypes.h"
 
 #include "BXTLStructs.h"
-#include "BXTimelineComponent.h" 
+#include "BXTLComponent.h" 
 
 
 
@@ -25,7 +25,7 @@ public:
 	void GetRunningSectionIndexes(TArray<int32>& OutIndexes);
 
 private:
-	UBXTimelineComponent* GetPreviewTimelineComponent();
+	UBXTLComponent* GetPreviewTimelineComponent();
 
 private:
 	// 资源文件

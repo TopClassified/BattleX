@@ -2,17 +2,15 @@
 
 #include "Misc/FileHelper.h"
 #include "Misc/MessageDialog.h"
-#include "PlatformFeatures.h"
 #include "HAL/PlatformFilemanager.h"
 
 #include "BXTask.h"
+#include "BXTLAsset.h"
 #include "BXStructs.h"
-#include "BXManager.h"
-#include "BXTimelineComponent.h"
+#include "BXTLManager.h"
 #include "BXHitReactionComponent.h"
 
 #include "BXTLEditor.h"
-#include "BXTLEditorDelegates.h"
 #include "Preview/BXTLPreviewScene.h" 
 
 
@@ -45,8 +43,8 @@ void FBXTLPreviewProxy::Tick(float DeltaTime)
 		return;
 	}
 
-	UBXManager* BXMgr = CachedEditor.Pin()->GetBXManager();
-	if (!BXMgr)
+	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
+	if (!BXTLMgr)
 	{
 		return;
 	}
@@ -54,7 +52,7 @@ void FBXTLPreviewProxy::Tick(float DeltaTime)
 	if (TimelineRunTimeDataID > 0)
 	{
 		// 根据运行数据刷新静态数据
-		if (FBXTLRunTimeData* RTData = BXMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID))
+		if (FBXTLRunTimeData* RTData = BXTLMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID))
 		{
 			if (RTData->Timeline)
 			{
@@ -78,7 +76,7 @@ void FBXTLPreviewProxy::Tick(float DeltaTime)
 						}
 
 						// 获取动态对象信息
-						Task->GetDynamicObjectByRuntimeData(BXMgr, *RTData, SRTData, TRTData);
+						Task->GetDynamicObjectByRuntimeData(BXTLMgr, *RTData, SRTData, TRTData);
 
 						// 烘焙数据
 						if (IsBaking())
@@ -136,13 +134,13 @@ float FBXTLPreviewProxy::GetCurrentTime(int32 SectionID)
 		return 0.0f;
 	}
 
-	UBXManager* BXMgr = CachedEditor.Pin()->GetBXManager();
-	if (!BXMgr)
+	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
+	if (!BXTLMgr)
 	{
 		return 0.0f;
 	}
 
-	FBXTLRunTimeData* RTData = BXMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID);
+	FBXTLRunTimeData* RTData = BXTLMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID);
 	if (!RTData)
 	{
 		return 0.0f;
@@ -166,13 +164,13 @@ void FBXTLPreviewProxy::GetRunningSectionIndexes(TArray<int32>& OutIndexes)
 		return;
 	}
 
-	UBXManager* BXMgr = CachedEditor.Pin()->GetBXManager();
-	if (!BXMgr)
+	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
+	if (!BXTLMgr)
 	{
 		return;
 	}
 
-	FBXTLRunTimeData* RTData = BXMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID);
+	FBXTLRunTimeData* RTData = BXTLMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID);
 	if (!RTData)
 	{
 		return;
@@ -184,7 +182,7 @@ void FBXTLPreviewProxy::GetRunningSectionIndexes(TArray<int32>& OutIndexes)
 	}
 }
 
-UBXTimelineComponent* FBXTLPreviewProxy::GetPreviewTimelineComponent()
+UBXTLComponent* FBXTLPreviewProxy::GetPreviewTimelineComponent()
 {
 	TSharedPtr<FBXTLPreviewScene> Scene = CachedEditor.Pin()->GetPreviewScene();
 	if (!Scene.IsValid())
@@ -199,7 +197,7 @@ UBXTimelineComponent* FBXTLPreviewProxy::GetPreviewTimelineComponent()
 	}
 
 	// TODO:尝试先找到技能组件
-	return Player->FindComponentByClass<UBXTimelineComponent>();
+	return Player->FindComponentByClass<UBXTLComponent>();
 }
 
 #pragma endregion Important
@@ -301,7 +299,7 @@ void FBXTLPreviewProxy::Stop()
 	TimelineRunTimeDataID = 0;
 
 	// TODO:尝试先找到技能组件
-	if (UBXTimelineComponent* TLComponent = GetPreviewTimelineComponent())
+	if (UBXTLComponent* TLComponent = GetPreviewTimelineComponent())
 	{
 		TLComponent->StopTimeline(TimelineRunTimeDataID, EBXTLFinishReason::FR_Interrupt);
 	}
@@ -310,6 +308,12 @@ void FBXTLPreviewProxy::Stop()
 void FBXTLPreviewProxy::Bake()
 {
 	if (!CachedAsset.IsValid() || !CachedEditor.IsValid())
+	{
+		return;
+	}
+
+	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
+	if (!BXTLMgr)
 	{
 		return;
 	}
@@ -365,7 +369,7 @@ void FBXTLPreviewProxy::Bake()
 	OriginStartStartSectionIndexes.Append(CachedAsset->StartSectionIndexes);
 	
 	// 关闭片段跳转
-	CachedEditor.Pin()->GetBXManager()->CloseSectionJump(true);
+	BXTLMgr->CloseSectionJump(true);
 
 	// 设置烘焙时的帧率
 	CachedEditor.Pin()->SetPreviewFPS(100.0f);
@@ -391,8 +395,8 @@ void FBXTLPreviewProxy::ResetWorld()
 
 void FBXTLPreviewProxy::InternalPlay()
 {
-	UBXManager* BXMgr = CachedEditor.Pin()->GetBXManager();
-	if (!BXMgr)
+	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
+	if (!BXTLMgr)
 	{
 		return;
 	}
@@ -409,7 +413,7 @@ void FBXTLPreviewProxy::InternalPlay()
 		return;
 	}
 	
-	if (UBXTimelineComponent* TLComponent = GetPreviewTimelineComponent())
+	if (UBXTLComponent* TLComponent = GetPreviewTimelineComponent())
 	{
 		FBXTLPlayContext Context;
 		Context.Instigator = Player;
@@ -435,18 +439,24 @@ FBXTLRunTimeData* FBXTLPreviewProxy::GetTimelineRunTimeData()
 		return nullptr;
 	}
 
-	UBXManager* BXMgr = CachedEditor.Pin()->GetBXManager();
-	if (!BXMgr)
+	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
+	if (!BXTLMgr)
 	{
 		return nullptr;
 	}
 
-	return BXMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID);
+	return BXTLMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID);
 }
 
 void FBXTLPreviewProxy::BakeNextSection()
 {
 	if (!CachedEditor.IsValid() || !CachedAsset.IsValid())
+	{
+		return;
+	}
+
+	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
+	if (!BXTLMgr)
 	{
 		return;
 	}
@@ -462,7 +472,7 @@ void FBXTLPreviewProxy::BakeNextSection()
 		// 关闭烘焙帧率
 		CachedEditor.Pin()->SetPreviewFPS(0.0f);
 		// 打开片段跳转
-		CachedEditor.Pin()->GetBXManager()->CloseSectionJump(false);
+		BXTLMgr->CloseSectionJump(false);
 		// 还原数据
 		CachedAsset->StartSectionIndexes.Reset();
 		CachedAsset->StartSectionIndexes.Append(OriginStartStartSectionIndexes);
@@ -519,13 +529,13 @@ void FBXTLPreviewProxy::OnObjectMoving(UObject* InObject)
 		return;
 	}
 
-	UBXManager* BXMgr = CachedEditor.Pin()->GetBXManager();
-	if (!BXMgr)
+	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
+	if (!BXTLMgr)
 	{
 		return;
 	}
 
-	FBXTLRunTimeData* RTData = BXMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID);
+	FBXTLRunTimeData* RTData = BXTLMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID);
 	if (!RTData)
 	{
 		return;
@@ -541,13 +551,13 @@ void FBXTLPreviewProxy::OnTaskSelected(TArray<UBXTask*>& SelectTaskList)
 		return;
 	}
 
-	UBXManager* BXMgr = CachedEditor.Pin()->GetBXManager();
-	if (!BXMgr)
+	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
+	if (!BXTLMgr)
 	{
 		return;
 	}
 
-	FBXTLRunTimeData* RTData = BXMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID);
+	FBXTLRunTimeData* RTData = BXTLMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID);
 	if (!RTData)
 	{
 		return;

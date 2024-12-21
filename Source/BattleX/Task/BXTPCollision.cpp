@@ -151,7 +151,6 @@ void UBXTPTrackHitBox::End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& In
 	}
 }
 
-#pragma optimize("", off)
 void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, int32 InTargetCheckCount)
 {
 	UBXTTrackHitBox* Task = Cast<UBXTTrackHitBox>(InOutRTTData.Task);
@@ -337,7 +336,7 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 
 	TPC.CurrentCount = InTargetCheckCount;
 }
-#pragma optimize("", on)
+
 
 
 

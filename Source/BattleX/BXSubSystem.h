@@ -1,14 +1,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
-
 #include "Subsystems/GameInstanceSubsystem.h"
+
+#include "BXManager.h"
 
 #include "BXSubSystem.generated.h" 
 
 
 
-UCLASS(DisplayName = "BattleX Subsystem")
+UCLASS(Abstract)
 class BATTLEX_API UBXSubSystem : public UGameInstanceSubsystem
 {
 	GENERATED_BODY()
@@ -25,12 +26,20 @@ public:
 
 #pragma region Manager
 public:
-	UFUNCTION(BlueprintCallable)
-	class UBXManager* GetBXManager() const;
+	template<typename T>
+	T* GetManagerByClass()
+	{
+		if (UBXManager** FindResult = ManagerMap.Find(T::StaticClass()))
+		{
+			return Cast<T>(*FindResult);
+		}
 
+		return nullptr;
+	}
+	
 private:
 	UPROPERTY(Transient)
-	class UBXManager* BXManager = nullptr;
+	TMap<UClass*, UBXManager*> ManagerMap;
 
 #pragma endregion Manager
 

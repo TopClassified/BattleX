@@ -1,17 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "UObject/NoExportTypes.h"
 #include "Engine/DeveloperSettings.h"
-
-#include "Internationalization/StringTable.h"
 
 #include "BXSettings.generated.h" 
 
 
 
 UCLASS(Config = Game, DefaultConfig, Meta = (DisplayName = "BattleX Settings"))
-class UBXSettings : public UDeveloperSettings
+class BATTLEX_API UBXSettings : public UDeveloperSettings
 {
 	GENERATED_BODY()
 
@@ -19,11 +16,15 @@ public:
 	UBXSettings(const FObjectInitializer& ObjectInitializer);
 
 public:
+	// 按顺序创建并初始化的管理器
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Important")
+	TArray<TSubclassOf<class UBXManager>> ManagerClasses;
+	
+	
 	// 碰撞Debug时长
 	UPROPERTY(Config, EditDefaultsOnly, Category = "Collision", Meta = (ClampMin = "0.1"))
 	float CollisionDebugDuration = 1.0f;
-
-
+	
 
 	// 任务处理器映射表
 	UPROPERTY(Config, EditDefaultsOnly, Category = "Task")

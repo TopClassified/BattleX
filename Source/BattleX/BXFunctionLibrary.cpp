@@ -192,8 +192,6 @@ void UBXFunctionLibrary::CopyObject(UObject* DestObject, UObject* SrcObject)
 			UBXFunctionLibrary::CopyData(DestAddress, SrcAddress, Prop, DestObject, SrcObject);
 		}
 	}
-
-	return;
 }
 
 void UBXFunctionLibrary::CopyData(void* DestAddress, void* SrcAddress, FProperty* DataType, UObject* Dest, UObject* Src)

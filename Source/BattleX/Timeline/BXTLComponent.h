@@ -3,21 +3,18 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 
-#include "BXTLAsset.h"
-#include "BXManager.h"
-
-#include "BXTimelineComponent.generated.h" 
+#include "BXTLComponent.generated.h" 
 
 
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
-class BATTLEX_API UBXTimelineComponent : public UActorComponent
+class BATTLEX_API UBXTLComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
 #pragma region Important
 public:	
-	UBXTimelineComponent();
+	UBXTLComponent();
 
 	virtual void BeginPlay() override;
 
@@ -56,17 +53,5 @@ protected:
 	TArray<int64> TimelineRunTimeDataIDs;
 
 #pragma endregion Timeline
-
-
-
-#pragma region Event
-public:
-	UPROPERTY(BlueprintAssignable)
-	FBXTimelineStarted TimelineStarted;
-
-	UPROPERTY(BlueprintAssignable)
-	FBXTimelineWillEnd TimelineWillEnd;
-
-#pragma endregion Event
 
 };
