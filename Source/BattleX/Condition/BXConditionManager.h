@@ -93,14 +93,13 @@ public:
 		bool CheckResult = false;
 		
 		P_NATIVE_BEGIN;
-		CheckResult = Manager->InternalCheckCondition(ConditionPointer, ParameterProperty->Struct, ParameterPointer);
+		CheckResult = Manager->CheckCondition(ConditionPointer, ParameterProperty->Struct, ParameterPointer);
 		P_NATIVE_END;
 
 		*(bool*)RESULT_PARAM = CheckResult;
 	}
 
-protected:
-	bool InternalCheckCondition(UBXCondition* InCondition, UScriptStruct* InParameterType, void* InParameterAddress);
+	bool CheckCondition(UBXCondition* InCondition, UScriptStruct* InParameterType, void* InParameterAddress);
 
 protected:
 	// 条件到函数名的配置表

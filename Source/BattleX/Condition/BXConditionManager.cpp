@@ -12,33 +12,38 @@ UBXConditionManager* UBXConditionManager::Get(UObject* InWorldContext)
 {
 	UBXConditionManager* Result = nullptr;
 
-	if (InWorldContext)
+	if (!IsValid(InWorldContext))
 	{
-		if (UWorld* World = InWorldContext->GetWorld())
-		{
-			if (UGameInstance* GI = World->GetGameInstance())
-			{
-				if (UBXSubSystem* BXSS = GI->GetSubsystem<UBXSubSystem>())
-				{
-					Result = BXSS->GetManagerByClass<UBXConditionManager>();
-				}
-			}
+		return nullptr;
+	}
 
-#if WITH_EDITOR
-			if (!IsValid(Result))
-			{
-				for (TObjectIterator<UBXConditionManager> It; It; ++It)
-				{
-					if (It->GetOuter() == World)
-					{
-						Result = *It;
-						break;
-					}
-				}
-			}
-#endif
+	UWorld* World = InWorldContext->GetWorld();
+	if (!IsValid(World))
+	{
+		return nullptr;
+	}
+	
+	if (UGameInstance* GI = World->GetGameInstance())
+	{
+		if (UBXSubSystem* BXSS = GI->GetSubsystem<UBXSubSystem>())
+		{
+			Result = BXSS->GetManagerByClass<UBXConditionManager>();
 		}
 	}
+
+#if WITH_EDITOR
+	if (!IsValid(Result))
+	{
+		for (TObjectIterator<UBXConditionManager> It; It; ++It)
+		{
+			if (It->GetOuter() == World)
+			{
+				Result = *It;
+				break;
+			}
+		}
+	}
+#endif
 
 	return Result;
 }
@@ -132,13 +137,12 @@ void UBXConditionManager::Deinitialize()
 {
 	
 }
-
 #pragma endregion Important
 
 
 
 #pragma region Condition
-bool UBXConditionManager::InternalCheckCondition(UBXCondition* InCondition, UScriptStruct* InParameterType, void* InParameterAddress)
+bool UBXConditionManager::CheckCondition(UBXCondition* InCondition, UScriptStruct* InParameterType, void* InParameterAddress)
 {
 	if (FBXConditionFunctionParameter* FindResult = ConditionToFunctionMap.Find(InCondition->GetClass()))
 	{

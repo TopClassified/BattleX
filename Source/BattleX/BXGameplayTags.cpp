@@ -13,16 +13,16 @@ namespace BXGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Action_CastSkill, "BXBehavior.Action.CastSkill", "施放技能");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Action_CastPSkill, "BXBehavior.Action.CastPSkill", "施放被动技能");
 
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXDamageType_Default, "", "默认伤害类型");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXDamageType_Default, "BXDamageType.Default", "默认伤害类型");
 
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStagger_Normal, "BXStagger.Normal", "无硬直");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStagger_Repel, "BXStagger.Repel", "击退");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStagger_LieDown, "BXStagger.LieDown", "倒地");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStagger_Crawl, "BXStagger.Crawl", "趴下");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStagger_Rise, "BXStagger.Rise", "起飞");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStagger_Fall, "BXStagger.Fall", "坠落");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStagger_Float, "BXStagger.Float", "浮空");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStagger_Execution, "BXStagger.Execution", "处决");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_NoStun, "BXStunState.NoStun", "无硬直");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Repel, "BXStunState.Repel", "击退");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_LieDown, "BXStunState.LieDown", "倒地");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Crawl, "BXStunState.Crawl", "趴下");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Rise, "BXStunState.Rise", "起飞");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Fall, "BXStunState.Fall", "坠落");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Float, "BXStunState.Float", "浮空");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Execution, "BXStunState.Execution", "处决");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXAttackType_Light, "BXAttackType.Light", "轻击");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXAttackType_Repel, "BXAttackType.Repel", "击退");

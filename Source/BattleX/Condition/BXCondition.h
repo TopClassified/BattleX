@@ -15,5 +15,12 @@ public:
 	// 结果取反
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bNot = false;
-	
+
+
+#if WITH_EDITOR
+public:
+	// 获取条件的描述
+	virtual FString GetDescription();
+#endif
+
 };

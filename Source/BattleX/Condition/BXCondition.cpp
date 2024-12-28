@@ -1,8 +1,10 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
-#include "Condition/BXCondition.h"
+#include "BXCondition.h"
 
 
 
-
+#if WITH_EDITOR
+FString UBXCondition::GetDescription()
+{
+	return FString();
+}
+#endif
