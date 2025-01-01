@@ -32,12 +32,14 @@ public class BattleXEditor : ModuleRules
                 "BattleX/Animation",
                 "BattleX/Collision",
                 "BattleX/Condition",
+                "BattleX/DecisionTree",
 
                 "BattleXEditor",
                 "BattleXEditor/CustomLayout",
                 "BattleXEditor/SimpleEditor",
                 "BattleXEditor/TimelineBase",
                 "BattleXEditor/TimelineEditor",
+                "BattleXEditor/DecisionTreeEditor",
             }
 		);
 			

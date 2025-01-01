@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 
+#include "BXCondition.h"
+
 #include "BXDecisionTreeEdge.generated.h"
 
 
