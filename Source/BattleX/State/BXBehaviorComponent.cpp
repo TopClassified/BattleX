@@ -1,7 +1,14 @@
 #include "BXBehaviorComponent.h"
 
-#include "BXCharacterMovementComponent.h"
+#include "BXGameplayTags.h"
+#include "BXEventStructs.h"
+#include "BXEventManager.h"
 #include "BXFunctionLibrary.h"
+
+
+
+DEFINE_LOG_CATEGORY(BXCOMP_Behavior);
+
 
 
 #pragma region Important
@@ -12,29 +19,40 @@ UBXBehaviorComponent::UBXBehaviorComponent()
 
 void UBXBehaviorComponent::BeginPlay()
 {
-	// 监听移动相关的事件
-	if (UBXCharacterMovementComponent* MoveComp = GetOwner()->FindComponentByClass<UBXCharacterMovementComponent>())
+	// 初始化行为代理实例
+	for (TMap<FGameplayTag, TSubclassOf<UBXBehaviorAgent>>::TIterator It(BehaviorAgentConfigs); It; ++It)
 	{
-		MoveComp->DoJumpEvent.AddDynamic(this, &UBXBehaviorComponent::ReceiveDoJump);
-		MoveComp->StartProactiveMoveEvent.AddDynamic(this, &UBXBehaviorComponent::ReceiveStartProactiveMoving);
-		MoveComp->StopProactiveMoveEvent.AddDynamic(this, &UBXBehaviorComponent::ReceiveStopProactiveMoving);
-		MoveComp->StartProactiveRotateEvent.AddDynamic(this, &UBXBehaviorComponent::ReceiveStartProactiveRotating);
-		MoveComp->StopProactiveRotateEvent.AddDynamic(this, &UBXBehaviorComponent::ReceiveStopProactiveRotating);
-	}
+		if (!IsValid(It->Value))
+		{
+			continue;
+		}
 
+		UBXBehaviorAgent* NewAgent = NewObject<UBXBehaviorAgent>(this, It->Value);
+		if (!IsValid(NewAgent))
+		{
+			continue;
+		}
+
+		NewAgent->Initialize();
+		BehaviorAgents.Add(It->Key, NewAgent);
+	}
+	
 	Super::BeginPlay();
 }
 
 void UBXBehaviorComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (UBXCharacterMovementComponent* MoveComp = GetOwner()->FindComponentByClass<UBXCharacterMovementComponent>())
+	for (TMap<FGameplayTag, UBXBehaviorAgent*>::TIterator It(BehaviorAgents); It; ++It)
 	{
-		MoveComp->DoJumpEvent.RemoveAll(this);
-		MoveComp->StartProactiveMoveEvent.RemoveAll(this);
-		MoveComp->StopProactiveMoveEvent.RemoveAll(this);
-		MoveComp->StartProactiveRotateEvent.RemoveAll(this);
-		MoveComp->StopProactiveRotateEvent.RemoveAll(this);
+		if (!IsValid(It->Value))
+		{
+			continue;
+		}
+
+		It->Value->Deinitialize();
+		It->Value->MarkAsGarbage();
 	}
+	BehaviorAgents.Empty();
 	
 	Super::EndPlay(EndPlayReason);
 }
@@ -43,104 +61,206 @@ void UBXBehaviorComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 
 
-#pragma region MovementCallback
-void UBXBehaviorComponent::ReceiveDoJump()
-{
-	
-}
-	
-void UBXBehaviorComponent::ReceiveStartProactiveMoving()
-{
-	PerformingBehaviors.AddTag(FGameplayTag::RequestGameplayTag(TEXT("BXBehavior.ProactiveMoving")));
-}
-
-void UBXBehaviorComponent::ReceiveStopProactiveMoving()
-{
-	PerformingBehaviors.RemoveTag(FGameplayTag::RequestGameplayTag(TEXT("BXBehavior.ProactiveMoving")));
-}
-	
-void UBXBehaviorComponent::ReceiveStartProactiveRotating()
-{
-	PerformingBehaviors.AddTag(FGameplayTag::RequestGameplayTag(TEXT("BXBehavior.ProactiveRotating")));
-}
-    	
-void UBXBehaviorComponent::ReceiveStopProactiveRotating()
-{
-	PerformingBehaviors.RemoveTag(FGameplayTag::RequestGameplayTag(TEXT("BXBehavior.ProactiveRotating")));
-}
-	
-#pragma endregion MovementCallback
-
-
-
 #pragma region API
-bool UBXBehaviorComponent::IsCurrentlyPerformingBehavior(AActor* InActor, const FGameplayTag& InBehaviorTag)
+bool UBXBehaviorComponent::CheckForbiddenBehavior(const FGameplayTag& InBehaviorTag)
 {
-	if (!IsValid(InActor))
+	return ForbiddenBehaviors.Contains(InBehaviorTag);
+}
+
+bool UBXBehaviorComponent::CheckForbiddenBehaviorWithReason(const FGameplayTag& InBehaviorTag, EBXForbiddenBehaviorReason& OutReason)
+{
+	if (FBXForbiddenBehaviorInformationList* Result = ForbiddenBehaviors.Find(InBehaviorTag))
 	{
-		return false;
+		if (!Result->List.IsEmpty())
+		{
+			OutReason = Result->List.Last().Reason;
+			return true;	
+		}
 	}
 
-	if (UBXBehaviorComponent* BXBComp = InActor->FindComponentByClass<UBXBehaviorComponent>())
-	{
-		return BXBComp->PerformingBehaviors.HasTag(InBehaviorTag);
-	}
-	
 	return false;
 }
 
-int64 UBXBehaviorComponent::GetBehaviorPermission(AActor* InActor, const FGameplayTag& InBehaviorTag, int32 InPriority)
+void UBXBehaviorComponent::ChangeForbiddenBehavior(const FGameplayTag& InBehaviorTag, bool bForbidden, int64 InSign, EBXForbiddenBehaviorReason InReason)
 {
-	int64 Result = -1;
-	if (!IsValid(InActor))
-	{
-		return Result;
-	}
-
-	UBXBehaviorComponent* BComp = InActor->FindComponentByClass<UBXBehaviorComponent>();
-	if (!IsValid(BComp))
-	{
-		return UBXFunctionLibrary::GetUniqueID();
-	}
+	bool bNeedCallback = false;
 	
-	if (FInt64Vector2* FindResult = BComp->BehaviorPermissionMap.Find(InBehaviorTag))
+	if (bForbidden)
 	{
-		if (FindResult->X <= InPriority)
+		if (FBXForbiddenBehaviorInformationList* FindResult = ForbiddenBehaviors.Find(InBehaviorTag))
 		{
-			Result = UBXFunctionLibrary::GetUniqueID();
-			FindResult->X = InPriority;
-			FindResult->Y = Result;
+			FindResult->List.Add(FBXForbiddenBehaviorInformation(InSign, InReason));
+		}
+		else
+		{
+			FBXForbiddenBehaviorInformationList Temp;
+			Temp.List.Add(FBXForbiddenBehaviorInformation(InSign, InReason));
+			ForbiddenBehaviors.Add(InBehaviorTag, Temp);
+			bNeedCallback = true;
 		}
 	}
 	else
 	{
-		Result = UBXFunctionLibrary::GetUniqueID();
-		BComp->BehaviorPermissionMap.Add(InBehaviorTag, FInt64Vector2(InPriority, Result));
-	}
-
-	return Result;
-}
-
-void UBXBehaviorComponent::RevokeBehaviorPermission(AActor* InActor, const FGameplayTag& InBehaviorTag, int64 InPermission)
-{
-	if (!IsValid(InActor))
-	{
-		return;
-	}
-
-	UBXBehaviorComponent* BComp = InActor->FindComponentByClass<UBXBehaviorComponent>();
-	if (!IsValid(BComp))
-	{
-		return;
-	}
-	
-	if (FInt64Vector2* FindResult = BComp->BehaviorPermissionMap.Find(InBehaviorTag))
-	{
-		if (FindResult->Y == InPermission)
+		if (FBXForbiddenBehaviorInformationList* FindResult = ForbiddenBehaviors.Find(InBehaviorTag))
 		{
-			BComp->BehaviorPermissionMap.Remove(InBehaviorTag);
+			FBXForbiddenBehaviorInformation FBI(InSign, InReason);
+			FindResult->List.Remove(FBI);
+
+			if (FindResult->List.IsEmpty())
+			{
+				ForbiddenBehaviors.Remove(InBehaviorTag);
+				bNeedCallback = true;
+			}
 		}
 	}
+
+	UBXEventManager* BXEMgr = UBXEventManager::Get(this);
+	if (bNeedCallback && IsValid(BXEMgr))
+	{
+		FBXEventForbiddenBehavior EventParameter(InBehaviorTag, bForbidden, InReason);
+		BXEMgr->BroadcastSingleEvent<FBXEventForbiddenBehavior>(BXGameplayTags::BXEvent_ChangeForbiddenBehavior, this, EventParameter);
+	}
 }
+
+bool UBXBehaviorComponent::CheckActiveBehavior(const FGameplayTag& InBehaviorTag)
+{
+	return ForbiddenBehaviors.Contains(InBehaviorTag);
+}
+
+bool UBXBehaviorComponent::StartBehavior(const FGameplayTag& InBehaviorTag)
+{
+	FInstancedStruct IS;
+	return StartBehaviorWithParameter(InBehaviorTag, IS);
+}
+
+bool UBXBehaviorComponent::StartBehaviorWithParameter(const FGameplayTag& InBehaviorTag, const FInstancedStruct& InParameter)
+{
+	bool bResult = false;
 	
+	if (CheckForbiddenBehavior(InBehaviorTag))
+	{
+		UE_LOG(BXCOMP_Behavior, Log, TEXT("Start Behavior(%s) Failed! The Behavior Is Forbidden!"), *InBehaviorTag.GetTagName().ToString());
+		return bResult;
+	}
+
+	if (UBXBehaviorAgent** FindResult = BehaviorAgents.Find(InBehaviorTag))
+	{
+		UBXBehaviorAgent* Agent = *FindResult;
+		if (!IsValid(Agent))
+		{
+			UE_LOG(BXCOMP_Behavior, Log, TEXT("Start Behavior(%s) Failed! The Behavior Agent Does Not Exist!"), *InBehaviorTag.GetTagName().ToString());
+			return bResult;
+		}
+
+		if (!Agent->CheckStartBehavior(InParameter))
+		{
+			UE_LOG(BXCOMP_Behavior, Log, TEXT("Start Behavior(%s) Failed! The Behavior Can't Start!"), *InBehaviorTag.GetTagName().ToString());
+			return bResult;
+		}
+
+		// 禁用其他行为
+		if (FGameplayTagContainer* Container = ForbiddenBehaviorConfigs.Find(InBehaviorTag))
+		{
+			for (int32 i = 0; i < Container->Num(); ++i)
+			{
+				const FGameplayTag& Tag = Container->GetByIndex(i);
+				ChangeForbiddenBehavior(Tag, false, Agent->GetUniqueKey(), EBXForbiddenBehaviorReason::FB_OtherBehavior);
+			}
+		}
+
+		// 中断其他行为
+		if (FGameplayTagContainer* Container = InterruptBehaviorConfigs.Find(InBehaviorTag))
+		{
+			for (int32 i = 0; i < Container->Num(); ++i)
+			{
+				const FGameplayTag& Tag = Container->GetByIndex(i);
+				StopBehavior(Tag);
+			}
+		}
+
+		// 开始行为
+		bResult = Agent->StartBehavior(InParameter);
+		if (bResult)
+		{
+			// 非瞬时行为，要记录状态
+			if (InBehaviorTag.MatchesTag(FGameplayTag::RequestGameplayTag(FName("BXBehavior"))))
+			{
+				ActiveBehaviors.AddTag(InBehaviorTag);
+			}
+
+			// 广播事件
+			if (UBXEventManager* BXEMgr = UBXEventManager::Get(this))
+			{
+				FBXEventStartBehavior Parameter(InBehaviorTag);
+				BXEMgr->BroadcastSingleEvent<FBXEventStartBehavior>(BXGameplayTags::BXEvent_StartBehavior, GetOwner(), Parameter);
+			}
+		}
+		else
+		{
+			UE_LOG(BXCOMP_Behavior, Log, TEXT("Start Behavior(%s) Failed!"), *InBehaviorTag.GetTagName().ToString());
+		}
+	}
+
+	return bResult;
+}
+
+bool UBXBehaviorComponent::StopBehavior(const FGameplayTag& InBehaviorTag)
+{
+	FInstancedStruct IS;
+	return StopBehaviorWithParameter(InBehaviorTag, IS);
+}
+
+bool UBXBehaviorComponent::StopBehaviorWithParameter(const FGameplayTag& InBehaviorTag, const FInstancedStruct& InParameter)
+{
+	bool bResult = false;
+
+	if (!ActiveBehaviors.HasTag(InBehaviorTag))
+	{
+		UE_LOG(BXCOMP_Behavior, Log, TEXT("Stop Behavior(%s) Failed! The Behavior Is Not Active!"), *InBehaviorTag.GetTagName().ToString());
+		return bResult;
+	}
+
+	if (UBXBehaviorAgent** FindResult = BehaviorAgents.Find(InBehaviorTag))
+	{
+		UBXBehaviorAgent* Agent = *FindResult;
+		if (!IsValid(Agent))
+		{
+			UE_LOG(BXCOMP_Behavior, Log, TEXT("Stop Behavior(%s) Failed! The Behavior Agent Does Not Exist!"), *InBehaviorTag.GetTagName().ToString());
+			return bResult;
+		}
+
+		// 停止行为
+		bResult = Agent->StopBehavior(InParameter);
+
+		if (bResult)
+		{
+			// 启用其他行为
+			if (FGameplayTagContainer* Container = ForbiddenBehaviorConfigs.Find(InBehaviorTag))
+			{
+				for (int32 i = 0; i < Container->Num(); ++i)
+				{
+					const FGameplayTag& Tag = Container->GetByIndex(i);
+					ChangeForbiddenBehavior(Tag, true, Agent->GetUniqueKey(), EBXForbiddenBehaviorReason::FB_OtherBehavior);
+				}
+			}
+
+			// 从列表中移除
+			ActiveBehaviors.RemoveTag(InBehaviorTag);
+
+			// 广播事件
+			if (UBXEventManager* BXEMgr = UBXEventManager::Get(this))
+			{
+				FBXEventStopBehavior Parameter(InBehaviorTag);
+				BXEMgr->BroadcastSingleEvent<FBXEventStopBehavior>(BXGameplayTags::BXEvent_StopBehavior, GetOwner(), Parameter);
+			}
+		}
+		else
+		{
+			UE_LOG(BXCOMP_Behavior, Log, TEXT("Stop Behavior(%s) Failed!"), *InBehaviorTag.GetTagName().ToString());
+		}
+	}
+
+	return bResult;
+}
+
 #pragma endregion API

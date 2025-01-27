@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 
-#include "BXGearEnums.h"
 #include "BXGearStructs.h"
 #include "BXGearData.h"
 
@@ -76,7 +75,7 @@ protected:
 
 protected:
 	// 要执行的函数(默认只执行C++函数)
-	UPROPERTY(EditDefaultsOnly, Category = "Equip", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXEquipFunction"))
+	UPROPERTY(EditDefaultsOnly, Category = "Equip", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXEquipGearFunction"))
 	int32 EquipFunctions = 85;
 
 #pragma endregion Equip
@@ -120,7 +119,7 @@ protected:
 
 protected:
 	// 要执行的函数(默认只执行C++函数)
-	UPROPERTY(EditDefaultsOnly, Category = "Use", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXUseFunction"))
+	UPROPERTY(EditDefaultsOnly, Category = "Use", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXUseGearFunction"))
 	int32 UseFunctions = 85;
 
 #pragma endregion Use
@@ -147,7 +146,7 @@ protected:
 	FGameplayTag CurrentState = BXGameplayTags::BXGearSlot_Default;
 
 	// 要执行的函数(默认只执行C++函数)
-	UPROPERTY(EditDefaultsOnly, Category = "State", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXChangeStateFunction"))
+	UPROPERTY(EditDefaultsOnly, Category = "State", Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXChangeGearStateFunction"))
 	int32 ChangeStateFunctions = 1;
 
 #pragma endregion State

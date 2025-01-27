@@ -60,44 +60,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CustomStructureParam = "InParameter"))
 	bool CheckCondition(UBXCondition* InCondition, int32 InParameter);
-	DECLARE_FUNCTION(execCheckCondition)
-	{
-		Stack.MostRecentProperty = nullptr;
-
-		// 更新蓝图虚拟机栈顶指针
-		Stack.StepCompiledIn<FProperty>(nullptr);
-		// 获取第一个数据的参数的地址
-		UBXCondition* ConditionPointer = reinterpret_cast<UBXCondition*>(Stack.MostRecentPropertyAddress);
-		
-		// 更新蓝图虚拟机栈顶指针
-		Stack.StepCompiledIn<FProperty>(nullptr);
-		// 获取第二个无类型参数的内存地址
-		uint8* ParameterPointer = Stack.MostRecentPropertyAddress;
-		// 获取第二个参数的反射信息
-		FStructProperty* ParameterProperty = CastField<FStructProperty>(Stack.MostRecentProperty);
-
-		// 停止对蓝图栈的使用
-		P_FINISH;
-
-		if (!IsValid(ConditionPointer) || !ConditionPointer->IsValidLowLevelFast() || !ParameterPointer || !ParameterProperty)
-		{
-			return;
-		}
-
-		UBXConditionManager* Manager = P_THIS_CAST(UBXConditionManager);
-		if (!IsValid(Manager) || !Manager->IsValidLowLevel())
-		{
-			return;
-		}
-
-		bool CheckResult = false;
-		
-		P_NATIVE_BEGIN;
-		CheckResult = Manager->CheckCondition(ConditionPointer, ParameterProperty->Struct, ParameterPointer);
-		P_NATIVE_END;
-
-		*(bool*)RESULT_PARAM = CheckResult;
-	}
+	DECLARE_FUNCTION(execCheckCondition);
 
 	bool CheckCondition(UBXCondition* InCondition, UScriptStruct* InParameterType, void* InParameterAddress);
 
@@ -116,7 +79,7 @@ protected:
 
 #pragma region ConditionFunctions
 public:
-	
+
 	
 #pragma endregion ConditionFunctions
 	

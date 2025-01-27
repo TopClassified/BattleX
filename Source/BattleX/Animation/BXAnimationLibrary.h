@@ -20,7 +20,7 @@ public:
 	
 	UFUNCTION(BlueprintCallable)
 	static UAnimMontage* GetMontageFromAnimationLibraryByTag(UBXAnimationLibrary* InLibrary, const FGameplayTag& InTag);
-	
+
 #pragma endregion API
 	
 };

@@ -77,17 +77,17 @@ void UBXConditionManager::Initialize()
 		FBXConditionFunctionParameter FunctionParameter;
 		FunctionParameter.Function = Function;
 
-		bool bValid = false;
-		int32 ParameterCount = 0;
+		bool bValid = true;
+		int32 ParamIndex = 0;
 		for (TFieldIterator<FProperty> ParamIt(Function); ParamIt; ++ParamIt)
 		{
-			ParameterCount += 1;
+			ParamIndex += 1;
 
 			// 判断第一个参数是否合法
-			if (ParameterCount == 1)
+			if (ParamIndex == 1)
 			{
 				FObjectProperty* Property = CastField<FObjectProperty>(*ParamIt);
-				if (!Property || Property->PropertyClass != It->Key)
+				if (!Property || !Property->HasAnyPropertyFlags(CPF_Parm) || Property->HasAnyPropertyFlags(CPF_OutParm) || Property->PropertyClass != It->Key )
 				{
 					bValid = false;
 					UE_LOG(BXMGR_Condition, Warning, TEXT("Failed To Initialize The Condition Execution Function(%s), The First Parameter(Need %s) Is Invalid."), *Function->GetName(), *It->Key->GetName());
@@ -96,12 +96,11 @@ void UBXConditionManager::Initialize()
 
 				FunctionParameter.ParameterNames.Add(Property->GetFName());
 			}
-
 			// 判断第二个参数是否合法
-			if (ParameterCount == 2)
+			else if (ParamIndex == 2)
 			{
 				FStructProperty* Property = CastField<FStructProperty>(*ParamIt);
-				if (!Property)
+				if (!Property || !Property->HasAnyPropertyFlags(CPF_Parm) || Property->HasAnyPropertyFlags(CPF_OutParm))
 				{
 					bValid = false;
 					UE_LOG(BXMGR_Condition, Warning, TEXT("Failed To Initialize The Condition Execution Function(%s), The Second Parameter Is Invalid."), *Function->GetName());
@@ -110,12 +109,11 @@ void UBXConditionManager::Initialize()
 
 				FunctionParameter.ParameterNames.Add(Property->GetFName());
 			}
-
 			// 判断返回参数是否合法
-			if (ParameterCount == 3)
+			else if (ParamIndex == 3)
 			{
 				FBoolProperty* Property = CastField<FBoolProperty>(*ParamIt);
-				if (!Property || !(Property->PropertyFlags & CPF_ReturnParm))
+				if (!Property || !Property->HasAnyPropertyFlags(CPF_Parm) || !Property->HasAnyPropertyFlags(CPF_OutParm))
 				{
 					bValid = false;
 					UE_LOG(BXMGR_Condition, Warning, TEXT("Failed To Initialize The Condition Execution Function(%s), The Return Parameter Is Invalid."), *Function->GetName());
@@ -123,6 +121,11 @@ void UBXConditionManager::Initialize()
 				}
 
 				FunctionParameter.ParameterNames.Add(Property->GetFName());
+			}
+			// 不再是参数反射，提前结束
+			else
+			{
+				break;
 			}
 		}
 
@@ -142,8 +145,59 @@ void UBXConditionManager::Deinitialize()
 
 
 #pragma region Condition
+DEFINE_FUNCTION(UBXConditionManager::execCheckCondition)
+{
+	Stack.MostRecentProperty = nullptr;
+
+	// 更新蓝图虚拟机栈顶指针
+	Stack.StepCompiledIn<FProperty>(nullptr);
+	// 获取第一个数据的参数的地址
+	UBXCondition* ConditionPointer = nullptr;
+	FObjectProperty* ConditionProperty = CastField<FObjectProperty>(Stack.MostRecentProperty);
+	if (ConditionProperty)
+	{
+		ConditionPointer = Cast<UBXCondition>(ConditionProperty->GetObjectPtrPropertyValue(Stack.MostRecentPropertyAddress).Get());
+	}
+		
+	// 更新蓝图虚拟机栈顶指针
+	Stack.StepCompiledIn<FProperty>(nullptr);
+	// 获取第二个无类型参数的内存地址
+	uint8* ParameterPointer = Stack.MostRecentPropertyAddress;
+	// 获取第二个参数的反射信息
+	FStructProperty* ParameterProperty = CastField<FStructProperty>(Stack.MostRecentProperty);
+
+	// 停止对蓝图栈的使用
+	P_FINISH;
+
+	bool CheckResult = false;
+
+	if (!IsValid(ConditionPointer) || !ConditionPointer->IsValidLowLevelFast() || !ParameterPointer || !ParameterProperty)
+	{
+		*(bool*)RESULT_PARAM = CheckResult;
+		return;
+	}
+
+	UBXConditionManager* Manager = P_THIS_CAST(UBXConditionManager);
+	if (!IsValid(Manager) || !Manager->IsValidLowLevel())
+	{
+		*(bool*)RESULT_PARAM = CheckResult;
+		return;
+	}
+	
+	P_NATIVE_BEGIN;
+	CheckResult = Manager->CheckCondition(ConditionPointer, ParameterProperty->Struct, ParameterPointer);
+	P_NATIVE_END;
+
+	*(bool*)RESULT_PARAM = CheckResult;
+}
+
 bool UBXConditionManager::CheckCondition(UBXCondition* InCondition, UScriptStruct* InParameterType, void* InParameterAddress)
 {
+	if (!IsValid(InCondition) || !IsValid(InParameterType) || !InParameterAddress)
+	{
+		return false;
+	}
+	
 	if (FBXConditionFunctionParameter* FindResult = ConditionToFunctionMap.Find(InCondition->GetClass()))
 	{
 		if (!IsValid(FindResult->Function) || FindResult->ParameterNames.Num() != 3)
@@ -171,14 +225,14 @@ bool UBXConditionManager::CheckCondition(UBXCondition* InCondition, UScriptStruc
 		}
 		
 		// 拷贝条件内存
-		FMemory::Memcpy(Buffer, InCondition, ConditionProperty->GetSize());
+		FMemory::Memcpy(Buffer, &InCondition, ConditionProperty->GetSize());
 		// 拷贝参数内存
 		FMemory::Memcpy(Buffer + ConditionProperty->GetSize(), InParameterAddress, ParameterProperty->GetSize());
 
 		// 执行函数
 		ProcessEvent(FindResult->Function, Buffer);
 		// 得到结果
-		bool CheckResult = *(reinterpret_cast<bool*>(Buffer + FindResult->Function->ReturnValueOffset));
+		bool CheckResult = *(reinterpret_cast<bool*>(Buffer + ConditionProperty->GetSize() + ParameterProperty->GetSize()));
 
 		// 释放内存
 		FMemory::Free(Buffer);

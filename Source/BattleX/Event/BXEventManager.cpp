@@ -175,6 +175,62 @@ bool UBXEventManager::UnregisterGlobalEvent(const FGameplayTag& InEventName, UOb
 	UE_LOG(BXMGR_Event, Warning, TEXT("Unregister Global Event(%s) Failed! Internal Unregister Check Failed!"), *InEventName.GetTagName().ToString());
 	return false;
 }
+
+void UBXEventManager::BroadcastGlobalEvent(const FGameplayTag& InEventName, UScriptStruct* InStruct, void* InData)
+{
+	if (!IsValid(InStruct) || !InData)
+	{
+		return;
+	}
+	
+	FBXECallbackMap* FindResult = GlobalEventCallbacks.Find(InEventName);
+	if (!FindResult)
+	{
+		return;
+	}
+
+	InternalBroadcastEvent(FindResult, InStruct, InData);
+}
+
+DEFINE_FUNCTION(UBXEventManager::execBroadcastGlobalEvent)
+{
+	Stack.MostRecentProperty = nullptr;
+
+	// 更新蓝图虚拟机栈顶指针
+	Stack.StepCompiledIn<FProperty>(nullptr);
+	// 获取第一个数据的参数的地址
+	FGameplayTag* EventNamePointer = (FGameplayTag*)Stack.MostRecentPropertyAddress;
+		
+	// 更新蓝图虚拟机栈顶指针
+	Stack.StepCompiledIn<FProperty>(nullptr); 
+	// 获取第二个无类型参数的内存地址
+	uint8* ParameterPointer = Stack.MostRecentPropertyAddress;
+	// 获取第二个参数的反射信息
+	FStructProperty* ParameterProperty = CastField<FStructProperty>(Stack.MostRecentProperty);
+
+	// 停止对蓝图栈的使用
+	P_FINISH;
+
+	if (!EventNamePointer || !ParameterPointer || !ParameterProperty)
+	{
+		return;
+	}
+		
+	UBXEventManager* Manager = P_THIS_CAST(UBXEventManager);
+	if (!IsValid(Manager) || !Manager->IsValidLowLevel())
+	{
+		return;
+	}
+		
+	P_NATIVE_BEGIN;
+	FBXECallbackMap* FindResult = Manager->GlobalEventCallbacks.Find(*EventNamePointer);
+	if (!FindResult)
+	{
+		return;
+	}
+	Manager->InternalBroadcastEvent(FindResult, ParameterProperty->Struct, ParameterPointer);
+	P_NATIVE_END;
+}
 	
 bool UBXEventManager::RegisterSingleEvent(const FGameplayTag& InEventName, UObject* InInitiator, UObject* InTarget, FName InFunctionName)
 {
@@ -234,6 +290,67 @@ bool UBXEventManager::UnregisterSingleEvent(const FGameplayTag& InEventName, UOb
 	return false;
 }
 
+void UBXEventManager::BroadcastSingleEvent(const FGameplayTag& InEventName, UObject* InInitiator, UScriptStruct* InStruct, void* InData)
+{
+	if (!IsValid(InStruct) || !InData)
+	{
+		return;
+	}
+	
+	FBXECallbackMap* FindResult = SingleEventCallbacks.Find(FBXESingleKey(InEventName, InInitiator));
+	if (!FindResult)
+	{
+		return;
+	}
+
+	InternalBroadcastEvent(FindResult, InStruct, InData);
+}
+
+DEFINE_FUNCTION(UBXEventManager::execBroadcastSingleEvent)
+{
+	Stack.MostRecentProperty = nullptr;
+
+	// 更新蓝图虚拟机栈顶指针
+	Stack.StepCompiledIn<FProperty>(nullptr);
+	// 获取第一个数据的参数的地址
+	FGameplayTag* EventNamePointer = (FGameplayTag*)Stack.MostRecentPropertyAddress;
+		
+	// 更新蓝图虚拟机栈顶指针
+	Stack.StepCompiledIn<FProperty>(nullptr);
+	// 获取第二个数据的参数的地址
+	UObject** InitiatorPointer = (UObject**)Stack.MostRecentPropertyAddress;
+		
+	// 更新蓝图虚拟机栈顶指针
+	Stack.StepCompiledIn<FProperty>(nullptr); 
+	// 获取第三个无类型参数的内存地址
+	uint8* ParameterPointer = Stack.MostRecentPropertyAddress;
+	// 获取第三个参数的反射信息
+	FStructProperty* ParameterProperty = CastField<FStructProperty>(Stack.MostRecentProperty);
+
+	// 停止对蓝图栈的使用
+	P_FINISH;
+
+	if (!EventNamePointer || !InitiatorPointer || !ParameterPointer || !ParameterProperty)
+	{
+		return;
+	}
+		
+	UBXEventManager* Manager = P_THIS_CAST(UBXEventManager);
+	if (!IsValid(Manager) || !Manager->IsValidLowLevel())
+	{
+		return;
+	}
+		
+	P_NATIVE_BEGIN;
+	FBXECallbackMap* FindResult = Manager->SingleEventCallbacks.Find(FBXESingleKey(*EventNamePointer, *InitiatorPointer));
+	if (!FindResult)
+	{
+		return;
+	}
+	Manager->InternalBroadcastEvent(FindResult, ParameterProperty->Struct, ParameterPointer);
+	P_NATIVE_END;
+}
+
 bool UBXEventManager::InternalRegisterCallback(const FGameplayTag& InEventName, FBXECallbackMap* InCBMap, UObject* InTarget, FName InFunctionName)
 {
 	UScriptStruct* EventParameterType = nullptr;
@@ -271,20 +388,25 @@ bool UBXEventManager::InternalRegisterCallback(const FGameplayTag& InEventName, 
 		UE_LOG(BXMGR_Event, Warning, TEXT("The Function(%s) Argument Count Is Incorrect."), *InFunctionName.ToString());
 		return false;
 	}
-	
+
+	int32 ParamIndex = 0;
 	for (TFieldIterator<FProperty> ParamIt(Function); ParamIt; ++ParamIt)
 	{
-		FStructProperty* Property = CastField<FStructProperty>(*ParamIt);
-		if (!Property || EventParameterType != Property->Struct)
+		ParamIndex += 1;
+
+		if (ParamIndex == 1)
 		{
-			UE_LOG(BXMGR_Event, Warning, TEXT("The Function(%s) Argument Type Is Incorrect."), *InFunctionName.ToString());
-			return false;
+			FStructProperty* Property = CastField<FStructProperty>(*ParamIt);
+			if (!Property || !Property->HasAnyPropertyFlags(CPF_Parm) || Property->HasAnyPropertyFlags(CPF_OutParm) || EventParameterType != Property->Struct)
+			{
+				UE_LOG(BXMGR_Event, Warning, TEXT("The Function(%s) Argument Type Is Incorrect."), *InFunctionName.ToString());
+				return false;
+			}
 		}
-		
-		if (!(Property->PropertyFlags & CPF_Parm) || (Property->PropertyFlags & CPF_ReturnParm) || (Property->PropertyFlags & CPF_OutParm))
+		// 不再是参数反射，提前结束
+		else
 		{
-			UE_LOG(BXMGR_Event, Warning, TEXT("The Function(%s) Argument Flag Is Incorrect."), *InFunctionName.ToString());
-			return false;
+			break;
 		}
 	}
 

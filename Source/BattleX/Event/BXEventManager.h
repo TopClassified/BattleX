@@ -121,58 +121,16 @@ public:
 
 	// 广播全局事件
 	template<typename T>
-	void BroadcastGlobalEvent(const FGameplayTag& InEventName, const T& InParameter)
+	void BroadcastGlobalEvent(const FGameplayTag& InEventName, T& InParameter)
 	{
-		FBXECallbackMap* FindResult = GlobalEventCallbacks.Find(InEventName);
-		if (!FindResult)
-		{
-			return;
-		}
-
-		void* ParameterAddress = &InParameter;
-		InternalBroadcastEvent(FindResult, T::StaticStruct(), ParameterAddress);
+		BroadcastGlobalEvent(InEventName, T::StaticStruct(), static_cast<void*>(&InParameter));
 	}
+	// 广播全局事件
+	void BroadcastGlobalEvent(const FGameplayTag& InEventName, UScriptStruct* InStruct, void* InData);
+	// 广播全局事件
 	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CustomStructureParam = "InParameter"), Category = "Event")
 	void BroadcastGlobalEvent(const FGameplayTag& InEventName, int32 InParameter);
-	DECLARE_FUNCTION(execBroadcastGlobalEvent)
-	{
-		Stack.MostRecentProperty = nullptr;
-
-		// 更新蓝图虚拟机栈顶指针
-		Stack.StepCompiledIn<FProperty>(nullptr);
-		// 获取第一个数据的参数的地址
-		FGameplayTag* EventNamePointer = (FGameplayTag*)Stack.MostRecentPropertyAddress;
-		
-		// 更新蓝图虚拟机栈顶指针
-		Stack.StepCompiledIn<FProperty>(nullptr); 
-		// 获取第二个无类型参数的内存地址
-		uint8* ParameterPointer = Stack.MostRecentPropertyAddress;
-		// 获取第二个参数的反射信息
-		FStructProperty* ParameterProperty = CastField<FStructProperty>(Stack.MostRecentProperty);
-
-		// 停止对蓝图栈的使用
-		P_FINISH;
-
-		if (!EventNamePointer || !ParameterPointer || !ParameterProperty)
-		{
-			return;
-		}
-		
-		UBXEventManager* Manager = P_THIS_CAST(UBXEventManager);
-		if (!IsValid(Manager) || !Manager->IsValidLowLevel())
-		{
-			return;
-		}
-		
-		P_NATIVE_BEGIN;
-		FBXECallbackMap* FindResult = Manager->GlobalEventCallbacks.Find(*EventNamePointer);
-		if (!FindResult)
-		{
-			return;
-		}
-		Manager->InternalBroadcastEvent(FindResult, ParameterProperty->Struct, ParameterPointer);
-		P_NATIVE_END;
-	}
+	DECLARE_FUNCTION(execBroadcastGlobalEvent);
 	
 	// 注册单体事件
 	UFUNCTION(BlueprintCallable)
@@ -186,61 +144,14 @@ public:
 	template<typename T>
 	void BroadcastSingleEvent(const FGameplayTag& InEventName, UObject* InInitiator, T& InParameter)
 	{
-		FBXECallbackMap* FindResult = SingleEventCallbacks.Find(FBXESingleKey(InEventName, InInitiator));
-		if (!FindResult)
-		{
-			return;
-		}
-
-		void* ParameterAddress = static_cast<void*>(&InParameter);
-		InternalBroadcastEvent(FindResult, T::StaticStruct(), ParameterAddress);
+		BroadcastSingleEvent(InEventName, InInitiator, T::StaticStruct(), static_cast<void*>(&InParameter));
 	}
+	// 广播单体事件
+	void BroadcastSingleEvent(const FGameplayTag& InEventName, UObject* InInitiator, UScriptStruct* InStruct, void* InData);
+	// 广播单体事件
 	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CustomStructureParam = "InParameter"), Category = "Event")
 	void BroadcastSingleEvent(const FGameplayTag& InEventName, UObject* InInitiator, int32 InParameter);
-	DECLARE_FUNCTION(execBroadcastSingleEvent)
-	{
-		Stack.MostRecentProperty = nullptr;
-
-		// 更新蓝图虚拟机栈顶指针
-		Stack.StepCompiledIn<FProperty>(nullptr);
-		// 获取第一个数据的参数的地址
-		FGameplayTag* EventNamePointer = (FGameplayTag*)Stack.MostRecentPropertyAddress;
-		
-		// 更新蓝图虚拟机栈顶指针
-		Stack.StepCompiledIn<FProperty>(nullptr);
-		// 获取第二个数据的参数的地址
-		UObject** InitiatorPointer = (UObject**)Stack.MostRecentPropertyAddress;
-		
-		// 更新蓝图虚拟机栈顶指针
-		Stack.StepCompiledIn<FProperty>(nullptr); 
-		// 获取第三个无类型参数的内存地址
-		uint8* ParameterPointer = Stack.MostRecentPropertyAddress;
-		// 获取第三个参数的反射信息
-		FStructProperty* ParameterProperty = CastField<FStructProperty>(Stack.MostRecentProperty);
-
-		// 停止对蓝图栈的使用
-		P_FINISH;
-
-		if (!EventNamePointer || !InitiatorPointer || !ParameterPointer || !ParameterProperty)
-		{
-			return;
-		}
-		
-		UBXEventManager* Manager = P_THIS_CAST(UBXEventManager);
-		if (!IsValid(Manager) || !Manager->IsValidLowLevel())
-		{
-			return;
-		}
-		
-		P_NATIVE_BEGIN;
-		FBXECallbackMap* FindResult = Manager->SingleEventCallbacks.Find(FBXESingleKey(*EventNamePointer, *InitiatorPointer));
-		if (!FindResult)
-		{
-			return;
-		}
-		Manager->InternalBroadcastEvent(FindResult, ParameterProperty->Struct, ParameterPointer);
-		P_NATIVE_END;
-	}
+	DECLARE_FUNCTION(execBroadcastSingleEvent);
 	
 protected:
 	bool InternalRegisterCallback(const FGameplayTag& InEventName, FBXECallbackMap* InCBMap, UObject* InTarget, FName InFunctionName);

@@ -11,6 +11,36 @@
 
 
 
+// int32列表
+USTRUCT(BlueprintType)
+struct FBXInt32List
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	// int32列表
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<int32> List;
+
+};
+
+
+
+// int64列表
+USTRUCT(BlueprintType)
+struct FBXInt64List
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	// int64列表
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<int64> List;
+
+};
+
+
+
 // Object列表
 USTRUCT(BlueprintType)
 struct FBXObjectList

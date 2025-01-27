@@ -6,12 +6,19 @@ namespace BXGameplayTags
 {
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_TimelineStarted, "BXEvent.TimelineStarted", "时间轴已开始");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_TimelineClosing, "BXEvent.TimelineClosing", "时间轴将结束");
-	
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_ChangeForbiddenBehavior, "BXEvent.ChangeForbiddenBehavior", "行为禁止改变");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_StartBehavior, "BXEvent.StartBehavior", "开始行为");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_StopBehavior, "BXEvent.StopBehavior", "停止行为");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_CastedSkill, "BXEvent.CastedSkill", "技能已释放");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_WillCancelSkill, "BXEvent.WillCancelSkill", "技能将取消");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_AddedBuff, "BXEvent.AddedBuff", "Buff已添加");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_WillRemoveBuff, "BXEvent.WillRemoveBuff", "Buff将移除");
+
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Move, "BXBehavior.Locomotion.Move", "主动移动");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Rotate, "BXBehavior.Locomotion.Rotate", "主动转向");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Jump, "BXBehavior.Locomotion.Jump", "主动跳跃");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Action_CastSkill, "BXBehavior.Action.CastSkill", "施放技能");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Action_CastPSkill, "BXBehavior.Action.CastPSkill", "施放被动技能");
+	
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXImmBehavior_Locomotion_Jump, "BXImmBehavior.Locomotion.Jump", "主动跳跃(瞬间行为)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXImmBehavior_Locomotion_Landed, "BXImmBehavior.Locomotion.Landed", "落地(瞬间行为)");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXDamageType_Default, "BXDamageType.Default", "默认伤害类型");
 

@@ -47,7 +47,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, AdvancedDisplay)
 	FName PlayComponentName = FName(TEXT("Mesh"));
 
-	// 动画行为标签
+	// 动画标签
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, AdvancedDisplay)
 	FGameplayTag PlayAnimBehaviorTag;
 	

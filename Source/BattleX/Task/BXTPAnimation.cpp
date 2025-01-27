@@ -1,8 +1,9 @@
 #include "BXTPAnimation.h"
 
 #include "BXTAnimation.h"
+#include "BXAnimInstance.h"
 #include "BXAnimationLibrary.h"
-#include "BXBehaviorComponent.h"
+#include "BXStateFunctionLibrary.h"
 
 
 
@@ -32,9 +33,16 @@ void UBXTPPlayAnimation::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData
 			TPC.Parameters.Add(FBXTPPAContextParameter());
 			continue;
 		}
+
+		UBXAnimInstance* AnimIns = Cast<UBXAnimInstance>(TComponent->GetAnimInstance());
+		if (!AnimIns)
+		{
+			TPC.Parameters.Add(FBXTPPAContextParameter());
+			continue;
+		}
 		
 		// 尝试获取动画播放权限
-		int64 Permission = UBXBehaviorComponent::GetBehaviorPermission(*It, Task->PlayAnimBehaviorTag, Task->PlayPriority);
+		int64 Permission = AnimIns->GetPlayAnimationPermission(Task->PlayAnimBehaviorTag, Task->PlayPriority);
 		TPC.Parameters.Add(FBXTPPAContextParameter(Permission, -1));
 		if (Permission < 0)
 		{
@@ -57,18 +65,15 @@ void UBXTPPlayAnimation::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData
 		}
 
 		// 播放动画
-		if (UAnimInstance* AnimIns = TComponent->GetAnimInstance())
+		AnimIns->Montage_Play(Montage, Task->PlayRate * InOutRTData.RunRate, EMontagePlayReturnType::MontageLength, InOutRTTData.RunTime, Task->bStopGroup);
+		if (FAnimMontageInstance* MontageInstance = AnimIns->GetInstanceForMontage(Montage))
 		{
-			AnimIns->Montage_Play(Montage, Task->PlayRate * InOutRTData.RunRate, EMontagePlayReturnType::MontageLength, InOutRTTData.RunTime, Task->bStopGroup);
-			if (FAnimMontageInstance* MontageInstance = AnimIns->GetInstanceForMontage(Montage))
+			if (!Task->bEnableRootmotion)
 			{
-				if (!Task->bEnableRootmotion)
-				{
-					MontageInstance->PushDisableRootMotion();
-				}
-
-				TPC.Parameters.Last().MontageInstanceID = MontageInstance->GetInstanceID();
+				MontageInstance->PushDisableRootMotion();
 			}
+
+			TPC.Parameters.Last().MontageInstanceID = MontageInstance->GetInstanceID();
 		}
 	}
 
@@ -103,7 +108,7 @@ void UBXTPPlayAnimation::Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTDat
 			continue;
 		}
 
-		if (!UBXBehaviorComponent::IsCurrentlyPerformingBehavior(Owner, PMovingTag))
+		if (!UBXStateFunctionLibrary::CheckActiveBehavior(Owner, PMovingTag))
 		{
 			continue;
 		}
@@ -129,26 +134,20 @@ void UBXTPPlayAnimation::End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& 
 	
 	for (TArray<USkeletalMeshComponent*>::TIterator It(TPC.TComponents); It; ++It)
 	{
-		UAnimInstance* AnimIns = (*It)->GetAnimInstance();
+		UBXAnimInstance* AnimIns = Cast<UBXAnimInstance>((*It)->GetAnimInstance());
 		if (!IsValid(AnimIns) || !TPC.Parameters.IsValidIndex(It.GetIndex()))
 		{
 			continue;
 		}
 		
-		AActor* Owner = (*It)->GetOwner();
-		if (!IsValid(Owner))
-		{
-			continue;
-		}
-
 		// 停止蒙太奇播放
 		if (FAnimMontageInstance* MIns = AnimIns->GetMontageInstanceForID(TPC.Parameters[It.GetIndex()].MontageInstanceID))
 		{
 			AnimIns->Montage_Stop(BlendOut, MIns->Montage);
 		}
 
-		// 归还行为权限
-		UBXBehaviorComponent::RevokeBehaviorPermission(Owner, Task->PlayAnimBehaviorTag, TPC.Parameters[It.GetIndex()].Permission);
+		// 归还动画播放权限
+		AnimIns->RevokePlayAnimationPermission(Task->PlayAnimBehaviorTag, TPC.Parameters[It.GetIndex()].Permission);
 	}
 }
 

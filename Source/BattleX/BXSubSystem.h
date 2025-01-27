@@ -9,7 +9,7 @@
 
 
 
-UCLASS(Abstract)
+UCLASS()
 class BATTLEX_API UBXSubSystem : public UGameInstanceSubsystem
 {
 	GENERATED_BODY()
@@ -29,9 +29,18 @@ public:
 	template<typename T>
 	T* GetManagerByClass()
 	{
-		if (UBXManager** FindResult = ManagerMap.Find(T::StaticClass()))
+		UClass* ManagerClass = T::StaticClass();
+		if (!IsValid(ManagerClass))
 		{
-			return Cast<T>(*FindResult);
+			return nullptr;
+		}
+		
+		for (TMap<UClass*, UBXManager*>::TIterator It(ManagerMap); It; ++It)
+		{
+			if (It->Key->IsChildOf(ManagerClass))
+			{
+				return Cast<T>(It->Value);
+			}	
 		}
 
 		return nullptr;

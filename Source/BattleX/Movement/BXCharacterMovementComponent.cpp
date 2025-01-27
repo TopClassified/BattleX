@@ -1,6 +1,10 @@
 #include "BXCharacterMovementComponent.h"
 
 #include "BXStructs.h"
+#include "BXGameplayTags.h"
+#include "BXEventStructs.h"
+#include "BXEventManager.h"
+#include "BXStateFunctionLibrary.h"
 #include "GameFramework/Character.h"
 
 
@@ -27,64 +31,6 @@ void UBXCharacterMovementComponent::TickComponent(float DeltaTime, enum ELevelTi
 }
 	
 #pragma endregion Important
-
-
-
-#pragma region Behavior
-void UBXCharacterMovementComponent::ChangeDisableProactiveMovement(int64 InSign, bool bDisable)
-{
-	if (bDisable)
-	{
-		DisableProactiveMovement.AddUnique(InSign);
-	}
-	else
-	{
-		DisableProactiveMovement.RemoveSwap(InSign);
-	}
-}
-
-bool UBXCharacterMovementComponent::AllowProactiveMovement() const
-{
-	return DisableProactiveMovement.Num() <= 0;
-}
-
-void UBXCharacterMovementComponent::ChangeDisableProactiveRotation(int64 InSign, bool bDisable)
-{
-	if (bDisable)
-	{
-		DisableProactiveRotation.AddUnique(InSign);
-	}
-	else
-	{
-		DisableProactiveRotation.RemoveSwap(InSign);
-	}
-}
-
-bool UBXCharacterMovementComponent::AllowProactiveRotation() const
-{
-	return DisableProactiveRotation.Num() <= 0;
-}
-
-void UBXCharacterMovementComponent::ChangeDisableProactiveJump(int64 InSign, bool bDisable)
-{
-	if (bDisable)
-	{
-		DisableProactiveJump.AddUnique(InSign);
-	}
-	else
-	{
-		DisableProactiveJump.RemoveSwap(InSign);
-	}
-
-	SetJumpAllowed(DisableProactiveJump.Num() <= 0);
-}
-
-bool UBXCharacterMovementComponent::AllowProactiveJump() const
-{
-	return IsJumpAllowed();
-}
-
-#pragma endregion Behavior
 
 
 
@@ -134,7 +80,7 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 	bool bVelocityOverMax = IsExceedingMaxSpeed(MaxSpeed);
 
 	// 禁止主动移动，将寻路和输入的加速度标记为零向量
-	if (!AllowProactiveMovement())
+	if (UBXStateFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move))
 	{
 		Acceleration = FVector::ZeroVector;
 		bZeroAcceleration = true;
@@ -184,29 +130,34 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 	{
 		CalcAvoidanceVelocity(DeltaTime);
 	}
-
+	
 	// 更新主动移动的状态，并广播事件
-	if (bProactiveMoving)
+	if (UBXEventManager* BXEMgr = UBXEventManager::Get(this))
 	{
-		if (bZeroAcceleration && bZeroRequestedAcceleration)
+		if (bProactiveMoving)
 		{
-			bProactiveMoving = false;
-			StopProactiveMoveEvent.Broadcast();
+			if (bZeroAcceleration && bZeroRequestedAcceleration)
+			{
+				bProactiveMoving = false;
+				// 通知到行为组件，停止主动移动
+				UBXStateFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move);
+			}
 		}
-	}
-	else
-	{
-		if (!bZeroAcceleration || !bZeroRequestedAcceleration)
+		else
 		{
-			bProactiveMoving = true;
-			StartProactiveMoveEvent.Broadcast();
-		}
+			if (!bZeroAcceleration || !bZeroRequestedAcceleration)
+			{
+				bProactiveMoving = true;
+				// 通知到行为组件，开始主动移动
+				UBXStateFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move);
+			}
+		}	
 	}
 }
 
 FVector UBXCharacterMovementComponent::ComputeSlideVector(const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const
 {
-	if (!AllowProactiveMovement())
+	if (UBXStateFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move))
 	{
 		return Delta;
 	}
@@ -216,13 +167,20 @@ FVector UBXCharacterMovementComponent::ComputeSlideVector(const FVector& Delta, 
 
 void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 {
-	if (!(bOrientRotationToMovement || bUseControllerDesiredRotation) || !AllowProactiveRotation())
+	UBXEventManager* BXEMgr = UBXEventManager::Get(this);
+	if (!IsValid(BXEMgr))
+	{
+		return;
+	}
+	
+	if (!(bOrientRotationToMovement || bUseControllerDesiredRotation) || !UBXStateFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate))
 	{
 		// 停止主动转向状态
 		if (bProactiveRotating)
 		{
 			bProactiveRotating = false;
-			StopProactiveMoveEvent.Broadcast();
+			// 通知到行为组件，停止主动转向
+			UBXStateFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
 		}
 		
 		return;
@@ -234,7 +192,8 @@ void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		if (bProactiveRotating)
 		{
 			bProactiveRotating = false;
-			StopProactiveMoveEvent.Broadcast();
+			// 通知到行为组件，停止主动转向
+			UBXStateFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
 		}
 		
 		return;
@@ -353,7 +312,8 @@ void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		if (!bProactiveRotating)
 		{
 			bProactiveRotating = true;
-			StartProactiveMoveEvent.Broadcast();
+			// 通知到行为组件，开始主动转向
+			UBXStateFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
 		}
 	}
 	else
@@ -362,7 +322,8 @@ void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		if (bProactiveRotating)
 		{
 			bProactiveRotating = false;
-			StopProactiveMoveEvent.Broadcast();
+			// 通知到行为组件，停止主动转向
+			UBXStateFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
 		}
 	}
 }
@@ -390,14 +351,16 @@ void UBXCharacterMovementComponent::ProcessLanded(const FHitResult& Hit, float r
 		PFAgent->OnLanded();
 	}
 
+	// 通知到行为组件，落地
 	LandedEvent.Broadcast(Hit);
-
+	UBXStateFunctionLibrary::StartBehaviorWithParameter<FHitResult>(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Landed, Hit);
+	
 	StartNewPhysics(remainingTime, Iterations);
 }
 
 bool UBXCharacterMovementComponent::CanAttemptJump() const
 {
-	return AllowProactiveJump() && !bWantsToCrouch && IsMovingOnGround();
+	return UBXStateFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Jump) && !bWantsToCrouch && IsMovingOnGround();
 }
 
 bool UBXCharacterMovementComponent::DoJump(bool bReplayingMoves)
@@ -422,7 +385,8 @@ bool UBXCharacterMovementComponent::DoJump(bool bReplayingMoves)
 		
 		SetMovementMode(MOVE_Falling);
 
-		DoJumpEvent.Broadcast();
+		// 通知到行为组件，跳跃
+		UBXStateFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Jump);
 		
 		return true;
 	}
