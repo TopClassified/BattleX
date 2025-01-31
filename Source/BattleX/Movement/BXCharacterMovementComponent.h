@@ -9,10 +9,6 @@
 
 
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBXLanded, const FHitResult&, Hit);
-
-
-
 UCLASS(BlueprintType, Blueprintable)
 class BATTLEX_API UBXCharacterMovementComponent : public UCharacterMovementComponent
 {
@@ -32,15 +28,6 @@ protected:
 	float CleanTimer = 0.0f;
 	
 #pragma endregion Important
-
-
-	
-#pragma region Event
-public:
-	UPROPERTY(BlueprintAssignable)
-	FBXLanded LandedEvent;
-	
-#pragma endregion Event
 
 
 

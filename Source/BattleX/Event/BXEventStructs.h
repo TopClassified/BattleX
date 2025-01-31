@@ -43,36 +43,18 @@ public:
 
 
 
-// 行为开始事件参数
+// 行为事件默认参数
 USTRUCT(BlueprintType)
-struct FBXEventStartBehavior
+struct FBXEventBehaviorDefault
 {
 	GENERATED_USTRUCT_BODY()
 
 public:
-	FBXEventStartBehavior() {}
-	FBXEventStartBehavior(FGameplayTag InBehavior): BehaviorTag(InBehavior) {}
+	FBXEventBehaviorDefault() {}
+	FBXEventBehaviorDefault(bool InActive): bActive(InActive) {}
 	
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FGameplayTag BehaviorTag;
-
-};
-
-
-
-// 行为停止事件参数
-USTRUCT(BlueprintType)
-struct FBXEventStopBehavior
-{
-	GENERATED_USTRUCT_BODY()
-
-public:
-	FBXEventStopBehavior() {}
-	FBXEventStopBehavior(FGameplayTag InBehavior): BehaviorTag(InBehavior) {}
-	
-public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FGameplayTag BehaviorTag;
+	bool bActive = false;
 
 };

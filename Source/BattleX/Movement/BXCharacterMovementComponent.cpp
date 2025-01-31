@@ -173,7 +173,7 @@ void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		return;
 	}
 	
-	if (!(bOrientRotationToMovement || bUseControllerDesiredRotation) || !UBXStateFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate))
+	if (!(bOrientRotationToMovement || bUseControllerDesiredRotation) || UBXStateFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate))
 	{
 		// 停止主动转向状态
 		if (bProactiveRotating)
@@ -352,7 +352,6 @@ void UBXCharacterMovementComponent::ProcessLanded(const FHitResult& Hit, float r
 	}
 
 	// 通知到行为组件，落地
-	LandedEvent.Broadcast(Hit);
 	UBXStateFunctionLibrary::StartBehaviorWithParameter<FHitResult>(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Landed, Hit);
 	
 	StartNewPhysics(remainingTime, Iterations);
@@ -360,7 +359,7 @@ void UBXCharacterMovementComponent::ProcessLanded(const FHitResult& Hit, float r
 
 bool UBXCharacterMovementComponent::CanAttemptJump() const
 {
-	return UBXStateFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Jump) && !bWantsToCrouch && IsMovingOnGround();
+	return !UBXStateFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Jump) && !bWantsToCrouch && IsMovingOnGround();
 }
 
 bool UBXCharacterMovementComponent::DoJump(bool bReplayingMoves)

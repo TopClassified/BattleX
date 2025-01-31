@@ -37,6 +37,10 @@ public:
 	// 获取唯一ID
 	UFUNCTION(BlueprintCallable)
 	int64 GetUniqueKey() const;
+
+	// 获取拥有者
+	UFUNCTION(BlueprintCallable)
+	AActor* GetOwner() const;
 	
 	// 初始化
 	UFUNCTION(BlueprintCallable)

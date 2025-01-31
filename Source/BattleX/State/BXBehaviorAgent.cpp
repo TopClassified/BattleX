@@ -9,6 +9,16 @@ int64 UBXBehaviorAgent::GetUniqueKey() const
 	return UniqueKey;
 }
 
+AActor* UBXBehaviorAgent::GetOwner() const
+{
+	if (UActorComponent* Component = Cast<UActorComponent>(GetOuter()))
+	{
+		return Component->GetOwner();
+	}
+
+	return nullptr;
+}
+
 bool UBXBehaviorAgent::Initialize()
 {
 	UniqueKey = UBXFunctionLibrary::GetUniqueID();

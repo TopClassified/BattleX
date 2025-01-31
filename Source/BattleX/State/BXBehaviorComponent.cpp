@@ -187,13 +187,6 @@ bool UBXBehaviorComponent::StartBehaviorWithParameter(const FGameplayTag& InBeha
 			{
 				ActiveBehaviors.AddTag(InBehaviorTag);
 			}
-
-			// 广播事件
-			if (UBXEventManager* BXEMgr = UBXEventManager::Get(this))
-			{
-				FBXEventStartBehavior Parameter(InBehaviorTag);
-				BXEMgr->BroadcastSingleEvent<FBXEventStartBehavior>(BXGameplayTags::BXEvent_StartBehavior, GetOwner(), Parameter);
-			}
 		}
 		else
 		{
@@ -246,13 +239,6 @@ bool UBXBehaviorComponent::StopBehaviorWithParameter(const FGameplayTag& InBehav
 
 			// 从列表中移除
 			ActiveBehaviors.RemoveTag(InBehaviorTag);
-
-			// 广播事件
-			if (UBXEventManager* BXEMgr = UBXEventManager::Get(this))
-			{
-				FBXEventStopBehavior Parameter(InBehaviorTag);
-				BXEMgr->BroadcastSingleEvent<FBXEventStopBehavior>(BXGameplayTags::BXEvent_StopBehavior, GetOwner(), Parameter);
-			}
 		}
 		else
 		{

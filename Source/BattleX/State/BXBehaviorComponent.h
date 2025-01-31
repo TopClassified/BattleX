@@ -53,7 +53,7 @@ public:
 
 
 
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+UCLASS(BlueprintType, Blueprintable, ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class BATTLEX_API UBXBehaviorComponent : public UActorComponent
 {
 	GENERATED_BODY()
