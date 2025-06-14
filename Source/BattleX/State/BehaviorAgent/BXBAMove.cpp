@@ -1,4 +1,4 @@
-#include "BXBADefaultMove.h"
+#include "BXBAMove.h"
 
 #include "BXEventStructs.h"
 #include "BXEventManager.h"

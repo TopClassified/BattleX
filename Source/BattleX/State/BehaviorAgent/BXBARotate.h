@@ -1,9 +1,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "State/BXBehaviorAgent.h"
 
-#include "BXBADefaultRotate.generated.h"
+#include "BXBehaviorAgent.h"
+
+#include "BXBARotate.generated.h"
 
 
 

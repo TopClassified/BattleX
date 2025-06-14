@@ -1,4 +1,4 @@
-#include "BXBADefaultLanded.h"
+#include "BXBALanded.h"
 
 #include "BXEventManager.h"
 #include "BXGameplayTags.h"

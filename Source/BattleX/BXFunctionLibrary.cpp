@@ -2,6 +2,7 @@
 
 #include "BXTask.h"
 #include "BXTLAsset.h"
+#include "Materials/MaterialExpressionChannelMaskParameterColor.h"
 
 #if WITH_EDITOR
 #include "DrawDebugHelpers.h" 

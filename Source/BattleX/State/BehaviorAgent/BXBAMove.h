@@ -1,9 +1,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "State/BXBehaviorAgent.h"
 
-#include "BXBADefaultMove.generated.h"
+#include "BXBehaviorAgent.h"
+
+#include "BXBAMove.generated.h"
 
 
 

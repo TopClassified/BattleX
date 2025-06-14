@@ -21,7 +21,7 @@ public:
 public:
 	// 新硬直状态
 	UPROPERTY(EditDefaultsOnly)
-	FGameplayTag StunState = BXGameplayTags::BXStunState_NoStun;
+	FGameplayTag StunState = BXGameplayTags::BXStunState_Normal;
 
 	// 动画库资源标签
 	UPROPERTY(EditDefaultsOnly)

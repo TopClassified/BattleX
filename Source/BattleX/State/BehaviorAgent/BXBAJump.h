@@ -1,14 +1,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "State/BXBehaviorAgent.h"
 
-#include "BXBADefaultLanded.generated.h"
+#include "BXBehaviorAgent.h"
+
+#include "BXBAJump.generated.h"
 
 
 
 UCLASS(Blueprintable, BlueprintType)
-class BATTLEX_API UBXBADefaultLanded : public UBXBehaviorAgent
+class BATTLEX_API UBXBADefaultJump : public UBXBehaviorAgent
 {
 	GENERATED_BODY()
 	

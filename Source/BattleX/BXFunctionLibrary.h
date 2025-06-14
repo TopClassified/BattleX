@@ -131,7 +131,7 @@ public:
 	// 计算线段到长方体之间的最短距离
 	UFUNCTION(BlueprintCallable, Category = "Math")
 	static float SegmentToBox(const FVector& InL1S, const FVector& InL1E, const FVector& InCenter, const FRotator& InRotation, const FVector& InExtent);
-
+	
 #pragma endregion Math
 
 

@@ -6,7 +6,7 @@
 #include "Components/ActorComponent.h"
 
 #include "BXStateEnums.h"
-#include "BXBehaviorAgent.h"
+#include "BehaviorAgent/BXBehaviorAgent.h"
 
 #include "BXBehaviorComponent.generated.h"
 
