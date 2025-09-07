@@ -222,6 +222,9 @@ void FBXTLPreviewProxy::Play()
 		return;
 	}
 
+	// 播放前刷新数据
+	CachedAsset->RefreshDataBeforePreview();
+
 	GEditor->SelectNone(false, true, false);
 	
 	InternalPlay();

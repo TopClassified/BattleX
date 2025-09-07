@@ -187,6 +187,9 @@ public:
 	// 资源保存前的预处理
 	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
 
+	// 编辑器预览前刷新数据
+	virtual void RefreshDataBeforePreview();
+
 	// 刷新时间轴信息
 	virtual void RefreshSections();
 

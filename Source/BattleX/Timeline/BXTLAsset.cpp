@@ -52,6 +52,26 @@ void UBXTLAsset::PreSave(FObjectPreSaveContext SaveContext)
 	RefreshSections();
 }
 
+void UBXTLAsset::RefreshDataBeforePreview()
+{
+	for (int32 i = 0; i < Sections.Num(); ++i)
+	{
+		FBXTLSection& Section = Sections[i];
+		for (int32 j = 0; j < Section.Groups.Num(); ++j)
+		{
+			FBXTLTaskGroup& Group = Section.Groups[j];
+			for (int32 k = 0; k < Group.TaskList.Num(); ++k)
+			{
+				TWeakObjectPtr<UBXTask> Task = Group.TaskList[k];
+				if (Task.IsValid())
+				{
+					Task->RefreshDataBeforePreview();
+				}
+			}
+		}
+	}
+}
+
 void UBXTLAsset::RefreshSections()
 {
 	for (int32 i = 0; i < Sections.Num(); ++i)

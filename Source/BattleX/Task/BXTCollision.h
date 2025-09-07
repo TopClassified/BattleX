@@ -114,6 +114,8 @@ public:
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 	
 	virtual bool EnablePassiveTrigger() override;
+
+	virtual void RefreshLinkedAnimation();
 #endif
 #pragma endregion Editor
 };

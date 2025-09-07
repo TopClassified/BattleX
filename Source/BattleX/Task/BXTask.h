@@ -109,7 +109,7 @@ public:
 	UPROPERTY(VisibleDefaultsOnly, Category = "Event")
 	TArray<TSoftObjectPtr<UBXTask>> TriggeredByList;
 
-	// 是否需呀碰撞信息
+	// 是否需要碰撞信息
 	UPROPERTY(VisibleDefaultsOnly, Category = "Important", AdvancedDisplay)
 	bool bNeedCollisionInput = false;
 #endif
@@ -155,10 +155,15 @@ public:
 
 	virtual void CopyDataFromOther(UBXTask* Other);
 
+	// 刷新配置数据
 	virtual bool RefreshProperty();
 
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 	
+	// 编辑器预览播放前刷新技能数据
+	virtual void RefreshDataBeforePreview();
+
+	// 刷新坐标创建器
 	virtual void RefreshTransformCreaters();
 
 	// 允许被动触发
