@@ -13,6 +13,7 @@
 #include "BXTLTaskTrackPanel.h"
 #include "BXTLEditorDelegates.h"
 
+#include "BXTLAsset.h"
 #include "BXTask.h"
 #include "BXTLController.h" 
 
@@ -69,6 +70,18 @@ float FBXTLTaskNodeData::GetDuration() const
 	if (CachedTask->LifeType == EBXTLifeType::L_Instant)
 	{
 		return 0.0f;
+	}
+	else if (CachedTask->LifeType == EBXTLifeType::L_Timeline)
+	{
+		int32 OutSectionID, OutGroupID;
+		UBXTLAsset* TLAsset = Cast<UBXTLAsset>(CachedTask->GetOuter());
+		if (TLAsset && TLAsset->GetSectionIDAndGroupID(CachedTask.Get(), OutSectionID, OutGroupID))
+		{
+			FBXTLSection& Section = TLAsset->Sections[OutSectionID];
+			return Section.Duration - CachedTask->StartTime;
+		}
+
+		return CachedTask->Duration;
 	}
 	else
 	{

@@ -41,24 +41,24 @@ struct FBXESingleKey
 
 public:
 	FBXESingleKey() {}
-	FBXESingleKey(const FGameplayTag& InEventName, UObject* InInitiator) : EventName(InEventName), Initiator(InInitiator) {}
-	
+	FBXESingleKey(const FGameplayTag& InEventName, UObject* InInitiator) : EventName(InEventName), InitiatorUID(InInitiator ? InInitiator->GetUniqueID() : 0) {}
+
 public:
 	UPROPERTY(Transient)
 	FGameplayTag EventName;
-	
+
 	UPROPERTY(Transient)
-	const UObject* Initiator = nullptr;
+	uint32 InitiatorUID = 0;
 
 public:
 	friend bool operator==(const FBXESingleKey& Val1, const FBXESingleKey& Val2)
 	{
-		return Val1.EventName == Val2.EventName && Val1.Initiator == Val2.Initiator;
+		return Val1.EventName == Val2.EventName && Val1.InitiatorUID == Val2.InitiatorUID;
 	}
 
 	friend uint32 GetTypeHash(const FBXESingleKey& Val)
 	{
-		return HashCombine(GetTypeHash(Val.EventName), GetTypeHash(Val.Initiator));
+		return HashCombine(GetTypeHash(Val.EventName), GetTypeHash(Val.InitiatorUID));
 	}
 };
 
@@ -103,7 +103,7 @@ protected:
 	// 记录对象的关联信息
 	TMap<uint32, TArray<FGameplayTag>> GlobalTargetMap;
 	TMap<uint32, TArray<FGameplayTag>> SingleKeyMap;
-	TMap<uint32, TArray<FGameplayTag>> SingleTargetMap;
+	TMap<uint32, TArray<FBXESingleKey>> SingleTargetMap;
 	
 #pragma endregion Important
 

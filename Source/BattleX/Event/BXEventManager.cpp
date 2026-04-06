@@ -93,7 +93,7 @@ void UBXEventManager::NotifyUObjectDeleted(const UObjectBase* InObject)
 			for (TArray<FGameplayTag>::TIterator It(*Result); It; ++It)
 			{
 				SearchKey.EventName = *It;
-				SearchKey.Initiator = Object;
+				SearchKey.InitiatorUID = Object->GetUniqueID();
 				SingleEventCallbacks.Remove(SearchKey);
 			}
 			
@@ -101,16 +101,16 @@ void UBXEventManager::NotifyUObjectDeleted(const UObjectBase* InObject)
 		}
 
 		// 移除关联的单体事件目标
-		if (TArray<FGameplayTag>* Result = SingleTargetMap.Find(ID))
+		if (TArray<FBXESingleKey>* Result = SingleTargetMap.Find(ID))
 		{
-			for (TMap<FBXESingleKey, FBXECallbackMap>::TIterator It(SingleEventCallbacks); It; ++It)
+			for (const FBXESingleKey& Key : *Result)
 			{
-				if (Result->Contains(It->Key.EventName))
+				if (FBXECallbackMap* CBMap = SingleEventCallbacks.Find(Key))
 				{
-					It->Value.Map.Remove(Object);
+					CBMap->Map.Remove(Object);
 				}
 			}
-			
+
 			SingleTargetMap.Remove(ID);
 		}
 	}
@@ -410,7 +410,7 @@ bool UBXEventManager::InternalRegisterCallback(const FGameplayTag& InEventName, 
 		}
 	}
 
-	CB->Functions.Add(Function);
+	CB->Functions.AddUnique(Function);
 	return true;
 }
 
@@ -419,12 +419,7 @@ bool UBXEventManager::InternalUnregisterCallback(FBXECallbackMap* InCBMap, UObje
 	FBXECallback* CB = InCBMap->Map.Find(InTarget);
 	if (!CB)
 	{
-		InCBMap->Map.Add(InTarget);
-		CB = InCBMap->Map.Find(InTarget);
-	}
-	if (!CB)
-	{
-		UE_LOG(BXMGR_Event, Warning, TEXT("Find Callback Array Failed."));
+		UE_LOG(BXMGR_Event, Warning, TEXT("Find Callback Array Failed. Target Not Registered."));
 		return false;
 	}
 
@@ -434,7 +429,7 @@ bool UBXEventManager::InternalUnregisterCallback(FBXECallbackMap* InCBMap, UObje
 		InCBMap->Map.Remove(InTarget);
 		return true;
 	}
-	
+
 	UFunction* Function = InTarget->GetClass()->FindFunctionByName(InFunctionName);
 	if (!IsValid(Function))
 	{
@@ -457,25 +452,45 @@ void UBXEventManager::InternalBroadcastEvent(FBXECallbackMap* InCBMap, UScriptSt
 	{
 		return;
 	}
-	
+
+	// 收集需要移除的无效对象
+	TArray<UObject*> InvalidTargets;
+
 	for (TMap<UObject*, FBXECallback>::TIterator CB(InCBMap->Map); CB; ++CB)
 	{
 		if (!IsValid(CB->Key) || !CB->Key->IsValidLowLevelFast())
 		{
+			InvalidTargets.Add(CB->Key);
 			continue;
 		}
-    			
+
+		// 收集需要移除的无效函数
+		TArray<UFunction*> InvalidFunctions;
+
 		for (TArray<UFunction*>::TIterator It(CB->Value.Functions); It; ++It)
 		{
 			UFunction* Function = *It;
 			if (!IsValid(Function))
 			{
 				UE_LOG(BXMGR_Event, Warning, TEXT("Broadcast Event Failed! Object(%s) UFunction Is Invalid."), *CB->Key->GetName());
+				InvalidFunctions.Add(Function);
 				continue;
 			}
-    
+
 			CB->Key->ProcessEvent(Function, InDataAddress);
 		}
+
+		// 清理无效函数
+		for (UFunction* InvalidFunc : InvalidFunctions)
+		{
+			CB->Value.Functions.Remove(InvalidFunc);
+		}
+	}
+
+	// 清理无效对象
+	for (UObject* InvalidTarget : InvalidTargets)
+	{
+		InCBMap->Map.Remove(InvalidTarget);
 	}
 }
 
@@ -507,7 +522,34 @@ void UBXEventManager::InternalUpdateAssociation(const FGameplayTag& InEventName,
 			}
 		}
 	};
-	
+
+	auto UpdateSingleTargetList = [&](TMap<uint32, TArray<FBXESingleKey>>& InOutMap, uint32& InUID, const FBXESingleKey& InKey, bool bFlag)
+	{
+		TArray<FBXESingleKey>* Result = InOutMap.Find(InUID);
+		if (Result)
+		{
+			if (bFlag)
+			{
+				Result->AddUnique(InKey);
+			}
+			else
+			{
+				Result->Remove(InKey);
+				if (Result->IsEmpty())
+				{
+					InOutMap.Remove(InUID);
+				}
+			}
+		}
+		else
+		{
+			if (bFlag)
+			{
+				InOutMap.Add(InUID, {InKey});
+			}
+		}
+	};
+
 	// 添加/移除全局事件目标关联对象
 	if (InType == 1)
 	{
@@ -525,7 +567,7 @@ void UBXEventManager::InternalUpdateAssociation(const FGameplayTag& InEventName,
 				bFlag = true;
 			}
 		}
-		
+
 		UpdateAssociationList(GlobalTargetMap, TargetUID, bFlag);
 	}
 	// 添加/移除单体事件目标关联对象
@@ -535,7 +577,7 @@ void UBXEventManager::InternalUpdateAssociation(const FGameplayTag& InEventName,
 		{
 			return;
 		}
-		
+
 		uint32 TargetUID = InTarget->GetUniqueID();
 		FBXESingleKey SearchKey(InEventName, InInitiator);
 		bool bFlag = false;
@@ -547,7 +589,7 @@ void UBXEventManager::InternalUpdateAssociation(const FGameplayTag& InEventName,
 			}
 		}
 
-		UpdateAssociationList(SingleTargetMap, TargetUID, bFlag);
+		UpdateSingleTargetList(SingleTargetMap, TargetUID, SearchKey, bFlag);
 	}
 	// 添加/移除单体事件发送者关联对象
 	else if (InType == 3)

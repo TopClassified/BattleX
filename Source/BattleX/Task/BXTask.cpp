@@ -16,21 +16,6 @@ UBXTask::UBXTask()
 
 
 #pragma region Editor
-void UBXTask::CleanBakedData_Implementation()
-{
-	
-}
-
-void UBXTask::BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData)
-{
-	
-}
-
-void UBXTask::PostBakeData_Implementation()
-{
-	
-}
-
 void UBXTask::GetDynamicObjectByRuntimeData_Implementation(UBXManager* InBXMgr, const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData)
 {
 	
@@ -106,6 +91,11 @@ void UBXTask::CopyDataFromOther(UBXTask* Other)
 bool UBXTask::RefreshProperty()
 {
 	return false;
+}
+
+void UBXTask::RefreshDataBeforePreview()
+{
+
 }
 
 void UBXTask::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)

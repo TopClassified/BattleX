@@ -118,26 +118,7 @@ public:
 	// 刷新脚本属性
 	UFUNCTION(BlueprintImplementableEvent)
 	bool ScriptRefreshProperty();
-	
-	// 是否需要烘焙数据
-	UFUNCTION(BlueprintImplementableEvent)
-	bool NeedBakeData();
 
-	// 清理烘焙的旧数据
-	UFUNCTION(BlueprintNativeEvent)
-	void CleanBakedData();
-	virtual void CleanBakedData_Implementation();
-	
-	// 烘焙数据
-	UFUNCTION(BlueprintNativeEvent)
-	void BakingData(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData);
-	virtual void BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData);
-
-	// 烘焙数据后处理
-	UFUNCTION(BlueprintNativeEvent)
-	void PostBakeData();
-	virtual void PostBakeData_Implementation();
-	
 	// 根据动态数据，获取动态对象信息
 	UFUNCTION(BlueprintNativeEvent)
 	void GetDynamicObjectByRuntimeData(class UBXManager* InBXMgr, const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData);

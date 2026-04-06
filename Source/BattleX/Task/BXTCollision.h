@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 
 #include "BXTask.h"
+#include "BXStructs.h"
 #include "BXCollision.h"
 #include "BXGameplayTags.h"
 
@@ -84,38 +85,34 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision", AdvancedDisplay)
 	float SweepAngleStep = 20.0f;
 
-	
+	// 用于轨迹采样的骨骼
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Trajectory")
+	FBXBoneSelector TrajectoryBone;
+
 	/*
-	 * 对烘焙轨迹进行冗余点去除的规则
-	 * X:坐标共线判定误差(角度)，把在同一条直线上的位置进行排除
-	 * Y:方向判定误差(角度)，把相同方向的数据进行排除
-	 * Z:缩放判定误差(倍率)，把相同大小的数据进行排除
+	 * 对轨迹进行冗余点去除的规则
+	 * X: 坐标共线判定误差(角度)，把在同一条直线上的位置进行排除
+	 * Y: 方向判定误差(角度)，把相同方向的数据进行排除
+	 * Z: 缩放判定误差(倍率)，把相同大小的数据进行排除
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Bake")
-	FVector BakedTrajectoryOptimization = FVector(10.0f, 15.0f, 0.1f);
-	
-	// 烘焙的碰撞盒轨迹列表
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Bake", AdvancedDisplay)
-	TMap<FGameplayTag, FBXTrajectoryPoints> BakedHBTrajectoryPoints;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Trajectory")
+	FVector TrajectoryOptimization = FVector(10.0f, 15.0f, 0.1f);
+
+	// 存储的骨骼模型空间轨迹
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Trajectory", AdvancedDisplay)
+	FBXTrajectoryPoints BoneSampledTrajectory;
 
 
 #pragma region Editor
-public:
-	virtual void CleanBakedData_Implementation() override;
-	
-	virtual void BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData) override;
-
-	virtual void PostBakeData_Implementation() override;
-	
 #if WITH_EDITOR
 public:
 	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
 	
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 	
-	virtual bool EnablePassiveTrigger() override;
+	virtual void RefreshDataBeforePreview();
 
-	virtual void RefreshLinkedAnimation();
+	virtual bool EnablePassiveTrigger() override;
 #endif
 #pragma endregion Editor
 };
@@ -137,10 +134,4 @@ public:
 	// 武器插槽
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision")
 	FGameplayTag WeaponSlot = BXGameplayTags::BXGearSlot_RightHand;
-
-
-#pragma region Editor
-public:
-	virtual void BakingData_Implementation(const FBXTLRunTimeData& InOutRTData, const FBXTLSectionRTData& InOutRTSData, const FBXTLTaskRTData& InOutRTTData) override;
-#pragma endregion Editor
 };

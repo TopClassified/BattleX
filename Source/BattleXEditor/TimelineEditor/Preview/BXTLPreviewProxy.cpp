@@ -77,22 +77,6 @@ void FBXTLPreviewProxy::Tick(float DeltaTime)
 
 						// 获取动态对象信息
 						Task->GetDynamicObjectByRuntimeData(BXTLMgr, *RTData, SRTData, TRTData);
-
-						// 烘焙数据
-						if (IsBaking())
-						{
-							Task->BakingData(*RTData, SRTData, TRTData);
-						}
-					}
-
-					if (IsBaking())
-					{
-						// 超出预期烘焙时间，直接标记为结束
-						if (SRTData.RunTime > BakingSections[BakingSectionsHead - 1].Y * 0.0001f)
-						{
-							SRTData.bEarlyFinish = true;
-						}
-					}
 				}
 			}
 		}
@@ -101,12 +85,6 @@ void FBXTLPreviewProxy::Tick(float DeltaTime)
 			Stop();
 			TimelineRunTimeDataID = 0;
 		}
-	}
-
-	// 尝试烘焙下一个时间片段
-	if (IsBaking())
-	{
-		BakeNextSection();
 	}
 }
 
@@ -212,7 +190,7 @@ UBXTLAsset* FBXTLPreviewProxy::GetPreviewAsset() const
 
 void FBXTLPreviewProxy::Play()
 {
-	if (!CachedAsset.IsValid() || IsBaking())
+	if (!CachedAsset.IsValid())
 	{
 		return;
 	}
@@ -241,11 +219,6 @@ bool FBXTLPreviewProxy::IsPlaying() const
 
 void FBXTLPreviewProxy::Pause()
 {
-	if (IsBaking())
-	{
-		return;
-	}
-	
 	bPause = true;
 
 	if (CachedEditor.IsValid())
@@ -261,11 +234,6 @@ bool FBXTLPreviewProxy::IsPaused() const
 
 void FBXTLPreviewProxy::Resume()
 {
-	if (IsBaking())
-	{
-		return;
-	}
-	
 	bPause = false;
 
 	GEditor->SelectNone(false, true, false);
@@ -279,11 +247,6 @@ void FBXTLPreviewProxy::Resume()
 
 void FBXTLPreviewProxy::Stop()
 {
-	if (IsBaking())
-	{
-		return;
-	}
-	
 	bPlaying = false;
 	bPause = false;
 
@@ -308,87 +271,9 @@ void FBXTLPreviewProxy::Stop()
 	}
 }
 
-void FBXTLPreviewProxy::Bake()
-{
-	if (!CachedAsset.IsValid() || !CachedEditor.IsValid())
-	{
-		return;
-	}
-
-	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
-	if (!BXTLMgr)
-	{
-		return;
-	}
-
-	// 重置世界
-	ResetWorld();
-	
-	// 获取哪些片段需要烘焙
-	BakingSectionsHead = 0;
-	BakingSections.Reset();
-	for (int32 i = 0; i < CachedAsset->Sections.Num(); ++i)
-	{
-		float FinishTime = -1.0f;
-		FBXTLSection& Section = CachedAsset->Sections[i];
-		for (int32 j = 0; j < Section.TaskList.Num(); ++j)
-		{
-			UBXTask* Task = Cast<UBXTask>(Section.TaskList[j]);
-			if (!Task)
-			{
-				continue;
-			}
-
-			if (Task->NeedBakeData())
-			{
-				Task->CleanBakedData();
-
-				float EndTime = Task->StartTime + Task->Duration;
-				if (Task->LifeType == EBXTLifeType::L_Timeline)
-				{
-					EndTime = Section.Duration;
-				}
-				
-				if (FinishTime < EndTime)
-				{
-					FinishTime = EndTime;
-				}
-			}
-		}
-
-		if (FinishTime > 0.0f)
-		{
-			BakingSections.Add(FIntVector2(i, FMath::FloorToInt(FinishTime * 10000.0f)));
-		}
-	}
-
-	if (BakingSections.Num() <= 0)
-	{
-		return;
-	}
-
-	// 记录一下原始数据
-	OriginStartStartSectionIndexes.Reset();
-	OriginStartStartSectionIndexes.Append(CachedAsset->StartSectionIndexes);
-	
-	// 关闭片段跳转
-	BXTLMgr->CloseSectionJump(true);
-
-	// 设置烘焙时的帧率
-	CachedEditor.Pin()->SetPreviewFPS(100.0f);
-	
-	// 烘焙时间片段
-	BakeNextSection();
-}
-
-bool FBXTLPreviewProxy::IsBaking() const
-{
-	return BakingSections.Num() > 0;
-}
-
 bool FBXTLPreviewProxy::IsRunning() const
 {
-	return bPlaying || BakingSections.Num() > 0;
+	return bPlaying;
 }
 
 void FBXTLPreviewProxy::ResetWorld()
@@ -449,65 +334,6 @@ FBXTLRunTimeData* FBXTLPreviewProxy::GetTimelineRunTimeData()
 	}
 
 	return BXTLMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID);
-}
-
-void FBXTLPreviewProxy::BakeNextSection()
-{
-	if (!CachedEditor.IsValid() || !CachedAsset.IsValid())
-	{
-		return;
-	}
-
-	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
-	if (!BXTLMgr)
-	{
-		return;
-	}
-
-	if (TimelineRunTimeDataID > 0)
-	{
-		return;
-	}
-
-	// 烘焙完成
-	if (BakingSectionsHead >= BakingSections.Num())
-	{
-		// 关闭烘焙帧率
-		CachedEditor.Pin()->SetPreviewFPS(0.0f);
-		// 打开片段跳转
-		BXTLMgr->CloseSectionJump(false);
-		// 还原数据
-		CachedAsset->StartSectionIndexes.Reset();
-		CachedAsset->StartSectionIndexes.Append(OriginStartStartSectionIndexes);
-		// 清理临时数据
-		BakingSectionsHead = 0;
-		BakingSections.Reset();
-		// 对烘焙数据进行后处理
-		for (int32 i = 0; i < CachedAsset->Sections.Num(); ++i)
-		{
-			FBXTLSection& Section = CachedAsset->Sections[i];
-			for (int32 j = 0; j < Section.TaskList.Num(); ++j)
-			{
-				if (!IsValid(Section.TaskList[j]))
-				{
-					continue;
-				}
-				
-				Section.TaskList[j]->PostBakeData();
-			}
-		}
-		
-		return;
-	}
-
-	// 设置要烘焙的片段
-	CachedAsset->StartSectionIndexes.Reset();
-	CachedAsset->StartSectionIndexes.Add(BakingSections[BakingSectionsHead].X);
-
-	// 播放片段
-	InternalPlay();
-
-	BakingSectionsHead = BakingSectionsHead + 1;
 }
 
 #pragma endregion Preview
