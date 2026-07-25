@@ -99,7 +99,8 @@ public:
 struct FBXNativeCallbackEntry
 {
 	int32 ID = 0;
-	TWeakObjectPtr<UObject> Context;	// 可选上下文，用于 ODL 自动清理（为空则不校验）
+	// 可选上下文，用于 ODL 自动清理（为空则不校验）
+	TWeakObjectPtr<UObject> Context;
 	FBXNativeEventDelegate Callable;
 };
 
@@ -153,15 +154,11 @@ protected:
 	TMap<uint32, TSet<FGameplayTag>> GlobalTargetMap;
 	TMap<uint32, TSet<FBXESingleKey>> SingleKeyMap;
 	TMap<uint32, TSet<FBXESingleKey>> SingleTargetMap;
-
 #pragma endregion Important
 
 
-
-#pragma region Event
+#pragma region BlueprintEvent
 public:
-	// ===== 蓝图事件接口（UFunction 反射通道）=====
-
 	// 注册全局事件
 	UFUNCTION(BlueprintCallable)
 	bool RegisterGlobalEvent(const FGameplayTag& InEventName, UObject* InTarget, FName InFunctionName);
@@ -203,10 +200,11 @@ public:
 	UFUNCTION(BlueprintCallable, CustomThunk, meta = (CustomStructureParam = "InParameter"), Category = "Event")
 	void BroadcastSingleEvent(const FGameplayTag& InEventName, UObject* InInitiator, int32 InParameter);
 	DECLARE_FUNCTION(execBroadcastSingleEvent);
+#pragma endregion BlueprintEvent
 
 
-	// ===== 原生事件接口（C++ 高速通道，避免反射开销）=====
-
+#pragma region NativeEvent
+public:
 	// 注册原生全局事件回调，返回句柄用于注销（InContext 用于 ODL 自动清理，可为空）
 	FBXNativeCallbackHandle RegisterNativeGlobalEvent(const FGameplayTag& InEventName, UObject* InContext, FBXNativeEventDelegate InCallback);
 
@@ -218,14 +216,18 @@ public:
 
 	// 注销原生单体事件回调
 	bool UnregisterNativeSingleEvent(const FGameplayTag& InEventName, UObject* InInitiator, FBXNativeCallbackHandle InHandle);
+#pragma endregion NativeEvent
 
 
-	// ===== 运行时事件定义 =====
-
+#pragma region RuntimeDefinition
+public:
 	// 运行时定义事件参数类型（也可通过 DefinedEvents 默认配置）
 	UFUNCTION(BlueprintCallable, Category = "Event")
 	bool DefineEvent(const FGameplayTag& InEventName, UScriptStruct* InStructType);
+#pragma endregion RuntimeDefinition
 
+
+#pragma region Internal
 protected:
 	bool InternalRegisterCallback(const FGameplayTag& InEventName, FBXECallbackMap* InCBMap, UObject* InTarget, FName InFunctionName);
 
@@ -246,6 +248,12 @@ protected:
 	// 刷新延迟变更队列（广播结束后调用）
 	void FlushPendingMutations();
 
+	// 延迟执行需要 Manager 的操作到广播结束后（内部自动捕获 WeakThis 生命周期）
+	void DeferManagerOperation(TFunction<void(UBXEventManager*)> InOperation);
+#pragma endregion Internal
+
+
+#pragma region DataMember
 protected:
 	// 定义的事件（运行时可扩展）
 	UPROPERTY(EditDefaultsOnly, Category = "Event")
@@ -268,20 +276,17 @@ protected:
 	// UFunction 查找缓存：(Class, FunctionName) → UFunction*
 	TMap<TPair<UClass*, FName>, UFunction*> FunctionCache;
 
-	// ===== 重入安全支持 =====
 	// 广播深度计数器，>0 时注册/注销操作会被延迟到广播结束
 	int32 BroadcastDepth = 0;
 	// 延迟变更队列
 	TArray<TFunction<void()>> PendingMutations;
-	
+
 	// 原生回调 ID 生成器
 	int32 NextNativeCallbackID = 1;
 
-	// ===== 预分配清理缓冲（避免广播时频繁分配）=====
 	// 记录 (CBMap, InvalidTarget) 对，广播结束后统一清理
 	TArray<TPair<FBXECallbackMap*, UObject*>> CachedInvalidTargets;
-
-#pragma endregion Event
+#pragma endregion DataMember
 
 
 #pragma region Debug
@@ -307,7 +312,5 @@ public:
 	
 	void RecordEventHistory(const FGameplayTag& InEventName, uint32 InInitiatorUID, int32 InListenerCount, bool bIsSingle);
 #endif
-
 #pragma endregion Debug
-	
 };

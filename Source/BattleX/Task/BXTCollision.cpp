@@ -163,7 +163,7 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 		const float MontageTime = AnimOffset / SelectedAnimTask->PlayRate;
 
 		FBoneContainer BoneContainer;
-		BoneContainer.InitializeTo(TArray<FBoneIndexType>{ (FBoneIndexType)BoneIndex }, FCurveEvaluationOption(false), *Skeleton);
+		BoneContainer.InitializeTo(TArray<FBoneIndexType>{ (FBoneIndexType)BoneIndex }, UE::Anim::FCurveFilterSettings(UE::Anim::ECurveFilterMode::DisallowAll), *Skeleton);
 
 		FCompactPose Pose;
 		Pose.SetBoneContainer(&BoneContainer);
@@ -171,8 +171,8 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 		FBlendedCurve Curve;
 		Curve.InitFrom(BoneContainer);
 
-		FAnimExtractContext ExtrCtx(MontageTime, false);
-		UAnimSequenceBase* SeqBase = Montage->GetAnimCompositeSection(0).GetLinkedSequence();
+		FAnimExtractContext ExtrCtx(static_cast<double>(MontageTime), false);
+		UAnimSequenceBase* SeqBase = const_cast<UAnimSequenceBase*>(Montage->GetAnimCompositeSection(0).GetLinkedSequence());
 		if (!IsValid(SeqBase))
 		{
 			// fallback: 直接从第一个slot的第一个segment取sequence
@@ -196,7 +196,7 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 			continue;
 		}
 
-		FStackCustomAttributes Attrs;
+		UE::Anim::FStackAttributeContainer Attrs;
 		FAnimationPoseData PoseData(Pose, Curve, Attrs);
 		AnimSeq->GetBonePose(PoseData, ExtrCtx);
 

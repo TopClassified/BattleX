@@ -192,13 +192,9 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 			Parameter.Requester = GetCollisionRequester(ShapeComponent);
 	
 			// 进行碰撞检测
-			for (TMap<FGameplayTag, FBXTrajectoryPoints>::TIterator It(Task->BakedHBTrajectoryPoints); It; ++It)
+			for (TMap<FGameplayTag, FBXShapeInformation>::TIterator It(ShapeComponent->ShapeInformations); It; ++It)
 			{
-				FBXShapeInformation* SInfo = ShapeComponent->ShapeInformations.Find(It->Key);
-				if (!SInfo)
-				{
-					continue;
-				}
+				FBXShapeInformation* SInfo = &It->Value;
 
 				for (int32 CurrentStep = 0; CurrentStep < Step; ++CurrentStep)
 				{
@@ -207,7 +203,7 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 
 					// 获取碰撞盒位置列表
 					HitBoxTransforms.Reset();
-					TArray<FBXTrajectoryPoint>& Points = It->Value.List;
+					TArray<FBXTrajectoryPoint>& Points = Task->BoneSampledTrajectory.List;
 					for (int32 i = 0; i < Points.Num(); ++i)
 					{
 						if (HitBoxTransforms.IsEmpty())

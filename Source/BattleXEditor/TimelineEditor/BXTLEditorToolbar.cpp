@@ -127,14 +127,6 @@ void FBXTLEditorToolbar::FillTimelineModeToolbar(FToolBarBuilder& ToolbarBuilder
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateRaw(CachedEditor.Pin().Get(), &FBXTLEditor::RefreshTimelineAssetProperty), FCanExecuteAction())
 		);
-		Section.AddMenuEntry
-		(
-			"Bake Timeline Data",
-			LOCTEXT("Bake Timeline Data", "Bake Timeline"),
-			LOCTEXT("Bake Timeline Data", "Bake Timeline"),
-			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateRaw(CachedEditor.Pin().Get(), &FBXTLEditor::Bake), FCanExecuteAction())
-		);
 	}
 	ToolbarBuilder.EndSection();
 }

@@ -60,7 +60,7 @@ void FBXTLPreviewProxy::Tick(float DeltaTime)
 				{
 					FBXTLSectionRTData& SRTData = RTData->RunningSections[i];
 					FBXTLSection& Section = RTData->Timeline->Sections[SRTData.Index];
-					
+
 					for (int32 j = 0; j < SRTData.RunningTasks.Num(); ++j)
 					{
 						const FBXTLTaskRTData& TRTData = SRTData.RunningTasks[j];
@@ -68,7 +68,7 @@ void FBXTLPreviewProxy::Tick(float DeltaTime)
 						{
 							continue;
 						}
-						
+
 						UBXTask* Task = Section.TaskList[TRTData.Index];
 						if (!Task)
 						{
@@ -77,6 +77,7 @@ void FBXTLPreviewProxy::Tick(float DeltaTime)
 
 						// 获取动态对象信息
 						Task->GetDynamicObjectByRuntimeData(BXTLMgr, *RTData, SRTData, TRTData);
+					}
 				}
 			}
 		}

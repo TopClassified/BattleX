@@ -316,8 +316,8 @@ void FBXTLEditor::InitializeManager()
 
 void FBXTLEditor::SaveAsset_Execute()
 {
-	// 正在播放 或 正在烘焙 时，不允许保存
-	if (IsPlaying() || IsBaking())
+	// 正在播放时，不允许保存
+	if (IsPlaying())
 	{
 		return;
 	}
@@ -564,21 +564,6 @@ void FBXTLEditor::Step()
 			ViewportClient->TickWorld(1.0f / 60.0f);
 		}
 	}
-}
-
-void FBXTLEditor::Bake()
-{
-	if (!PreviewScene.IsValid())
-	{
-		return;
-	}
-	
-	PreviewProxy->Bake();
-}
-
-bool FBXTLEditor::IsBaking() const
-{
-	return PreviewProxy->IsBaking();
 }
 
 void FBXTLEditor::ResetWorld()

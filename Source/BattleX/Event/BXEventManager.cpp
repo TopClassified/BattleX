@@ -195,8 +195,7 @@ void UBXEventManager::NotifyUObjectDeleted(const UObjectBase* InObject)
 #pragma endregion Important
 
 
-
-#pragma region Event
+#pragma region BlueprintEvent
 bool UBXEventManager::RegisterGlobalEvent(const FGameplayTag& InEventName, UObject* InTarget, FName InFunctionName)
 {
 	SCOPE_CYCLE_COUNTER(STAT_BXEvent_Register);
@@ -204,16 +203,12 @@ bool UBXEventManager::RegisterGlobalEvent(const FGameplayTag& InEventName, UObje
 	// 重入安全：广播期间延迟变更
 	if (BroadcastDepth > 0)
 	{
-		TWeakObjectPtr<UBXEventManager> WeakThis(this);
 		TWeakObjectPtr<UObject> WeakTarget(InTarget);
-		PendingMutations.Add([WeakThis, InEventName, WeakTarget, InFunctionName]()
+		DeferManagerOperation([InEventName, WeakTarget, InFunctionName](UBXEventManager* Mgr)
 		{
-			if (UBXEventManager* Mgr = WeakThis.Get())
+			if (UObject* Target = WeakTarget.Get())
 			{
-				if (UObject* Target = WeakTarget.Get())
-				{
-					Mgr->RegisterGlobalEvent(InEventName, Target, InFunctionName);
-				}
+				Mgr->RegisterGlobalEvent(InEventName, Target, InFunctionName);
 			}
 		});
 		return true;
@@ -254,16 +249,12 @@ bool UBXEventManager::UnregisterGlobalEvent(const FGameplayTag& InEventName, UOb
 	// 重入安全：广播期间延迟变更
 	if (BroadcastDepth > 0)
 	{
-		TWeakObjectPtr<UBXEventManager> WeakThis(this);
 		TWeakObjectPtr<UObject> WeakTarget(InTarget);
-		PendingMutations.Add([WeakThis, InEventName, WeakTarget, InFunctionName]()
+		DeferManagerOperation([InEventName, WeakTarget, InFunctionName](UBXEventManager* Mgr)
 		{
-			if (UBXEventManager* Mgr = WeakThis.Get())
+			if (UObject* Target = WeakTarget.Get())
 			{
-				if (UObject* Target = WeakTarget.Get())
-				{
-					Mgr->UnregisterGlobalEvent(InEventName, Target, InFunctionName);
-				}
+				Mgr->UnregisterGlobalEvent(InEventName, Target, InFunctionName);
 			}
 		});
 		return true;
@@ -365,19 +356,15 @@ bool UBXEventManager::RegisterSingleEvent(const FGameplayTag& InEventName, UObje
 	// 重入安全：广播期间延迟变更
 	if (BroadcastDepth > 0)
 	{
-		TWeakObjectPtr<UBXEventManager> WeakThis(this);
 		TWeakObjectPtr<UObject> WeakInitiator(InInitiator);
 		TWeakObjectPtr<UObject> WeakTarget(InTarget);
-		PendingMutations.Add([WeakThis, InEventName, WeakInitiator, WeakTarget, InFunctionName]()
+		DeferManagerOperation([InEventName, WeakInitiator, WeakTarget, InFunctionName](UBXEventManager* Mgr)
 		{
-			if (UBXEventManager* Mgr = WeakThis.Get())
+			if (UObject* Initiator = WeakInitiator.Get())
 			{
-				if (UObject* Initiator = WeakInitiator.Get())
+				if (UObject* Target = WeakTarget.Get())
 				{
-					if (UObject* Target = WeakTarget.Get())
-					{
-						Mgr->RegisterSingleEvent(InEventName, Initiator, Target, InFunctionName);
-					}
+					Mgr->RegisterSingleEvent(InEventName, Initiator, Target, InFunctionName);
 				}
 			}
 		});
@@ -421,19 +408,15 @@ bool UBXEventManager::UnregisterSingleEvent(const FGameplayTag& InEventName, UOb
 	// 重入安全：广播期间延迟变更
 	if (BroadcastDepth > 0)
 	{
-		TWeakObjectPtr<UBXEventManager> WeakThis(this);
 		TWeakObjectPtr<UObject> WeakInitiator(InInitiator);
 		TWeakObjectPtr<UObject> WeakTarget(InTarget);
-		PendingMutations.Add([WeakThis, InEventName, WeakInitiator, WeakTarget, InFunctionName]()
+		DeferManagerOperation([InEventName, WeakInitiator, WeakTarget, InFunctionName](UBXEventManager* Mgr)
 		{
-			if (UBXEventManager* Mgr = WeakThis.Get())
+			if (UObject* Initiator = WeakInitiator.Get())
 			{
-				if (UObject* Initiator = WeakInitiator.Get())
+				if (UObject* Target = WeakTarget.Get())
 				{
-					if (UObject* Target = WeakTarget.Get())
-					{
-						Mgr->UnregisterSingleEvent(InEventName, Initiator, Target, InFunctionName);
-					}
+					Mgr->UnregisterSingleEvent(InEventName, Initiator, Target, InFunctionName);
 				}
 			}
 		});
@@ -537,27 +520,25 @@ DEFINE_FUNCTION(UBXEventManager::execBroadcastSingleEvent)
 }
 
 
-// ===== 原生事件接口实现 =====
+#pragma endregion BlueprintEvent
 
+
+#pragma region NativeEvent
 FBXNativeCallbackHandle UBXEventManager::RegisterNativeGlobalEvent(const FGameplayTag& InEventName, UObject* InContext, FBXNativeEventDelegate InCallback)
 {
 	// 重入安全：广播期间延迟变更
 	if (BroadcastDepth > 0)
 	{
-		TWeakObjectPtr<UBXEventManager> WeakThis(this);
 		TWeakObjectPtr<UObject> WeakContext(InContext);
-		PendingMutations.Add([WeakThis, InEventName, WeakContext, Callback = MoveTemp(InCallback)]() mutable
+		DeferManagerOperation([InEventName, WeakContext, Callback = MoveTemp(InCallback)](UBXEventManager* Mgr) mutable
 		{
-			if (UBXEventManager* Mgr = WeakThis.Get())
+			if (UObject* Ctx = WeakContext.Get())
 			{
-				if (UObject* Ctx = WeakContext.Get())
-				{
-					Mgr->RegisterNativeGlobalEvent(InEventName, Ctx, MoveTemp(Callback));
-				}
-				else
-				{
-					Mgr->RegisterNativeGlobalEvent(InEventName, nullptr, MoveTemp(Callback));
-				}
+				Mgr->RegisterNativeGlobalEvent(InEventName, Ctx, MoveTemp(Callback));
+			}
+			else
+			{
+				Mgr->RegisterNativeGlobalEvent(InEventName, nullptr, MoveTemp(Callback));
 			}
 		});
 		return FBXNativeCallbackHandle{0};
@@ -580,13 +561,9 @@ bool UBXEventManager::UnregisterNativeGlobalEvent(const FGameplayTag& InEventNam
 	// 重入安全：广播期间延迟变更
 	if (BroadcastDepth > 0)
 	{
-		TWeakObjectPtr<UBXEventManager> WeakThis(this);
-		PendingMutations.Add([WeakThis, InEventName, InHandle]()
+		DeferManagerOperation([InEventName, InHandle](UBXEventManager* Mgr)
 		{
-			if (UBXEventManager* Mgr = WeakThis.Get())
-			{
-				Mgr->UnregisterNativeGlobalEvent(InEventName, InHandle);
-			}
+			Mgr->UnregisterNativeGlobalEvent(InEventName, InHandle);
 		});
 		return true;
 	}
@@ -615,18 +592,14 @@ FBXNativeCallbackHandle UBXEventManager::RegisterNativeSingleEvent(const FGamepl
 	// 重入安全：广播期间延迟变更
 	if (BroadcastDepth > 0)
 	{
-		TWeakObjectPtr<UBXEventManager> WeakThis(this);
 		TWeakObjectPtr<UObject> WeakInitiator(InInitiator);
 		TWeakObjectPtr<UObject> WeakContext(InContext);
-		PendingMutations.Add([WeakThis, InEventName, WeakInitiator, WeakContext, Callback = MoveTemp(InCallback)]() mutable
+		DeferManagerOperation([InEventName, WeakInitiator, WeakContext, Callback = MoveTemp(InCallback)](UBXEventManager* Mgr) mutable
 		{
-			if (UBXEventManager* Mgr = WeakThis.Get())
+			if (UObject* Initiator = WeakInitiator.Get())
 			{
-				if (UObject* Initiator = WeakInitiator.Get())
-				{
-					UObject* Ctx = WeakContext.Get();
-					Mgr->RegisterNativeSingleEvent(InEventName, Initiator, Ctx, MoveTemp(Callback));
-				}
+				UObject* Ctx = WeakContext.Get();
+				Mgr->RegisterNativeSingleEvent(InEventName, Initiator, Ctx, MoveTemp(Callback));
 			}
 		});
 		return FBXNativeCallbackHandle{0};
@@ -655,16 +628,12 @@ bool UBXEventManager::UnregisterNativeSingleEvent(const FGameplayTag& InEventNam
 	// 重入安全：广播期间延迟变更
 	if (BroadcastDepth > 0)
 	{
-		TWeakObjectPtr<UBXEventManager> WeakThis(this);
 		TWeakObjectPtr<UObject> WeakInitiator(InInitiator);
-		PendingMutations.Add([WeakThis, InEventName, WeakInitiator, InHandle]()
+		DeferManagerOperation([InEventName, WeakInitiator, InHandle](UBXEventManager* Mgr)
 		{
-			if (UBXEventManager* Mgr = WeakThis.Get())
+			if (UObject* Initiator = WeakInitiator.Get())
 			{
-				if (UObject* Initiator = WeakInitiator.Get())
-				{
-					Mgr->UnregisterNativeSingleEvent(InEventName, Initiator, InHandle);
-				}
+				Mgr->UnregisterNativeSingleEvent(InEventName, Initiator, InHandle);
 			}
 		});
 		return true;
@@ -696,8 +665,10 @@ bool UBXEventManager::UnregisterNativeSingleEvent(const FGameplayTag& InEventNam
 }
 
 
-// ===== 运行时事件定义 =====
+#pragma endregion NativeEvent
 
+
+#pragma region RuntimeDefinition
 bool UBXEventManager::DefineEvent(const FGameplayTag& InEventName, UScriptStruct* InStructType)
 {
 	if (!InEventName.IsValid() || !IsValid(InStructType))
@@ -711,8 +682,10 @@ bool UBXEventManager::DefineEvent(const FGameplayTag& InEventName, UScriptStruct
 }
 
 
-// ===== 内部实现 =====
+#pragma endregion RuntimeDefinition
 
+
+#pragma region Internal
 bool UBXEventManager::InternalRegisterCallback(const FGameplayTag& InEventName, FBXECallbackMap* InCBMap, UObject* InTarget, FName InFunctionName)
 {
 	UScriptStruct* EventParameterType = nullptr;
@@ -1020,7 +993,20 @@ void UBXEventManager::FlushPendingMutations()
 	}
 }
 
-#pragma endregion Event
+void UBXEventManager::DeferManagerOperation(TFunction<void(UBXEventManager*)> InOperation)
+{
+	TWeakObjectPtr<UBXEventManager> WeakThis(this);
+	PendingMutations.Add([WeakThis, Op = MoveTemp(InOperation)]()
+	{
+		if (UBXEventManager* Mgr = WeakThis.Get())
+		{
+			Op(Mgr);
+		}
+	});
+}
+
+
+#pragma endregion Internal
 
 
 #pragma region Debug

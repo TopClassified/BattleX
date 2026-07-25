@@ -29,9 +29,6 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Preview")
 	float PreviewTickRate = 60.0f;
 
-	// 最长烘焙时间
-	float MaxBakeTime = 100.0f;
-	
 
 
 	UPROPERTY(Config, EditAnywhere, Category = "PreviewScene")

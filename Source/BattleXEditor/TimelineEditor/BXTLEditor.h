@@ -182,12 +182,6 @@ public:
 	// 步进技能
 	void Step();
 
-	// 烘焙数据
-	void Bake();
-
-	// 正在烘焙数据
-	bool IsBaking() const;
-
 	// 重置世界
 	void ResetWorld();
 
