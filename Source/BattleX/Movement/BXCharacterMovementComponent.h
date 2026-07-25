@@ -73,19 +73,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Record")
 	FTransform GetHistoryTransformByTime(float InTime);
 
+	// 根据时间获取历史SkeletalMeshComponent位置
+	UFUNCTION(BlueprintCallable, Category = "Record")
+	FTransform GetHistoryMeshTransformByTime(float InTime);
+
 	// 清理超时运行轨迹
 	UFUNCTION(BlueprintCallable, Category = "Record")
 	void CleanTrajectoryPoints();
-	
+
 protected:
 	// 记录时长
 	UPROPERTY(EditDefaultsOnly, Category = "Record")
 	float RecordTime = 20.0f;
-	
+
 	// 角色运行轨迹
 	UPROPERTY(Transient)
 	TArray<FBXTrajectoryPoint> TrajectoryPoints;
-	
+
+	// 角色SkeletalMeshComponent运行轨迹
+	UPROPERTY(Transient)
+	TArray<FBXTrajectoryPoint> MeshTrajectoryPoints;
+
 #pragma endregion Record
 	
 };

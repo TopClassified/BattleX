@@ -134,4 +134,12 @@ public:
 	// 武器插槽
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision")
 	FGameplayTag WeaponSlot = BXGameplayTags::BXGearSlot_RightHand;
+
+
+#pragma region Editor
+#if WITH_EDITOR
+public:
+	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
+#endif
+#pragma endregion Editor
 };

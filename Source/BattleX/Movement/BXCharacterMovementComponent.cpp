@@ -6,6 +6,7 @@
 #include "BXEventManager.h"
 #include "BXStateFunctionLibrary.h"
 #include "GameFramework/Character.h"
+#include "Components/SkeletalMeshComponent.h"
 
 
 
@@ -19,6 +20,17 @@ void UBXCharacterMovementComponent::TickComponent(float DeltaTime, enum ELevelTi
 	{
 		float CurrentTime = World->GetTimeSeconds();
 		TrajectoryPoints.Add(FBXTrajectoryPoint(UpdatedComponent->GetComponentTransform(), CurrentTime));
+
+		// 同时记录角色SkeletalMeshComponent的世界Transform
+		ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
+		if (IsValid(OwnerChar))
+		{
+			USkeletalMeshComponent* MeshComp = OwnerChar->GetMesh();
+			if (IsValid(MeshComp))
+			{
+				MeshTrajectoryPoints.Add(FBXTrajectoryPoint(MeshComp->GetComponentTransform(), CurrentTime));
+			}
+		}
 	}
 
 	CleanTimer += DeltaTime;
@@ -29,7 +41,7 @@ void UBXCharacterMovementComponent::TickComponent(float DeltaTime, enum ELevelTi
 		CleanTrajectoryPoints();
 	}
 }
-	
+
 #pragma endregion Important
 
 
@@ -409,10 +421,10 @@ FTransform UBXCharacterMovementComponent::GetHistoryTransformByTime(float InTime
 			{
 				FTransform Start = TrajectoryPoints[CurrentIndex - 1].Transform;
 				float StartTime = TrajectoryPoints[CurrentIndex - 1].Time;
-				
+
 				FTransform End = TrajectoryPoints[CurrentIndex].Transform;
 				float EndTime = TrajectoryPoints[CurrentIndex].Time;
-				
+
 				return FTransform
 				(
 					FQuat::Slerp(Start.GetRotation(), End.GetRotation(), (InTime - StartTime) / (EndTime - StartTime + 1e-8)),
@@ -435,10 +447,65 @@ FTransform UBXCharacterMovementComponent::GetHistoryTransformByTime(float InTime
 	return FTransform();
 }
 
+FTransform UBXCharacterMovementComponent::GetHistoryMeshTransformByTime(float InTime)
+{
+	for (TArray<FBXTrajectoryPoint>::TIterator It(MeshTrajectoryPoints); It; ++It)
+	{
+		if (It->Time >= InTime)
+		{
+			int32 CurrentIndex = It.GetIndex();
+			if (MeshTrajectoryPoints.IsValidIndex(CurrentIndex - 1))
+			{
+				FTransform Start = MeshTrajectoryPoints[CurrentIndex - 1].Transform;
+				float StartTime = MeshTrajectoryPoints[CurrentIndex - 1].Time;
+
+				FTransform End = MeshTrajectoryPoints[CurrentIndex].Transform;
+				float EndTime = MeshTrajectoryPoints[CurrentIndex].Time;
+
+				return FTransform
+				(
+					FQuat::Slerp(Start.GetRotation(), End.GetRotation(), (InTime - StartTime) / (EndTime - StartTime + 1e-8)),
+					FMath::Lerp(Start.GetLocation(), End.GetLocation(), (InTime - StartTime) / (EndTime - StartTime + 1e-8)),
+					FMath::Lerp(Start.GetScale3D(), End.GetScale3D(), (InTime - StartTime) / (EndTime - StartTime + 1e-8))
+				);
+			}
+			else
+			{
+				return It->Transform;
+			}
+		}
+	}
+
+	// 历史数据未命中时回退到当前Mesh组件Transform
+	ACharacter* OwnerChar = Cast<ACharacter>(GetOwner());
+	if (IsValid(OwnerChar))
+	{
+		USkeletalMeshComponent* MeshComp = OwnerChar->GetMesh();
+		if (IsValid(MeshComp))
+		{
+			return MeshComp->GetComponentTransform();
+		}
+	}
+
+	if (IsValid(UpdatedComponent))
+	{
+		return UpdatedComponent->GetComponentTransform();
+	}
+
+	return FTransform();
+}
+
 void UBXCharacterMovementComponent::CleanTrajectoryPoints()
 {
 	float CurrentTime = GetWorld()->GetTimeSeconds();
 	TrajectoryPoints.RemoveAll
+	(
+		[&](const FBXTrajectoryPoint& A)
+		{
+			return CurrentTime - A.Time >= RecordTime;
+		}
+	);
+	MeshTrajectoryPoints.RemoveAll
 	(
 		[&](const FBXTrajectoryPoint& A)
 		{

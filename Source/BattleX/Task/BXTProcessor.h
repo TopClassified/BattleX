@@ -292,7 +292,11 @@ public:
 	// 根据特定世界时间(20秒以内)获取位置
 	UFUNCTION(BlueprintCallable, Category = "GlobalAPI")
 	static bool GetTargetTransformByWorldTime(AActor* InTarget, float InWorldTime, FTransform& OutTransform);
-	
+
+	// 根据特定世界时间(20秒以内)获取目标SkeletalMeshComponent的位置
+	UFUNCTION(BlueprintCallable, Category = "GlobalAPI")
+	static bool GetTargetMeshTransformByWorldTime(AActor* InTarget, float InWorldTime, FTransform& OutTransform);
+
 protected:
 	static USceneComponent* AnalyzeTransformCreaterCoordinateType(const FBXTLRunTimeData& InRTData, const FBXTLTaskRTData& InTaskData, const FBXTTransformCreater& InCreater, bool bUseOrigin, FTransform& OutTransform);
 	

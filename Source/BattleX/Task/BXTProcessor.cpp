@@ -548,4 +548,22 @@ bool UBXTProcessor::GetTargetTransformByWorldTime(AActor* InTarget, float InWorl
 	return true;
 }
 
+bool UBXTProcessor::GetTargetMeshTransformByWorldTime(AActor* InTarget, float InWorldTime, FTransform& OutTransform)
+{
+	if (!IsValid(InTarget))
+	{
+		return false;
+	}
+
+	UBXCharacterMovementComponent* CMC = InTarget->FindComponentByClass<UBXCharacterMovementComponent>();
+	if (!IsValid(CMC))
+	{
+		return false;
+	}
+
+	OutTransform = CMC->GetHistoryMeshTransformByTime(InWorldTime);
+
+	return true;
+}
+
 #pragma endregion GlobalAPI
