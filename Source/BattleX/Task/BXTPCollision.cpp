@@ -1,6 +1,6 @@
 #include "BXTPCollision.h"
 
-#include "BXColdWeapon.h"
+#include "BXMeleeWeapon.h"
 #include "BXGearComponent.h"
 
 
@@ -373,7 +373,7 @@ void UBXTPTrackWeaponHitBox::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRT
 			continue;
 		}
 
-		ABXColdWeapon* Gear = Cast<ABXColdWeapon>(GearComponent->GetUsingGear(Task->WeaponSlot));
+		ABXMeleeWeapon* Gear = Cast<ABXMeleeWeapon>(GearComponent->GetUsingGear(Task->WeaponSlot));
 		if (!IsValid(Gear))
 		{
 			continue;

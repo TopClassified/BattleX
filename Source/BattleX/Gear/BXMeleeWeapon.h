@@ -6,20 +6,20 @@
 #include "BXGear.h"
 #include "BXShapeComponent.h"
 
-#include "BXColdWeapon.generated.h" 
+#include "BXMeleeWeapon.generated.h"
 
 
 
 UCLASS(Abstract, Blueprintable, BlueprintType)
-class BATTLEX_API ABXColdWeapon : public ABXGear
+class BATTLEX_API ABXMeleeWeapon : public ABXGear
 {
 	GENERATED_BODY()
 
 #pragma region Important
 public:
-	ABXColdWeapon(const FObjectInitializer& ObjectInitializer);
+	ABXMeleeWeapon(const FObjectInitializer& ObjectInitializer);
 
-	virtual ~ABXColdWeapon();
+	virtual ~ABXMeleeWeapon();
 
 	virtual void BeginPlay() override;
 
@@ -52,11 +52,11 @@ public:
 	// 获取碰撞盒管理组件
 	UFUNCTION(BlueprintCallable)
 	UBXShapeComponent* GetHitBoxComponent();
-	
+
 	// 获取碰撞盒当前位置
 	UFUNCTION(BlueprintCallable)
 	bool GetHitBoxTransform(const FGameplayTag& InTag, FTransform& OutTransform);
-	
+
 protected:
 	// 碰撞信息组件
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (AllowPrivateAccess = "true"))

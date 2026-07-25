@@ -1,4 +1,4 @@
-#include "BXColdWeapon.h"
+#include "BXMeleeWeapon.h"
 
 #include "Components/SkeletalMeshComponent.h"
 
@@ -10,25 +10,25 @@
 
 
 #pragma region Important
-ABXColdWeapon::ABXColdWeapon(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+ABXMeleeWeapon::ABXMeleeWeapon(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = true;
 
 	HitBoxComponent = CreateDefaultSubobject<UBXShapeComponent>(TEXT("HitBox"));
 }
 
-ABXColdWeapon::~ABXColdWeapon()
+ABXMeleeWeapon::~ABXMeleeWeapon()
 {
 	
 }
 
-void ABXColdWeapon::BeginPlay()
+void ABXMeleeWeapon::BeginPlay()
 {
 	
 	Super::BeginPlay();
 }
 
-void ABXColdWeapon::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void ABXMeleeWeapon::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
 
@@ -39,13 +39,13 @@ void ABXColdWeapon::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 
 #pragma region Use
-void ABXColdWeapon::InternalPostUsing(UPARAM(ref) FBXUsingGearInformation& UsingInfo)
+void ABXMeleeWeapon::InternalPostUsing(UPARAM(ref) FBXUsingGearInformation& UsingInfo)
 {
 	
 	Super::InternalPostUsing(UsingInfo);
 }
 
-void ABXColdWeapon::InternalPreUnusing(UPARAM(ref) FBXUsingGearInformation& UnusingInfo)
+void ABXMeleeWeapon::InternalPreUnusing(UPARAM(ref) FBXUsingGearInformation& UnusingInfo)
 {
 	
 	Super::InternalPreUnusing(UnusingInfo);
@@ -56,7 +56,7 @@ void ABXColdWeapon::InternalPreUnusing(UPARAM(ref) FBXUsingGearInformation& Unus
 
 
 #pragma region State
-void ABXColdWeapon::InternalChangeState(FGameplayTag NewState)
+void ABXMeleeWeapon::InternalChangeState(FGameplayTag NewState)
 {
 	if (CurrentState == NewState)
 	{
@@ -74,7 +74,7 @@ void ABXColdWeapon::InternalChangeState(FGameplayTag NewState)
 
 
 #pragma region HitBox
-UBXShapeComponent* ABXColdWeapon::GetHitBoxComponent()
+UBXShapeComponent* ABXMeleeWeapon::GetHitBoxComponent()
 {
 	if (!IsValid(HitBoxComponent))
 	{
@@ -84,7 +84,7 @@ UBXShapeComponent* ABXColdWeapon::GetHitBoxComponent()
 	return HitBoxComponent;
 }
 
-bool ABXColdWeapon::GetHitBoxTransform(const FGameplayTag& InTag, FTransform& OutTransform)
+bool ABXMeleeWeapon::GetHitBoxTransform(const FGameplayTag& InTag, FTransform& OutTransform)
 {
 	if (!IsValid(HitBoxComponent))
 	{
