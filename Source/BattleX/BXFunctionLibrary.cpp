@@ -347,20 +347,18 @@ bool UBXFunctionLibrary::AreCollinear(const FVector& A, const FVector& B, const 
 	FVector V1 = B - A;
 	FVector V2 = C - A;
 
-	// 计算向量的单位长度
 	float LenV1 = V1.Size();
 	float LenV2 = V2.Size();
 
-	// 处理长度为零的情况
-	if (LenV1 == 0 || LenV2 == 0) 
+	if (LenV1 < KINDA_SMALL_NUMBER || LenV2 < KINDA_SMALL_NUMBER)
 	{
 		return true;
 	}
 
-	// 计算角度
-	float Angle = FMath::RadiansToDegrees(FMath::Acos(V1.Dot(V2) / (LenV1 * LenV2)));
+	// Clamp防止浮点误差导致Acos返回NaN
+	float CosAngle = FMath::Clamp(V1.Dot(V2) / (LenV1 * LenV2), -1.0f, 1.0f);
+	float Angle = FMath::RadiansToDegrees(FMath::Acos(CosAngle));
 
-	// 判断夹角是否在允许的范围内
 	return Angle < AngleTolerance;
 }
 

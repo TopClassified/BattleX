@@ -22,7 +22,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogBXTHB, Log, All);
 
 #pragma region Editor
 #if WITH_EDITOR
-void UBXTCollision::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+void UBXTIntervalCollision::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
 	if (LifeType == EBXTLifeType::L_Duration || LifeType == EBXTLifeType::L_DurationTimeline)
 	{
@@ -180,8 +180,8 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 
 	UE_LOG(LogBXTHB, Log, TEXT("PreSave bake: Task=%s Bone=%s bIsSocket=%d SampleRange=[%.3f,%.3f]"), *GetName(), *SampleBoneName.ToString(), (int32)bIsSocket, TaskStart, TaskEnd);
 
-	// 100fps采样
-	const float SampleRate = 100.0f;
+	// 60fps采样
+	const float SampleRate = 60.0f;
 	const float SampleInterval = 1.0f / SampleRate;
 	const float SampleDuration = TaskEnd - TaskStart;
 	const int32 SampleCount = FMath::Max(2, FMath::CeilToInt(SampleDuration * SampleRate) + 1);
@@ -286,47 +286,54 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 		return;
 	}
 
-	// 共线合并
-	TArray<int32> SlopeIndexList;
-	SlopeIndexList.Add(0);
+	// 用标记数组替代TArray<int32>+Contains,避免O(n²)
+	TArray<bool> KeepFlags;
+	KeepFlags.AddZeroed(List.Num());
+	KeepFlags[0] = true;
+	KeepFlags[List.Num() - 1] = true;
+
+	// 共线合并(三点判定)
+	int32 LastKeptIdx = 0;
 	for (int32 i = 1; i < List.Num() - 1; ++i)
 	{
-		if (!UBXFunctionLibrary::AreCollinear(List[SlopeIndexList.Last()].Transform.GetLocation(), List[i].Transform.GetLocation(), List[i + 1].Transform.GetLocation(), TrajectoryOptimization.X))
+		if (!UBXFunctionLibrary::AreCollinear(List[LastKeptIdx].Transform.GetLocation(), List[i].Transform.GetLocation(), List[i + 1].Transform.GetLocation(), TrajectoryOptimization.X))
 		{
-			SlopeIndexList.Add(i);
+			KeepFlags[i] = true;
+			LastKeptIdx = i;
 		}
 	}
-	SlopeIndexList.Add(List.Num() - 1);
 
-	// 旋转差异合并
-	TArray<int32> AngleIndexList;
-	AngleIndexList.Add(0);
+	// 旋转差异合并(三点判定:保留转向拐点,避免Slerp插值丢失拐点)
 	const float RadiansError = FMath::DegreesToRadians(TrajectoryOptimization.Y);
+	LastKeptIdx = 0;
 	for (int32 i = 1; i < List.Num() - 1; ++i)
 	{
-		if (RadiansError < List[AngleIndexList.Last()].Transform.GetRotation().AngularDistance(List[i].Transform.GetRotation()))
+		float DistLast = List[LastKeptIdx].Transform.GetRotation().AngularDistance(List[i].Transform.GetRotation());
+		float DistNext = List[i].Transform.GetRotation().AngularDistance(List[i + 1].Transform.GetRotation());
+		if (RadiansError < DistLast || RadiansError < DistNext)
 		{
-			AngleIndexList.Add(i);
+			KeepFlags[i] = true;
+			LastKeptIdx = i;
 		}
 	}
-	AngleIndexList.Add(List.Num() - 1);
 
-	// 缩放差异合并
-	TArray<int32> ScaleIndexList;
-	ScaleIndexList.Add(0);
+	// 缩放差异合并(三点判定:保留缩放变化拐点)
+	LastKeptIdx = 0;
 	for (int32 i = 1; i < List.Num() - 1; ++i)
 	{
-		if (!List[ScaleIndexList.Last()].Transform.GetScale3D().Equals(List[i].Transform.GetScale3D(), TrajectoryOptimization.Z))
+		bool bDiffLast = !List[LastKeptIdx].Transform.GetScale3D().Equals(List[i].Transform.GetScale3D(), TrajectoryOptimization.Z);
+		bool bDiffNext = !List[i].Transform.GetScale3D().Equals(List[i + 1].Transform.GetScale3D(), TrajectoryOptimization.Z);
+		if (bDiffLast || bDiffNext)
 		{
-			ScaleIndexList.Add(i);
+			KeepFlags[i] = true;
+			LastKeptIdx = i;
 		}
 	}
-	ScaleIndexList.Add(List.Num() - 1);
 
 	TArray<FBXTrajectoryPoint> Optimized;
 	for (int32 i = 0; i < List.Num(); ++i)
 	{
-		if (SlopeIndexList.Contains(i) || AngleIndexList.Contains(i) || ScaleIndexList.Contains(i))
+		if (KeepFlags[i])
 		{
 			Optimized.Add(List[i]);
 		}

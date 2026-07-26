@@ -17,7 +17,47 @@ UCLASS(BlueprintType, Blueprintable)
 class BATTLEX_API UBXTCollision : public UBXTask
 {
 	GENERATED_BODY()
-	
+
+public:
+	// 碰撞检测冷却
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision", Meta = (ClampMin = "0.1"))
+	float CoolDown = 10.0f;
+
+	// 数量限制
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter", Meta = (ClampMin = "1"))
+	int32 Limit = 100;
+
+	// 数量限制逻辑(不填则锁定的优先级高)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter")
+	FGameplayTag LimitLogic;
+
+	// 角色类型筛选
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter")
+	FGameplayTagContainer CharacterTags;
+
+	// 关系筛选
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter")
+	FGameplayTagContainer RelationshipTags;
+
+	// 碰撞类型
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter")
+	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes;
+
+	// 碰撞结果引擎层筛选
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter")
+	FBXCFilter EngineFilter;
+};
+
+
+
+
+
+
+UCLASS(BlueprintType, Blueprintable)
+class BATTLEX_API UBXTIntervalCollision : public UBXTCollision
+{
+	GENERATED_BODY()
+
 public:
 	// 碰撞检测间隔
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision", Meta = (ClampMin = "0.001"))
@@ -26,35 +66,6 @@ public:
 	// 碰撞检测次数(小于等于0时，代表次数不定)
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadWrite, Category = "Collision")
 	int32 Count = 0;
-	
-	// 碰撞检测冷却
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision", Meta = (ClampMin = "0.1"))
-	float CoolDown = 10.0f;
-
-	
-	// 数量限制
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter", Meta = (ClampMin = "1"))
-	int32 Limit = 100;
-
-	// 数量限制逻辑(不填则锁定的优先级高)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter")
-	FGameplayTag LimitLogic;
-	
-	// 角色类型筛选
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter")
-	FGameplayTagContainer CharacterTags;
-	
-	// 关系筛选
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter")
-	FGameplayTagContainer RelationshipTags;
-
-	// 碰撞类型
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter")
-	TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes;
-	
-	// 碰撞结果引擎层筛选
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Filter")
-	FBXCFilter EngineFilter;
 
 
 #pragma region Editor
@@ -83,9 +94,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision")
 	FGameplayTag HitBoxTag;
 
-	// 碰撞检测角度步进(当路径上点的角度差异过大时，数值越小，步进次数越多，性能消耗越大)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision", AdvancedDisplay)
-	float SweepAngleStep = 20.0f;
+	/*
+	 * 碰撞检测角度步进
+	 * X: 最小步进角度(帧率>=60时使用,精度高)
+	 * Y: 最大步进角度(帧率<=20时使用,性能好)
+	 * 帧率在20~60之间时线性插值
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision")
+	FVector2D SweepAngleStep = FVector2D(15.0f, 30.0f);
 
 	/*
 	 * 对轨迹进行冗余点去除的规则
