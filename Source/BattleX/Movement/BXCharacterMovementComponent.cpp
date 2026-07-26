@@ -409,34 +409,70 @@ bool UBXCharacterMovementComponent::DoJump(bool bReplayingMoves)
 
 
 
+// 在按时间升序的轨迹数组中二分查找首个 Time >= InTime 的索引
+static int32 FindLowerBoundTime(const TArray<FBXTrajectoryPoint>& InList, float InTime)
+{
+	int32 Lo = 0;
+	int32 Hi = InList.Num();
+	while (Lo < Hi)
+	{
+		int32 Mid = Lo + (Hi - Lo) / 2;
+		if (InList[Mid].Time < InTime)
+		{
+			Lo = Mid + 1;
+		}
+		else
+		{
+			Hi = Mid;
+		}
+	}
+	return Lo;
+}
+
+// 在轨迹列表中按时间插值,返回是否命中
+static bool SampleTrajectory(const TArray<FBXTrajectoryPoint>& InList, float InTime, FTransform& OutTransform)
+{
+	if (InList.Num() <= 0)
+	{
+		return false;
+	}
+
+	int32 CurrentIndex = FindLowerBoundTime(InList, InTime);
+
+	// 全部早于 InTime,未命中
+	if (CurrentIndex == InList.Num())
+	{
+		return false;
+	}
+
+	if (CurrentIndex == 0)
+	{
+		OutTransform = InList[0].Transform;
+		return true;
+	}
+
+	const FBXTrajectoryPoint& Start = InList[CurrentIndex - 1];
+	const FBXTrajectoryPoint& End = InList[CurrentIndex];
+
+	float Alpha = (InTime - Start.Time) / (End.Time - Start.Time + 1e-8f);
+	OutTransform = FTransform
+	(
+		FQuat::Slerp(Start.Transform.GetRotation(), End.Transform.GetRotation(), Alpha),
+		FMath::Lerp(Start.Transform.GetLocation(), End.Transform.GetLocation(), Alpha),
+		FMath::Lerp(Start.Transform.GetScale3D(), End.Transform.GetScale3D(), Alpha)
+	);
+	return true;
+}
+
+
+
 #pragma region Record
 FTransform UBXCharacterMovementComponent::GetHistoryTransformByTime(float InTime)
 {
-	for (TArray<FBXTrajectoryPoint>::TIterator It(TrajectoryPoints); It; ++It)
+	FTransform Result;
+	if (SampleTrajectory(TrajectoryPoints, InTime, Result))
 	{
-		if (It->Time >= InTime)
-		{
-			int32 CurrentIndex = It.GetIndex();
-			if (TrajectoryPoints.IsValidIndex(CurrentIndex - 1))
-			{
-				FTransform Start = TrajectoryPoints[CurrentIndex - 1].Transform;
-				float StartTime = TrajectoryPoints[CurrentIndex - 1].Time;
-
-				FTransform End = TrajectoryPoints[CurrentIndex].Transform;
-				float EndTime = TrajectoryPoints[CurrentIndex].Time;
-
-				return FTransform
-				(
-					FQuat::Slerp(Start.GetRotation(), End.GetRotation(), (InTime - StartTime) / (EndTime - StartTime + 1e-8)),
-					FMath::Lerp(Start.GetLocation(), End.GetLocation(), (InTime - StartTime) / (EndTime - StartTime + 1e-8)),
-					FMath::Lerp(Start.GetScale3D(), End.GetScale3D(), (InTime - StartTime) / (EndTime - StartTime + 1e-8))
-				);
-			}
-			else
-			{
-				return It->Transform;
-			}
-		}
+		return Result;
 	}
 
 	if (IsValid(UpdatedComponent))
@@ -449,31 +485,10 @@ FTransform UBXCharacterMovementComponent::GetHistoryTransformByTime(float InTime
 
 FTransform UBXCharacterMovementComponent::GetHistoryMeshTransformByTime(float InTime)
 {
-	for (TArray<FBXTrajectoryPoint>::TIterator It(MeshTrajectoryPoints); It; ++It)
+	FTransform Result;
+	if (SampleTrajectory(MeshTrajectoryPoints, InTime, Result))
 	{
-		if (It->Time >= InTime)
-		{
-			int32 CurrentIndex = It.GetIndex();
-			if (MeshTrajectoryPoints.IsValidIndex(CurrentIndex - 1))
-			{
-				FTransform Start = MeshTrajectoryPoints[CurrentIndex - 1].Transform;
-				float StartTime = MeshTrajectoryPoints[CurrentIndex - 1].Time;
-
-				FTransform End = MeshTrajectoryPoints[CurrentIndex].Transform;
-				float EndTime = MeshTrajectoryPoints[CurrentIndex].Time;
-
-				return FTransform
-				(
-					FQuat::Slerp(Start.GetRotation(), End.GetRotation(), (InTime - StartTime) / (EndTime - StartTime + 1e-8)),
-					FMath::Lerp(Start.GetLocation(), End.GetLocation(), (InTime - StartTime) / (EndTime - StartTime + 1e-8)),
-					FMath::Lerp(Start.GetScale3D(), End.GetScale3D(), (InTime - StartTime) / (EndTime - StartTime + 1e-8))
-				);
-			}
-			else
-			{
-				return It->Transform;
-			}
-		}
+		return Result;
 	}
 
 	// 历史数据未命中时回退到当前Mesh组件Transform

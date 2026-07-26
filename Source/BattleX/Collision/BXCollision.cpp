@@ -163,23 +163,23 @@ bool UBXCollisionLibrary::CheckCollisionResult(AActor* InRequester, const FHitRe
 
 void UBXCollisionLibrary::CombineCollisionResults(const TArray<FHitResult>& InSourceList, TArray<FHitResult>& InOutList)
 {
-	for (int32 i = 0; i < InSourceList.Num(); ++i)
+	// 用 (Component, BoneName) 作为键去重,避免 O(N*M) 双重循环
+	// 仅与 InOutList 比对,InSourceList 内部重复项保留原行为
+	TMap<UPrimitiveComponent*, TSet<FName>> Visited;
+	for (const FHitResult& HR : InOutList)
 	{
-		bool UniqueFlag = true;
+		Visited.FindOrAdd(HR.GetComponent()).Add(HR.BoneName);
+	}
 
-		for (int32 j = 0; j < InOutList.Num(); ++j)
+	for (const FHitResult& HR : InSourceList)
+	{
+		TSet<FName>& BoneSet = Visited.FindOrAdd(HR.GetComponent());
+		if (BoneSet.Contains(HR.BoneName))
 		{
-			if (InSourceList[i].GetComponent() == InOutList[j].GetComponent() && InSourceList[i].BoneName.IsEqual(InOutList[j].BoneName))
-			{
-				UniqueFlag = false;
-				break;
-			}
+			continue;
 		}
-					
-		if (UniqueFlag)
-		{
-			InOutList.Add(InSourceList[i]);
-		}
+
+		InOutList.Add(HR);
 	}
 }
 

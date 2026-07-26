@@ -14,6 +14,7 @@
 #include "BXFunctionLibrary.h"
 #include "Timeline/BXTLAsset.h"
 #include "BXMeleeWeapon.h"
+#include "Collision/BXShapeComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBXTHB, Log, All);
 
@@ -56,9 +57,9 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 
 	BoneSampledTrajectory.List.Reset();
 
-	if (TrajectoryBone.BoneName.IsNone())
+	if (!HitBoxTag.IsValid())
 	{
-		UE_LOG(LogBXTHB, Warning, TEXT("PreSave skip: BoneName is None, Task=%s"), *GetName());
+		UE_LOG(LogBXTHB, Warning, TEXT("PreSave skip: HitBoxTag invalid, Task=%s"), *GetName());
 		return;
 	}
 
@@ -81,16 +82,13 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 
 	if (!OwnerAsset || OwnerSectionIndex < 0)
 	{
-		UE_LOG(LogBXTHB, Warning, TEXT("PreSave skip: OwnerAsset invalid, Task=%s, Outer=%s"),
-			*GetName(), *GetOuter()->GetName());
+		UE_LOG(LogBXTHB, Warning, TEXT("PreSave skip: OwnerAsset invalid, Task=%s, Outer=%s"), *GetName(), *GetOuter()->GetName());
 		return;
 	}
 
 	// 计算Task时间范围
 	const float TaskStart = StartTime;
-	const float TaskEnd = (LifeType == EBXTLifeType::L_Timeline)
-		? OwnerAsset->Sections[OwnerSectionIndex].Duration
-		: StartTime + Duration;
+	const float TaskEnd = (LifeType == EBXTLifeType::L_Timeline) ? OwnerAsset->Sections[OwnerSectionIndex].Duration : StartTime + Duration;
 
 	// 收集Section中所有有效动画Task
 	const FBXTLSection& Section = OwnerAsset->Sections[OwnerSectionIndex];
@@ -111,15 +109,28 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 		return;
 	}
 
-	// 优先按Socket解析，否则按骨骼处理
-	USkeletalMesh* TargetSkeletalMesh = TrajectoryBone.SkeletalMesh.LoadSynchronous();
+	// 解析采样骨骼来源(子类可重写以提供不同来源,如武器挂接Socket)
+	FName SampleBoneName = NAME_None;
+	USkeletalMesh* TargetSkeletalMesh = nullptr;
+	if (!ResolveSampleBoneSource(OwnerAsset, OwnerSectionIndex, SampleBoneName, TargetSkeletalMesh))
+	{
+		UE_LOG(LogBXTHB, Warning, TEXT("PreSave skip: ResolveSampleBoneSource failed, HitBoxTag=%s, Task=%s"), *HitBoxTag.ToString(), *GetName());
+		return;
+	}
+
+	if (SampleBoneName.IsNone())
+	{
+		UE_LOG(LogBXTHB, Warning, TEXT("PreSave skip: SampleBoneName is None, Task=%s"), *GetName());
+		return;
+	}
+
+	// 优先按Socket解析,否则按骨骼处理
 	bool bIsSocket = false;
 	FTransform SocketRelativeTransform = FTransform::Identity;
-	FName SampleBoneName = TrajectoryBone.BoneName;
 
 	if (IsValid(TargetSkeletalMesh))
 	{
-		if (USkeletalMeshSocket* Socket = TargetSkeletalMesh->FindSocket(TrajectoryBone.BoneName))
+		if (USkeletalMeshSocket* Socket = TargetSkeletalMesh->FindSocket(SampleBoneName))
 		{
 			bIsSocket = true;
 			SocketRelativeTransform = Socket->GetSocketLocalTransform();
@@ -146,8 +157,7 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 	const int32 BoneIndex = SharedSkeleton->GetReferenceSkeleton().FindBoneIndex(SampleBoneName);
 	if (BoneIndex == INDEX_NONE)
 	{
-		UE_LOG(LogBXTHB, Warning, TEXT("PreSave skip: BoneIndex not found, SampleBoneName=%s, Task=%s"),
-			*SampleBoneName.ToString(), *GetName());
+		UE_LOG(LogBXTHB, Warning, TEXT("PreSave skip: BoneIndex not found, SampleBoneName=%s, Task=%s"), *SampleBoneName.ToString(), *GetName());
 		return;
 	}
 
@@ -168,8 +178,7 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 		return;
 	}
 
-	UE_LOG(LogBXTHB, Log, TEXT("PreSave bake: Task=%s Bone=%s bIsSocket=%d SampleRange=[%.3f,%.3f]"),
-		*GetName(), *SampleBoneName.ToString(), (int32)bIsSocket, TaskStart, TaskEnd);
+	UE_LOG(LogBXTHB, Log, TEXT("PreSave bake: Task=%s Bone=%s bIsSocket=%d SampleRange=[%.3f,%.3f]"), *GetName(), *SampleBoneName.ToString(), (int32)bIsSocket, TaskStart, TaskEnd);
 
 	// 100fps采样
 	const float SampleRate = 100.0f;
@@ -259,9 +268,7 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 		}
 
 		// Socket模式叠加Socket相对挂接骨骼的Transform
-		FTransform FinalTransform = bIsSocket
-			? (SocketRelativeTransform * BoneComponentSpace)
-			: BoneComponentSpace;
+		FTransform FinalTransform = bIsSocket ? (SocketRelativeTransform * BoneComponentSpace) : BoneComponentSpace;
 
 		FBXTrajectoryPoint Point;
 		Point.Time = SampleTime;
@@ -269,15 +276,13 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 		BoneSampledTrajectory.List.Add(Point);
 	}
 
-	UE_LOG(LogBXTHB, Log, TEXT("PreSave sampled %d points before optimization, Task=%s"),
-		BoneSampledTrajectory.List.Num(), *GetName());
+	UE_LOG(LogBXTHB, Log, TEXT("PreSave sampled %d points before optimization, Task=%s"), BoneSampledTrajectory.List.Num(), *GetName());
 
 	// 优化:移除差异不大的相邻点
 	TArray<FBXTrajectoryPoint>& List = BoneSampledTrajectory.List;
 	if (List.Num() < 3)
 	{
-		UE_LOG(LogBXTHB, Log, TEXT("PreSave done: skip optimization, final count=%d, Task=%s"),
-			List.Num(), *GetName());
+		UE_LOG(LogBXTHB, Log, TEXT("PreSave done: skip optimization, final count=%d, Task=%s"), List.Num(), *GetName());
 		return;
 	}
 
@@ -349,28 +354,100 @@ void UBXTTrackHitBox::RefreshDataBeforePreview()
 
 }
 
-#if WITH_EDITOR
-void UBXTTrackWeaponHitBox::PreSave(FObjectPreSaveContext SaveContext)
+bool UBXTTrackHitBox::ResolveSampleBoneSource(UBXTLAsset* OwnerAsset, int32 SectionIndex, FName& OutBoneName, USkeletalMesh*& OutSkeletalMesh)
 {
-	UBXTLAsset* OwnerAsset = Cast<UBXTLAsset>(GetOuter());
 	if (!IsValid(OwnerAsset) || !IsValid(OwnerAsset->PlayerInformation))
 	{
-		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox PreSave skip: OwnerAsset or PlayerInformation invalid, Task=%s"),
-			*GetName());
-		Super::PreSave(SaveContext);
-		return;
+		return false;
 	}
 
 	UObject* PlayerInfo = OwnerAsset->PlayerInformation;
 	UClass* InfoClass = PlayerInfo->GetClass();
 
-	// 反射访问UsingGears字段
+	// 反射访问ActorClass字段从角色CDO拿ShapeComponent和SkeletalMesh
+	USkeletalMesh* CharacterSkeletalMesh = nullptr;
+	UBXShapeComponent* ShapeComp = nullptr;
+
+	if (FObjectProperty* ActorClassProp = CastField<FObjectProperty>(InfoClass->FindPropertyByName(TEXT("ActorClass"))))
+	{
+		UObject* ActorClassObj = ActorClassProp->GetObjectPropertyValue_InContainer(PlayerInfo);
+		UClass* ActorClass = Cast<UClass>(ActorClassObj);
+		if (ActorClass)
+		{
+			AActor* ActorCDO = ActorClass->GetDefaultObject<AActor>();
+			if (ACharacter* CharCDO = Cast<ACharacter>(ActorCDO))
+			{
+				if (USkeletalMeshComponent* MeshComp = CharCDO->GetMesh())
+				{
+					CharacterSkeletalMesh = MeshComp->GetSkeletalMeshAsset();
+				}
+				ShapeComp = CharCDO->FindComponentByClass<UBXShapeComponent>();
+			}
+		}
+	}
+
+	if (!IsValid(ShapeComp))
+	{
+		UE_LOG(LogBXTHB, Warning, TEXT("ResolveSampleBoneSource: ShapeComponent not found on character CDO, Task=%s"), *GetName());
+		return false;
+	}
+
+	// 根据HitBoxTag找ShapeInformation,取其Socket作为采样骨骼
+	const FBXShapeInformation* SInfo = ShapeComp->ShapeInformations.Find(HitBoxTag);
+	if (!SInfo)
+	{
+		UE_LOG(LogBXTHB, Warning, TEXT("ResolveSampleBoneSource: ShapeInformation not found for HitBoxTag=%s, Task=%s"), *HitBoxTag.ToString(), *GetName());
+		return false;
+	}
+
+	// 角色CDO未配SkeletalMesh时Socket模式会失效,输出警告提示配置异常
+	if (!IsValid(CharacterSkeletalMesh))
+	{
+		UE_LOG(LogBXTHB, Warning, TEXT("ResolveSampleBoneSource: CharacterSkeletalMesh invalid on character CDO, Task=%s"), *GetName());
+		return false;
+	}
+
+	OutBoneName = SInfo->Socket.BoneName;
+	OutSkeletalMesh = CharacterSkeletalMesh;
+	return true;
+}
+
+bool UBXTTrackHitBox::EnablePassiveTrigger()
+{
+	return false;
+}
+#endif
+#pragma endregion Editor
+
+
+
+
+
+
+
+UBXTTrackWeaponHitBox::UBXTTrackWeaponHitBox()
+{
+	DisplayName = FText::FromString(TEXT("武器碰撞盒轨迹命中检测"));
+}
+
+#pragma region Editor
+#if WITH_EDITOR
+bool UBXTTrackWeaponHitBox::ResolveSampleBoneSource(UBXTLAsset* OwnerAsset, int32 SectionIndex, FName& OutBoneName, USkeletalMesh*& OutSkeletalMesh)
+{
+	if (!IsValid(OwnerAsset) || !IsValid(OwnerAsset->PlayerInformation))
+	{
+		return false;
+	}
+
+	UObject* PlayerInfo = OwnerAsset->PlayerInformation;
+	UClass* InfoClass = PlayerInfo->GetClass();
+
+	// 反射访问UsingGears字段获取武器类
 	FMapProperty* UsingGearsProp = CastField<FMapProperty>(InfoClass->FindPropertyByName(TEXT("UsingGears")));
 	if (!UsingGearsProp)
 	{
-		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox PreSave skip: UsingGears property not found, Task=%s"), *GetName());
-		Super::PreSave(SaveContext);
-		return;
+		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox ResolveSampleBoneSource: UsingGears property not found, Task=%s"), *GetName());
+		return false;
 	}
 
 	FScriptMapHelper MapHelper(UsingGearsProp, UsingGearsProp->ContainerPtrToValuePtr<void>(PlayerInfo));
@@ -394,44 +471,55 @@ void UBXTTrackWeaponHitBox::PreSave(FObjectPreSaveContext SaveContext)
 
 	if (!WeaponClass)
 	{
-		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox PreSave skip: no weapon class for slot %s, Task=%s"),
-			*WeaponSlot.ToString(), *GetName());
-		Super::PreSave(SaveContext);
-		return;
+		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox ResolveSampleBoneSource: no weapon class for slot %s, Task=%s"), *WeaponSlot.ToString(), *GetName());
+		return false;
 	}
 
 	ABXGear* GearCDO = WeaponClass->GetDefaultObject<ABXGear>();
 	if (!IsValid(GearCDO))
 	{
-		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox PreSave skip: GearCDO invalid, Task=%s"), *GetName());
-		Super::PreSave(SaveContext);
-		return;
+		return false;
 	}
 
-	// 从AttachmentConfigs找匹配Slot且State为Open的挂接配置(预览角色武器处于Open状态)
+	// 从武器CDO获取HitBoxComponent,验证HitBoxTag存在
+	ABXMeleeWeapon* WeaponCDO = Cast<ABXMeleeWeapon>(GearCDO);
+	if (!IsValid(WeaponCDO))
+	{
+		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox ResolveSampleBoneSource: WeaponClass %s is not a MeleeWeapon, Task=%s"),
+			*WeaponClass->GetName(), *GetName());
+		return false;
+	}
+
+	UBXShapeComponent* WeaponHitBoxComp = WeaponCDO->GetHitBoxComponent();
+	if (!IsValid(WeaponHitBoxComp))
+	{
+		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox ResolveSampleBoneSource: HitBoxComponent invalid, Task=%s"), *GetName());
+		return false;
+	}
+
+	if (!WeaponHitBoxComp->ShapeInformations.Contains(HitBoxTag))
+	{
+		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox ResolveSampleBoneSource: HitBoxTag %s not found in weapon HitBoxComponent, Task=%s"), *HitBoxTag.ToString(), *GetName());
+		return false;
+	}
+
+	// 从AttachmentConfigs找匹配Slot且State为Open的挂接配置(采样角色挂接Socket)
 	FName WeaponAttachSocket = NAME_None;
-	FTransform WeaponAttachRelation;
 	bool bFoundConfig = false;
 	for (const FBXGearAttachmentConfig& Config : GearCDO->AttachmentConfigs)
 	{
 		if (Config.Slot == WeaponSlot && Config.State == BXGameplayTags::BXGearState_Open)
 		{
 			WeaponAttachSocket = Config.Socket;
-			WeaponAttachRelation = Config.Relation;
 			bFoundConfig = true;
 			break;
 		}
 	}
 	if (!bFoundConfig || WeaponAttachSocket.IsNone())
 	{
-		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox PreSave skip: no AttachmentConfig for slot %s with State=Open, Task=%s"),
-			*WeaponSlot.ToString(), *GetName());
-		Super::PreSave(SaveContext);
-		return;
+		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox ResolveSampleBoneSource: no AttachmentConfig for slot %s with State=Open, Task=%s"), *WeaponSlot.ToString(), *GetName());
+		return false;
 	}
-
-	UE_LOG(LogBXTHB, Log, TEXT("WeaponHitBox PreSave: Task=%s WeaponClass=%s AttachSocket=%s"),
-		*GetName(), *WeaponClass->GetName(), *WeaponAttachSocket.ToString());
 
 	// 反射访问ActorClass字段从角色CDO拿SkeletalMesh
 	USkeletalMesh* CharacterSkeletalMesh = nullptr;
@@ -454,34 +542,16 @@ void UBXTTrackWeaponHitBox::PreSave(FObjectPreSaveContext SaveContext)
 
 	if (!IsValid(CharacterSkeletalMesh))
 	{
-		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox PreSave: CharacterSkeletalMesh invalid, Task=%s"), *GetName());
+		UE_LOG(LogBXTHB, Warning, TEXT("WeaponHitBox ResolveSampleBoneSource: CharacterSkeletalMesh invalid, Task=%s"), *GetName());
+		return false;
 	}
 
-	// 推导出的Socket和SkeletalMesh塞给父类TrajectoryBone,触发父类PreSave烘焙
-	TrajectoryBone.BoneName = WeaponAttachSocket;
-	if (IsValid(CharacterSkeletalMesh))
-	{
-		TrajectoryBone.SkeletalMesh = CharacterSkeletalMesh;
-	}
+	OutBoneName = WeaponAttachSocket;
+	OutSkeletalMesh = CharacterSkeletalMesh;
 
-	Super::PreSave(SaveContext);
-}
-#endif
+	UE_LOG(LogBXTHB, Log, TEXT("WeaponHitBox ResolveSampleBoneSource: Task=%s WeaponClass=%s AttachSocket=%s HitBoxTag=%s"), *GetName(), *WeaponClass->GetName(), *WeaponAttachSocket.ToString(), *HitBoxTag.ToString());
 
-bool UBXTTrackHitBox::EnablePassiveTrigger()
-{
-	return false;
+	return true;
 }
 #endif
 #pragma endregion Editor
-
-
-
-
-
-
-
-UBXTTrackWeaponHitBox::UBXTTrackWeaponHitBox()
-{
-	DisplayName = FText::FromString(TEXT("武器碰撞盒轨迹命中检测"));
-}

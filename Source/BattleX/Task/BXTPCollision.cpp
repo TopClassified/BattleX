@@ -4,6 +4,7 @@
 
 #include "BXMeleeWeapon.h"
 #include "BXGearComponent.h"
+#include "BXCharacterMovementComponent.h"
 
 
 
@@ -198,10 +199,28 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 			// 获取碰撞请求者
 			Parameter.Requester = GetCollisionRequester(ShapeComponent);
 
+			// 缓存Requester的CharacterMovementComponent,避免每个采样点都FindComponentByClass
+			UBXCharacterMovementComponent* RequesterCMC = IsValid(Parameter.Requester) ? Parameter.Requester->FindComponentByClass<UBXCharacterMovementComponent>() : nullptr;
+
+			// RequesterCMC无效时回退到Requester当前Transform,避免WorldTransform残留旧值
+			auto GetRequesterFallback = [&]() -> FTransform
+			{
+				return IsValid(Parameter.Requester) ? Parameter.Requester->GetActorTransform() : FTransform::Identity;
+			};
+
 			// 进行碰撞检测
 			for (TMap<FGameplayTag, FBXShapeInformation>::TIterator It(ShapeComponent->ShapeInformations); It; ++It)
 			{
+				// 按HitBoxTag过滤,未设置表示匹配任意碰撞盒
+				if (Task->HitBoxTag.IsValid() && Task->HitBoxTag != It->Key)
+				{
+					continue;
+				}
+
 				FBXShapeInformation* SInfo = &It->Value;
+
+				// Points扫描起点缓存,同一ShapeInformation内SearchSTime单调递增,可复用上一次找到的索引
+				int32 SearchStartIdx = 0;
 
 				for (int32 CurrentStep = 0; CurrentStep < Step; ++CurrentStep)
 				{
@@ -215,20 +234,33 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 					// 获取碰撞盒位置列表
 					HitBoxTransforms.Reset();
 					TArray<FBXTrajectoryPoint>& Points = Task->BoneSampledTrajectory.List;
-					for (int32 i = 0; i < Points.Num(); ++i)
+					// 精确跳到首个 Time >= SearchSTime 的点,避免重复检查
+					while (SearchStartIdx < Points.Num() && Points[SearchStartIdx].Time < SearchSTime)
+					{
+						++SearchStartIdx;
+					}
+					for (int32 i = SearchStartIdx; i < Points.Num(); ++i)
 					{
 						if (HitBoxTransforms.IsEmpty())
 						{
 							if (Points[i].Time >= SearchSTime)
 							{
-								UBXTProcessor::GetTargetMeshTransformByWorldTime(Parameter.Requester, TPC.StartTime + STime, WorldTransform);
+								SearchStartIdx = i;
+								if (IsValid(RequesterCMC))
+								{
+									WorldTransform = RequesterCMC->GetHistoryMeshTransformByTime(TPC.StartTime + STime);
+								}
+								else
+								{
+									WorldTransform = GetRequesterFallback();
+								}
 								if (i == 0)
 								{
 									HitBoxTransforms.Add(ComputeSampledHitBoxTransform(Points[i].Transform, WorldTransform, ShapeComponent, *SInfo));
 								}
 								else
 								{
-									float Alpha = (SearchSTime - Points[i - 1].Time) / (Points[i].Time - Points[i - 1].Time);
+									float Alpha = (SearchSTime - Points[i - 1].Time) / (Points[i].Time - Points[i - 1].Time + 1e-8f);
 									FVector Location = FMath::Lerp(Points[i - 1].Transform.GetLocation(), Points[i].Transform.GetLocation(), Alpha);
 									FQuat Rotation = FQuat::Slerp(Points[i - 1].Transform.GetRotation(), Points[i].Transform.GetRotation(), Alpha);
 									FVector Scale = FMath::Lerp(Points[i - 1].Transform.GetScale3D(), Points[i].Transform.GetScale3D(), Alpha);
@@ -240,17 +272,32 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 						{
 							if (Points[i].Time >= SearchETime)
 							{
-								UBXTProcessor::GetTargetMeshTransformByWorldTime(Parameter.Requester, TPC.StartTime + ETime, WorldTransform);
-								float Alpha = (SearchETime - Points[i - 1].Time) / (Points[i].Time - Points[i - 1].Time);
+								if (IsValid(RequesterCMC))
+								{
+									WorldTransform = RequesterCMC->GetHistoryMeshTransformByTime(TPC.StartTime + ETime);
+								}
+								else
+								{
+									WorldTransform = GetRequesterFallback();
+								}
+								float Alpha = (SearchETime - Points[i - 1].Time) / (Points[i].Time - Points[i - 1].Time + 1e-8f);
 								FVector Location = FMath::Lerp(Points[i - 1].Transform.GetLocation(), Points[i].Transform.GetLocation(), Alpha);
 								FQuat Rotation = FQuat::Slerp(Points[i - 1].Transform.GetRotation(), Points[i].Transform.GetRotation(), Alpha);
 								FVector Scale = FMath::Lerp(Points[i - 1].Transform.GetScale3D(), Points[i].Transform.GetScale3D(), Alpha);
 								HitBoxTransforms.Add(ComputeSampledHitBoxTransform(FTransform(Rotation, Location, Scale), WorldTransform, ShapeComponent, *SInfo));
+								SearchStartIdx = i;
 								break;
 							}
 							else
 							{
-								UBXTProcessor::GetTargetMeshTransformByWorldTime(Parameter.Requester, TPC.StartTime + Points[i].Time, WorldTransform);
+								if (IsValid(RequesterCMC))
+								{
+									WorldTransform = RequesterCMC->GetHistoryMeshTransformByTime(TPC.StartTime + Points[i].Time);
+								}
+								else
+								{
+									WorldTransform = GetRequesterFallback();
+								}
 								HitBoxTransforms.Add(ComputeSampledHitBoxTransform(Points[i].Transform, WorldTransform, ShapeComponent, *SInfo));
 							}
 						}

@@ -9,6 +9,8 @@
 
 #include "BXTCollision.generated.h"
 
+class UBXTLAsset;
+class USkeletalMesh;
 
 
 UCLASS(BlueprintType, Blueprintable)
@@ -77,17 +79,13 @@ public:
 	UBXTTrackHitBox();
 
 public:
-	// 碰撞盒名称
+	// 碰撞盒标签,用于从ShapeComponent上匹配对应的碰撞盒信息
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision")
-	FGameplayTagContainer HitBoxTags;
+	FGameplayTag HitBoxTag;
 
 	// 碰撞检测角度步进(当路径上点的角度差异过大时，数值越小，步进次数越多，性能消耗越大)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision", AdvancedDisplay)
 	float SweepAngleStep = 20.0f;
-
-	// 用于轨迹采样的骨骼
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Trajectory")
-	FBXBoneSelector TrajectoryBone;
 
 	/*
 	 * 对轨迹进行冗余点去除的规则
@@ -107,12 +105,15 @@ public:
 #if WITH_EDITOR
 public:
 	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
-	
+
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
-	
+
 	virtual void RefreshDataBeforePreview();
 
 	virtual bool EnablePassiveTrigger() override;
+
+	// 解析采样骨骼来源,返回采样骨骼名和SkeletalMesh,子类可重写以提供不同来源(如武器挂接Socket)
+	virtual bool ResolveSampleBoneSource(UBXTLAsset* OwnerAsset, int32 SectionIndex, FName& OutBoneName, USkeletalMesh*& OutSkeletalMesh);
 #endif
 #pragma endregion Editor
 };
@@ -139,7 +140,7 @@ public:
 #pragma region Editor
 #if WITH_EDITOR
 public:
-	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
+	virtual bool ResolveSampleBoneSource(UBXTLAsset* OwnerAsset, int32 SectionIndex, FName& OutBoneName, USkeletalMesh*& OutSkeletalMesh) override;
 #endif
 #pragma endregion Editor
 };
