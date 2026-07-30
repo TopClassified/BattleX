@@ -268,6 +268,26 @@ public:
 
 };
 
+// 折线Sweep跨帧衔接信息:Library内部维护,调用方只需持久化存储并每帧传入
+USTRUCT(BlueprintType)
+struct BATTLEX_API FBXCPolylineFrameLink
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	// 上一帧最后一段的方向(起点→终点的单位向量)
+	UPROPERTY(Transient)
+	FVector LastSegDir = FVector::ZeroVector;
+
+	// 上一帧最后一段的姿态(平均旋转)
+	UPROPERTY(Transient)
+	FRotator LastSegRotation = FRotator::ZeroRotator;
+
+	// 是否有效(首次调用前为false)
+	UPROPERTY(Transient)
+	bool bValid = false;
+};
+
 
 
 
@@ -310,5 +330,17 @@ public:
 	// 扇柱体碰撞检查
 	UFUNCTION(BlueprintCallable)
 	static TArray<FHitResult> SectorCheck(const FBXCParameter& Parameter, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, FVector4 SectorSize, EBXCDirection Direction, const FBXCFilter& Filter, float AngleStep = 30.0f, int32 SweepStep = 10);
+
+	// 球体沿曲线扫描检查:按曲线Transform数组进行折线Sweep,支持跨帧缺口填补
+	UFUNCTION(BlueprintCallable)
+	static TArray<FHitResult> SphereSweepAlongCurve(AActor* Requester, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, float SphereSize, const FBXCFilter& Filter, const TArray<FTransform>& CurveTransforms, FIntVector PolylineConfig, UPARAM(ref) FBXCPolylineFrameLink& InOutFrameLink);
+
+	// 胶囊体沿曲线扫描检查:按曲线Transform数组进行折线Sweep,支持跨帧缺口填补
+	UFUNCTION(BlueprintCallable)
+	static TArray<FHitResult> CapsuleSweepAlongCurve(AActor* Requester, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, FVector2D CapsuleSize, const FBXCFilter& Filter, const TArray<FTransform>& CurveTransforms, FIntVector PolylineConfig, UPARAM(ref) FBXCPolylineFrameLink& InOutFrameLink);
+
+	// 长方体沿曲线扫描检查:按曲线Transform数组进行折线Sweep,支持跨帧缺口填补
+	UFUNCTION(BlueprintCallable)
+	static TArray<FHitResult> BoxSweepAlongCurve(AActor* Requester, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, FVector BoxSize, const FBXCFilter& Filter, const TArray<FTransform>& CurveTransforms, FIntVector PolylineConfig, UPARAM(ref) FBXCPolylineFrameLink& InOutFrameLink);
 
 };

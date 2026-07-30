@@ -88,6 +88,7 @@ void UBXTPTrackHitBox::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& 
 
 	// 获取角色的碰撞盒组件
 	TPC.ShapeComponents.Reset();
+	TPC.CachedPolylineFrameLinks.Reset();
 	for (TArray<AActor*>::TIterator It(Targets); It; ++It)
 	{
 		UBXShapeComponent* ShapeComponent = (*It)->FindComponentByClass<UBXShapeComponent>();
@@ -121,25 +122,8 @@ void UBXTPTrackHitBox::Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData&
 		return;
 	}
 
-	// 根据帧率解析SweepAngleStep: 帧率>=60用X(最小),帧率<=20用Y(最大),中间线性插值
-	float FPS = InDeltaTime > 1e-6f ? (1.0f / InDeltaTime) : 60.0f;
-	float ResolvedAngleStep;
-	if (FPS >= 60.0f)
-	{
-		ResolvedAngleStep = Task->SweepAngleStep.X;
-	}
-	else if (FPS <= 20.0f)
-	{
-		ResolvedAngleStep = Task->SweepAngleStep.Y;
-	}
-	else
-	{
-		float Alpha = (FPS - 20.0f) / 40.0f;
-		ResolvedAngleStep = FMath::Lerp(Task->SweepAngleStep.Y, Task->SweepAngleStep.X, Alpha);
-	}
-
 	// 碰撞检测 并 触发事件
-	CollisionCheck(InOutRTData, InOutRTSData, InOutRTTData, InOutRTTData.RunTime, ResolvedAngleStep);
+	CollisionCheck(InOutRTData, InOutRTSData, InOutRTTData, InOutRTTData.RunTime);
 
 	// 每帧更新
 	InOutRTTData.NextTick = 0.0f;
@@ -153,11 +137,11 @@ void UBXTPTrackHitBox::End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& In
 		return;
 	}
 
-	// 结束时使用最大步进角度,覆盖剩余时间范围
-	CollisionCheck(InOutRTData, InOutRTSData, InOutRTTData, InOutRTTData.RunTime, Task->SweepAngleStep.Y);
+	// 结束时覆盖剩余时间范围
+	CollisionCheck(InOutRTData, InOutRTSData, InOutRTTData, InOutRTTData.RunTime);
 }
 
-void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, float InTargetCheckTime, float InSweepAngleStep)
+void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, float InTargetCheckTime)
 {
 	UBXTTrackHitBox* Task = Cast<UBXTTrackHitBox>(InOutRTTData.Task);
 	if (!Task)
@@ -197,8 +181,8 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 	float SearchStartTime = StartTime + Task->StartTime;
 	float SearchStopTime = StopTime + Task->StartTime;
 
-	UE_LOG(LogTemp, Log, TEXT("[BXTrackColl] CollisionCheck: Task=%s Trajectory=%d TimeRange=[%.4f,%.4f] AngleStep=%.1f"),
-		*Task->GetName(), Points.Num(), StartTime, StopTime, InSweepAngleStep);
+	UE_LOG(LogTemp, Log, TEXT("[BXTrackColl] CollisionCheck: Task=%s Trajectory=%d TimeRange=[%.4f,%.4f]"),
+		*Task->GetName(), Points.Num(), StartTime, StopTime);
 
 	// 遍历每个ShapeComponent
 	for (TArray<UBXShapeComponent*>::TIterator SComp(TPC.ShapeComponents); SComp; ++SComp)
@@ -307,62 +291,25 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 				continue;
 			}
 
-			// 进行碰撞检测
-			if (HitBoxTransforms.Num() == 1)
-			{
-				// 单点Overlap检测
-				TempHitResults.Reset();
-				Parameter.StartLocation = HitBoxTransforms[0].GetLocation();
-				Parameter.StartRotation = HitBoxTransforms[0].GetRotation().Rotator();
-				Parameter.EndLocation = FVector::ZeroVector;
-				Parameter.EndRotation = FRotator::ZeroRotator;
-				Parameter.Scale = HitBoxTransforms[0].GetScale3D();
+			// 获取或创建跨帧衔接信息
+			FBXCPolylineFrameLink& FrameLink = TPC.CachedPolylineFrameLinks.FindOrAdd(ShapeComponent).FindOrAdd(It->Key);
 
-				switch (SInfo->ShapeType)
-				{
-				case EBXShapeType::ST_Sphere:
-					TempHitResults = UBXCollisionLibrary::SphereCheck(Parameter, Task->ObjectTypes, SInfo->ShapeSize.X, Task->EngineFilter);
-					break;
-				case EBXShapeType::ST_Capsule:
-					TempHitResults = UBXCollisionLibrary::CapsuleCheck(Parameter, Task->ObjectTypes, FVector2D(SInfo->ShapeSize.X), Task->EngineFilter);
-					break;
-				case EBXShapeType::ST_Box:
-					TempHitResults = UBXCollisionLibrary::BoxCheck(Parameter, Task->ObjectTypes, SInfo->ShapeSize, Task->EngineFilter);
-					break;
-				default:
-					break;
-				}
-				UBXCollisionLibrary::CombineCollisionResults(TempHitResults, HitResults);
-			}
-			else
+			// 调用Library曲线扫描接口
+			switch (SInfo->ShapeType)
 			{
-				// 多点Sweep检测
-				for (int32 i = 1; i < HitBoxTransforms.Num(); ++i)
-				{
-					TempHitResults.Reset();
-					Parameter.StartLocation = HitBoxTransforms[i - 1].GetLocation();
-					Parameter.StartRotation = HitBoxTransforms[i - 1].GetRotation().Rotator();
-					Parameter.EndLocation = HitBoxTransforms[i].GetLocation();
-					Parameter.EndRotation = HitBoxTransforms[i].GetRotation().Rotator();
-					Parameter.Scale = (HitBoxTransforms[i - 1].GetScale3D() + HitBoxTransforms[i].GetScale3D()) * 0.5f;
-
-					switch (SInfo->ShapeType)
-					{
-					case EBXShapeType::ST_Sphere:
-						TempHitResults = UBXCollisionLibrary::SphereCheck(Parameter, Task->ObjectTypes, SInfo->ShapeSize.X, Task->EngineFilter);
-						break;
-					case EBXShapeType::ST_Capsule:
-						TempHitResults = UBXCollisionLibrary::CapsuleCheck(Parameter, Task->ObjectTypes, FVector2D(SInfo->ShapeSize.X), Task->EngineFilter, InSweepAngleStep);
-						break;
-					case EBXShapeType::ST_Box:
-						TempHitResults = UBXCollisionLibrary::BoxCheck(Parameter, Task->ObjectTypes, SInfo->ShapeSize, Task->EngineFilter, InSweepAngleStep);
-						break;
-					default:
-						break;
-					}
-					UBXCollisionLibrary::CombineCollisionResults(TempHitResults, HitResults);
-				}
+			case EBXShapeType::ST_Sphere:
+				TempHitResults = UBXCollisionLibrary::SphereSweepAlongCurve(Parameter.Requester, Task->ObjectTypes, SInfo->ShapeSize.X, Task->EngineFilter, HitBoxTransforms, Task->PolylineConfig, FrameLink);
+				break;
+			case EBXShapeType::ST_Capsule:
+				TempHitResults = UBXCollisionLibrary::CapsuleSweepAlongCurve(Parameter.Requester, Task->ObjectTypes, FVector2D(SInfo->ShapeSize.X), Task->EngineFilter, HitBoxTransforms, Task->PolylineConfig, FrameLink);
+				break;
+			case EBXShapeType::ST_Box:
+				TempHitResults = UBXCollisionLibrary::BoxSweepAlongCurve(Parameter.Requester, Task->ObjectTypes, SInfo->ShapeSize, Task->EngineFilter, HitBoxTransforms, Task->PolylineConfig, FrameLink);
+				break;
+			default:
+				break;
 			}
+			UBXCollisionLibrary::CombineCollisionResults(TempHitResults, HitResults);
 		}
 	}
 
@@ -423,6 +370,7 @@ void UBXTPTrackWeaponHitBox::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRT
 
 	// 获取角色的碰撞盒组件
 	TPC.ShapeComponents.Reset();
+	TPC.CachedPolylineFrameLinks.Reset();
 	for (TArray<AActor*>::TIterator It(Targets); It; ++It)
 	{
 		UBXGearComponent* GearComponent = (*It)->FindComponentByClass<UBXGearComponent>();

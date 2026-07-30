@@ -94,23 +94,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision")
 	FGameplayTag HitBoxTag;
 
-	/*
-	 * 碰撞检测角度步进
-	 * X: 最小步进角度(帧率>=60时使用,精度高)
-	 * Y: 最大步进角度(帧率<=20时使用,性能好)
-	 * 帧率在20~60之间时线性插值
-	 */
+	// 折线Sweep配置: X=最大段数 Y=共线检测角度阈值 Z=旋转分段角度阈值
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision")
-	FVector2D SweepAngleStep = FVector2D(15.0f, 30.0f);
-
-	/*
-	 * 对轨迹进行冗余点去除的规则
-	 * X: 坐标共线判定误差(角度)，把在同一条直线上的位置进行排除
-	 * Y: 方向判定误差(角度)，把相同方向的数据进行排除
-	 * Z: 缩放判定误差(倍率)，把相同大小的数据进行排除
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Trajectory")
-	FVector TrajectoryOptimization = FVector(10.0f, 15.0f, 0.1f);
+	FIntVector PolylineConfig = FIntVector(3, 10, 15);
 
 	// 存储的骨骼模型空间轨迹
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Trajectory", AdvancedDisplay)

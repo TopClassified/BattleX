@@ -1029,3 +1029,306 @@ TArray<FHitResult> UBXCollisionLibrary::SectorCheck(const FBXCParameter& Paramet
 
 	return OutResult;
 }
+
+
+// 折线分段内部辅助结构
+namespace BXCurveSweepInternal
+{
+	struct FPolylineSegment
+	{
+		FVector StartLocation;
+		FVector EndLocation;
+		FQuat Rotation;
+		FVector Scale;
+	};
+
+	// 将曲线Transform数组折线化为段数据,先按旋转差分段,剩余额度按共线拐点补充,处理反向延伸
+	static void BuildPolylineSegments(
+		const TArray<FTransform>& CurveTransforms,
+		FIntVector PolylineConfig,
+		const FBXCPolylineFrameLink& InFrameLink,
+		float ShapeMaxRadius,
+		TArray<FPolylineSegment>& OutSegments,
+		FBXCPolylineFrameLink& OutFrameLink)
+	{
+		int32 NumPoints = CurveTransforms.Num();
+		int32 MaxSegmentCount = FMath::Clamp(PolylineConfig.X, 1, 10);
+		float CollinearThreshold = FMath::Clamp((float)PolylineConfig.Y, 1.0f, 60.0f);
+		float RotationThreshold = FMath::Clamp((float)PolylineConfig.Z, 1.0f, 180.0f);
+
+		// 累积弧长
+		TArray<float> CumulativeArc;
+		CumulativeArc.SetNumUninitialized(NumPoints);
+		CumulativeArc[0] = 0.0f;
+		for (int32 i = 1; i < NumPoints; ++i)
+		{
+			CumulativeArc[i] = CumulativeArc[i - 1] + FVector::Dist(
+				CurveTransforms[i - 1].GetLocation(), CurveTransforms[i].GetLocation());
+		}
+		float TotalArc = CumulativeArc.Last();
+
+		// 收集所有分段点弧长位置
+		TArray<float> SplitArcs;
+
+		// 旋转分段:按Z阈值计算段数,弧长等分产生切分点
+		float TotalRotDeltaDeg = FMath::RadiansToDegrees(
+			CurveTransforms[0].GetRotation().AngularDistance(CurveTransforms.Last().GetRotation()));
+		int32 RotSegments = 1;
+		if (TotalRotDeltaDeg >= RotationThreshold && RotationThreshold > KINDA_SMALL_NUMBER)
+		{
+			RotSegments = FMath::CeilToInt(TotalRotDeltaDeg / RotationThreshold);
+		}
+		RotSegments = FMath::Clamp(RotSegments, 1, MaxSegmentCount);
+		for (int32 s = 1; s < RotSegments; ++s)
+		{
+			SplitArcs.Add(TotalArc * (float)s / (float)RotSegments);
+		}
+
+		// 共线补充分段:剩余额度内,检测位置拐点(三点不共线),按Y阈值
+		int32 RemainingSlots = MaxSegmentCount - RotSegments;
+		if (RemainingSlots > 0 && NumPoints >= 3 && CollinearThreshold > KINDA_SMALL_NUMBER)
+		{
+			int32 LastKeptIdx = 0;
+			for (int32 i = 1; i < NumPoints - 1 && RemainingSlots > 0; ++i)
+			{
+				if (!UBXFunctionLibrary::AreCollinear(
+					CurveTransforms[LastKeptIdx].GetLocation(),
+					CurveTransforms[i].GetLocation(),
+					CurveTransforms[i + 1].GetLocation(),
+					CollinearThreshold))
+				{
+					SplitArcs.Add(CumulativeArc[i]);
+					LastKeptIdx = i;
+					--RemainingSlots;
+				}
+			}
+		}
+
+		// 分段点去重并按弧长排序
+		SplitArcs.Sort();
+		TArray<float> UniqueSplitArcs;
+		for (float Arc : SplitArcs)
+		{
+			if (UniqueSplitArcs.Num() == 0 || FMath::Abs(Arc - UniqueSplitArcs.Last()) > KINDA_SMALL_NUMBER)
+			{
+				UniqueSplitArcs.Add(Arc);
+			}
+		}
+
+		int32 SegmentCount = UniqueSplitArcs.Num() + 1;
+
+		UE_LOG(LogTemp, Log, TEXT("[BXC] Polyline: Points=%d Segments=%d RotSeg=%d TotalRotDeg=%.2f RotThr=%.1f ColThr=%.1f MaxSeg=%d"),
+			NumPoints, SegmentCount, RotSegments, TotalRotDeltaDeg, RotationThreshold, CollinearThreshold, MaxSegmentCount);
+
+		// 按弧长位置插值生成关键点Transform
+		TArray<FTransform> KeyTransforms;
+		KeyTransforms.Reserve(SegmentCount + 1);
+		KeyTransforms.Add(CurveTransforms[0]);
+
+		for (float TargetArc : UniqueSplitArcs)
+		{
+			int32 Idx = 1;
+			while (Idx < NumPoints && CumulativeArc[Idx] < TargetArc)
+			{
+				++Idx;
+			}
+			if (Idx <= 0 || Idx >= NumPoints)
+			{
+				KeyTransforms.Add(CurveTransforms[FMath::Clamp(Idx, 0, NumPoints - 1)]);
+			}
+			else
+			{
+				float SegLen = CumulativeArc[Idx] - CumulativeArc[Idx - 1];
+				float Alpha = SegLen > KINDA_SMALL_NUMBER ? (TargetArc - CumulativeArc[Idx - 1]) / SegLen : 0.0f;
+				FVector Loc = FMath::Lerp(CurveTransforms[Idx - 1].GetLocation(), CurveTransforms[Idx].GetLocation(), Alpha);
+				FQuat Rot = FQuat::Slerp(CurveTransforms[Idx - 1].GetRotation(), CurveTransforms[Idx].GetRotation(), Alpha);
+				FVector Scale = FMath::Lerp(CurveTransforms[Idx - 1].GetScale3D(), CurveTransforms[Idx].GetScale3D(), Alpha);
+				KeyTransforms.Add(FTransform(Rot, Loc, Scale));
+			}
+		}
+		KeyTransforms.Add(CurveTransforms.Last());
+
+		// 每段平均旋转
+		int32 NumSegments = KeyTransforms.Num() - 1;
+		TArray<FQuat> SegRotations;
+		SegRotations.SetNumUninitialized(NumSegments);
+		for (int32 s = 0; s < NumSegments; ++s)
+		{
+			SegRotations[s] = FQuat::Slerp(KeyTransforms[s].GetRotation(), KeyTransforms[s + 1].GetRotation(), 0.5f);
+		}
+
+		// 构建段数据,处理反向延伸填补旋转缺口
+		OutSegments.Reset();
+		for (int32 s = 0; s < NumSegments; ++s)
+		{
+			FPolylineSegment Seg;
+			Seg.StartLocation = KeyTransforms[s].GetLocation();
+			Seg.EndLocation = KeyTransforms[s + 1].GetLocation();
+			Seg.Rotation = SegRotations[s];
+			Seg.Scale = (KeyTransforms[s].GetScale3D() + KeyTransforms[s + 1].GetScale3D()) * 0.5f;
+
+			// 反向延伸:段间用前一段方向,跨帧首段用上一帧最后一段方向
+			FVector PrevDir = FVector::ZeroVector;
+			FQuat PrevRotation = SegRotations[s];
+			if (s > 0)
+			{
+				PrevDir = KeyTransforms[s].GetLocation() - KeyTransforms[s - 1].GetLocation();
+				PrevRotation = SegRotations[s - 1];
+			}
+			else if (InFrameLink.bValid)
+			{
+				PrevDir = InFrameLink.LastSegDir;
+				PrevRotation = FQuat(InFrameLink.LastSegRotation);
+			}
+
+			if (PrevDir.SizeSquared() > KINDA_SMALL_NUMBER)
+			{
+				PrevDir = PrevDir.GetSafeNormal();
+				float RotDeltaRad = PrevRotation.AngularDistance(SegRotations[s]);
+				float BackOff = ShapeMaxRadius * FMath::Sin(RotDeltaRad);
+				Seg.StartLocation -= PrevDir * BackOff;
+			}
+
+			OutSegments.Add(MoveTemp(Seg));
+		}
+
+		// 更新跨帧衔接信息
+		OutFrameLink.LastSegDir = (KeyTransforms.Last().GetLocation() - KeyTransforms[NumSegments - 1].GetLocation()).GetSafeNormal();
+		OutFrameLink.LastSegRotation = SegRotations.Last().Rotator();
+		OutFrameLink.bValid = true;
+	}
+}
+
+TArray<FHitResult> UBXCollisionLibrary::SphereSweepAlongCurve(AActor* Requester, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, float SphereSize, const FBXCFilter& Filter, const TArray<FTransform>& CurveTransforms, FIntVector PolylineConfig, UPARAM(ref) FBXCPolylineFrameLink& InOutFrameLink)
+{
+	TArray<FHitResult> OutResult;
+
+	if (CurveTransforms.Num() <= 0)
+	{
+		return OutResult;
+	}
+
+	FBXCParameter SegParam;
+	SegParam.Requester = Requester;
+
+	// 单点走Overlap
+	if (CurveTransforms.Num() == 1)
+	{
+		SegParam.StartLocation = CurveTransforms[0].GetLocation();
+		SegParam.StartRotation = CurveTransforms[0].GetRotation().Rotator();
+		SegParam.EndLocation = FVector::ZeroVector;
+		SegParam.EndRotation = FRotator::ZeroRotator;
+		SegParam.Scale = CurveTransforms[0].GetScale3D();
+		InOutFrameLink.bValid = false;
+		return SphereCheck(SegParam, ObjectTypes, SphereSize, Filter);
+	}
+
+	// 折线分段
+	TArray<BXCurveSweepInternal::FPolylineSegment> Segments;
+	FBXCPolylineFrameLink NewFrameLink;
+	BXCurveSweepInternal::BuildPolylineSegments(CurveTransforms, PolylineConfig, InOutFrameLink, SphereSize, Segments, NewFrameLink);
+
+	for (const BXCurveSweepInternal::FPolylineSegment& Seg : Segments)
+	{
+		SegParam.StartLocation = Seg.StartLocation;
+		SegParam.StartRotation = Seg.Rotation.Rotator();
+		SegParam.EndLocation = Seg.EndLocation;
+		SegParam.EndRotation = Seg.Rotation.Rotator();
+		SegParam.Scale = Seg.Scale;
+		TArray<FHitResult> SegResults = SphereCheck(SegParam, ObjectTypes, SphereSize, Filter);
+		CombineCollisionResults(SegResults, OutResult);
+	}
+
+	InOutFrameLink = NewFrameLink;
+	return OutResult;
+}
+
+TArray<FHitResult> UBXCollisionLibrary::CapsuleSweepAlongCurve(AActor* Requester, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, FVector2D CapsuleSize, const FBXCFilter& Filter, const TArray<FTransform>& CurveTransforms, FIntVector PolylineConfig, UPARAM(ref) FBXCPolylineFrameLink& InOutFrameLink)
+{
+	TArray<FHitResult> OutResult;
+
+	if (CurveTransforms.Num() <= 0)
+	{
+		return OutResult;
+	}
+
+	FBXCParameter SegParam;
+	SegParam.Requester = Requester;
+
+	// 单点走Overlap
+	if (CurveTransforms.Num() == 1)
+	{
+		SegParam.StartLocation = CurveTransforms[0].GetLocation();
+		SegParam.StartRotation = CurveTransforms[0].GetRotation().Rotator();
+		SegParam.EndLocation = FVector::ZeroVector;
+		SegParam.EndRotation = FRotator::ZeroRotator;
+		SegParam.Scale = CurveTransforms[0].GetScale3D();
+		InOutFrameLink.bValid = false;
+		return CapsuleCheck(SegParam, ObjectTypes, CapsuleSize, Filter, 360.0f);
+	}
+
+	// 折线分段
+	float ShapeMaxRadius = FMath::Max(CapsuleSize.X, CapsuleSize.Y);
+	TArray<BXCurveSweepInternal::FPolylineSegment> Segments;
+	FBXCPolylineFrameLink NewFrameLink;
+	BXCurveSweepInternal::BuildPolylineSegments(CurveTransforms, PolylineConfig, InOutFrameLink, ShapeMaxRadius, Segments, NewFrameLink);
+
+	for (const BXCurveSweepInternal::FPolylineSegment& Seg : Segments)
+	{
+		SegParam.StartLocation = Seg.StartLocation;
+		SegParam.StartRotation = Seg.Rotation.Rotator();
+		SegParam.EndLocation = Seg.EndLocation;
+		SegParam.EndRotation = Seg.Rotation.Rotator();
+		SegParam.Scale = Seg.Scale;
+		TArray<FHitResult> SegResults = CapsuleCheck(SegParam, ObjectTypes, CapsuleSize, Filter, 360.0f);
+		CombineCollisionResults(SegResults, OutResult);
+	}
+
+	InOutFrameLink = NewFrameLink;
+	return OutResult;
+}
+
+TArray<FHitResult> UBXCollisionLibrary::BoxSweepAlongCurve(AActor* Requester, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, FVector BoxSize, const FBXCFilter& Filter, const TArray<FTransform>& CurveTransforms, FIntVector PolylineConfig, UPARAM(ref) FBXCPolylineFrameLink& InOutFrameLink)
+{
+	TArray<FHitResult> OutResult;
+
+	if (CurveTransforms.Num() <= 0)
+	{
+		return OutResult;
+	}
+
+	FBXCParameter SegParam;
+	SegParam.Requester = Requester;
+
+	// 单点走Overlap
+	if (CurveTransforms.Num() == 1)
+	{
+		SegParam.StartLocation = CurveTransforms[0].GetLocation();
+		SegParam.StartRotation = CurveTransforms[0].GetRotation().Rotator();
+		SegParam.EndLocation = FVector::ZeroVector;
+		SegParam.EndRotation = FRotator::ZeroRotator;
+		SegParam.Scale = CurveTransforms[0].GetScale3D();
+		InOutFrameLink.bValid = false;
+		return BoxCheck(SegParam, ObjectTypes, BoxSize, Filter, 360.0f);
+	}
+
+	// 折线分段
+	float ShapeMaxRadius = BoxSize.Size();
+	TArray<BXCurveSweepInternal::FPolylineSegment> Segments;
+	FBXCPolylineFrameLink NewFrameLink;
+	BXCurveSweepInternal::BuildPolylineSegments(CurveTransforms, PolylineConfig, InOutFrameLink, ShapeMaxRadius, Segments, NewFrameLink);
+
+	for (const BXCurveSweepInternal::FPolylineSegment& Seg : Segments)
+	{
+		SegParam.StartLocation = Seg.StartLocation;
+		SegParam.StartRotation = Seg.Rotation.Rotator();
+		SegParam.EndLocation = Seg.EndLocation;
+		SegParam.EndRotation = Seg.Rotation.Rotator();
+		SegParam.Scale = Seg.Scale;
+		TArray<FHitResult> SegResults = BoxCheck(SegParam, ObjectTypes, BoxSize, Filter, 360.0f);
+		CombineCollisionResults(SegResults, OutResult);
+	}
+
+	InOutFrameLink = NewFrameLink;
+	return OutResult;
+}

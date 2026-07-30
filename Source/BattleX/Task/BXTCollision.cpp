@@ -276,71 +276,7 @@ void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
 		BoneSampledTrajectory.List.Add(Point);
 	}
 
-	UE_LOG(LogBXTHB, Log, TEXT("PreSave sampled %d points before optimization, Task=%s"), BoneSampledTrajectory.List.Num(), *GetName());
-
-	// 优化:移除差异不大的相邻点
-	TArray<FBXTrajectoryPoint>& List = BoneSampledTrajectory.List;
-	if (List.Num() < 3)
-	{
-		UE_LOG(LogBXTHB, Log, TEXT("PreSave done: skip optimization, final count=%d, Task=%s"), List.Num(), *GetName());
-		return;
-	}
-
-	// 用标记数组替代TArray<int32>+Contains,避免O(n²)
-	TArray<bool> KeepFlags;
-	KeepFlags.AddZeroed(List.Num());
-	KeepFlags[0] = true;
-	KeepFlags[List.Num() - 1] = true;
-
-	// 共线合并(三点判定)
-	int32 LastKeptIdx = 0;
-	for (int32 i = 1; i < List.Num() - 1; ++i)
-	{
-		if (!UBXFunctionLibrary::AreCollinear(List[LastKeptIdx].Transform.GetLocation(), List[i].Transform.GetLocation(), List[i + 1].Transform.GetLocation(), TrajectoryOptimization.X))
-		{
-			KeepFlags[i] = true;
-			LastKeptIdx = i;
-		}
-	}
-
-	// 旋转差异合并(三点判定:保留转向拐点,避免Slerp插值丢失拐点)
-	const float RadiansError = FMath::DegreesToRadians(TrajectoryOptimization.Y);
-	LastKeptIdx = 0;
-	for (int32 i = 1; i < List.Num() - 1; ++i)
-	{
-		float DistLast = List[LastKeptIdx].Transform.GetRotation().AngularDistance(List[i].Transform.GetRotation());
-		float DistNext = List[i].Transform.GetRotation().AngularDistance(List[i + 1].Transform.GetRotation());
-		if (RadiansError < DistLast || RadiansError < DistNext)
-		{
-			KeepFlags[i] = true;
-			LastKeptIdx = i;
-		}
-	}
-
-	// 缩放差异合并(三点判定:保留缩放变化拐点)
-	LastKeptIdx = 0;
-	for (int32 i = 1; i < List.Num() - 1; ++i)
-	{
-		bool bDiffLast = !List[LastKeptIdx].Transform.GetScale3D().Equals(List[i].Transform.GetScale3D(), TrajectoryOptimization.Z);
-		bool bDiffNext = !List[i].Transform.GetScale3D().Equals(List[i + 1].Transform.GetScale3D(), TrajectoryOptimization.Z);
-		if (bDiffLast || bDiffNext)
-		{
-			KeepFlags[i] = true;
-			LastKeptIdx = i;
-		}
-	}
-
-	TArray<FBXTrajectoryPoint> Optimized;
-	for (int32 i = 0; i < List.Num(); ++i)
-	{
-		if (KeepFlags[i])
-		{
-			Optimized.Add(List[i]);
-		}
-	}
-	List = MoveTemp(Optimized);
-
-	UE_LOG(LogBXTHB, Log, TEXT("PreSave done: final trajectory count=%d, Task=%s"), List.Num(), *GetName());
+	UE_LOG(LogBXTHB, Log, TEXT("PreSave done: trajectory count=%d, Task=%s"), BoneSampledTrajectory.List.Num(), *GetName());
 }
 
 void UBXTTrackHitBox::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
@@ -352,6 +288,11 @@ void UBXTTrackHitBox::PostEditChangeProperty(FPropertyChangedEvent& PropertyChan
 
 	// 这个Task只能让拥有者使用
 	TargetTypes = (1 << (int32)EBXTTargetType::T_Owner);
+
+	// PolylineConfig数值范围限制: X=1~10 Y=1~60 Z=1~180
+	PolylineConfig.X = FMath::Clamp(PolylineConfig.X, 1, 10);
+	PolylineConfig.Y = FMath::Clamp(PolylineConfig.Y, 1, 60);
+	PolylineConfig.Z = FMath::Clamp(PolylineConfig.Z, 1, 180);
 
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 }

@@ -82,8 +82,8 @@ public:
 	UPROPERTY(Transient, BlueprintReadWrite)
 	float LastCheckTime = 0.0f;
 
-	// 缓存上一帧结束时的HitBoxTransform,供下一帧起始复用,避免帧间重复采样
-	TMap<UBXShapeComponent*, TMap<FGameplayTag, FTransform>> CachedEndHitBoxTransforms;
+	// 缓存上一帧折线Sweep跨帧衔接信息,按(ShapeComponent,HitBoxTag)索引
+	TMap<UBXShapeComponent*, TMap<FGameplayTag, FBXCPolylineFrameLink>> CachedPolylineFrameLinks;
 
 };
 
@@ -100,7 +100,7 @@ public:
 	virtual void End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, EBXTLFinishReason InReason) override;
 
 protected:
-	virtual void CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, float InTargetCheckTime, float InSweepAngleStep);
+	virtual void CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, float InTargetCheckTime);
 
 	// 计算单个采样点的碰撞盒世界Transform,子类可重写以叠加额外偏移链
 	// 默认实现:BakedPoint * CharMeshWorld (烘焙的角色骨骼CS轨迹 × 角色Mesh历史世界Transform)
