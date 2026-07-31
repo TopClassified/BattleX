@@ -345,8 +345,9 @@ Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `Battle
 ##### `UBXTCollision` / `UBXTTrackHitBox` / `UBXTTrackWeaponHitBox` ([BXTCollision.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTCollision.h))
 
 碰撞检测任务族：
-- **`UBXTCollision`**：基类，配置 `Interval`（检测间隔）、`CoolDown`（冷却）、`Limit`（数量限制）、`CharacterTags`/`RelationshipTags`（筛选）、`ObjectTypes`、`EngineFilter`（`FBXCFilter`）
-- **`UBXTTrackHitBox`**：轨迹碰撞盒检测。`HitBoxTags`（碰撞盒标签）、`SweepAngleStep`（角度步进，越小越精确越耗性能）、`TrajectoryBone`（采样骨骼）、`TrajectoryOptimization`（冗余点去除规则：共线误差/方向误差/缩放误差）、`BoneSampledTrajectory`（骨骼模型空间轨迹）
+- **`UBXTCollision`**：基类，配置 `CoolDown`（冷却）、`Limit`（数量限制）、`LimitLogic`（数量限制逻辑）、`CharacterTags`/`RelationshipTags`（筛选）、`ObjectTypes`、`EngineFilter`（`FBXCFilter`）
+- **`UBXTIntervalCollision`**：间隔检测基类，增加 `Interval`（检测间隔）、`Count`（检测次数，编辑器自动计算）
+- **`UBXTTrackHitBox`**：轨迹碰撞盒检测。`HitBoxTag`（碰撞盒标签，未设置则匹配任意）、`PolylineConfig`（折线 Sweep 配置 `FIntVector`：X=最大段数 1~10、Y=共线检测角度阈值 1~60、Z=旋转分段角度阈值 1~180）、`BoneSampledTrajectory`（烘焙的骨骼模型空间轨迹）。运行时按帧时间范围在烘焙轨迹上采样，调用 `UBXCollisionLibrary::SphereSweepAlongCurve/CapsuleSweepAlongCurve/BoxSweepAlongCurve` 执行折线 Sweep
 - **`UBXTTrackWeaponHitBox`**：武器轨迹碰撞，增加 `WeaponSlot`（默认右手）
 
 #### `EBXTLifeType`（生命周期）
@@ -508,7 +509,11 @@ Bitflags 枚举：`EBXEquipGearFunction`、`EBXUseGearFunction`、`EBXChangeGear
 
 #### `UBXCollisionLibrary` ([BXCollision.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXCollision.h))
 
-蓝图函数库，提供静态碰撞查询 API：`SphereCheck`、`CapsuleCheck`、`CylinderCheck`、`HollowCylinderCheck`、`BoxCheck`、`SectorCheck`、`CheckCollisionResult`、`CombineCollisionResults`。
+蓝图函数库，提供静态碰撞查询 API：
+
+- **单次形状查询**：`SphereCheck`、`CapsuleCheck`、`CylinderCheck`、`HollowCylinderCheck`、`BoxCheck`、`SectorCheck`
+- **曲线折线 Sweep**（轨迹命中优化）：`SphereSweepAlongCurve`、`CapsuleSweepAlongCurve`、`BoxSweepAlongCurve`，将一帧内的曲线 `TArray<FTransform>` 折线化为 N 段（默认 3），每段单次 Sweep，并通过反向延伸填补段间/跨帧旋转缺口
+- **结果处理**：`CheckCollisionResult`（按 Filter 校验单条 Hit）、`CombineCollisionResults`（按 (Component, BoneName) 去重合并）
 
 #### 关键结构体
 
@@ -516,6 +521,20 @@ Bitflags 枚举：`EBXEquipGearFunction`、`EBXUseGearFunction`、`EBXChangeGear
 - **`FBXCParameter`**：请求者、起止位置/旋转、缩放
 - **`FBXCStrategy`**（基类）+ 子类：`FBXCSSphere`/`FBXCSCapsule`/`FBXCSCylinder`/`FBXCSHollowCylinder`/`FBXCSBox`/`FBXCSSector`。Sweep 型形状含 `AngleStep`（越小越精确越耗性能）与 `bUseSweep`
 - **`EBXCDirection`**：扇形精细检测方向（RightToLeft/LeftToRight/InToOut）
+- **`FBXCPolylineFrameLink`**：折线 Sweep 跨帧衔接信息。`LastSegDir`（上一帧末段方向）、`LastSegRotation`（上一帧末段姿态）、`bValid`（是否有效）。Library 内部维护，调用方持久化存储并每帧传入，用于跨帧首段的反向延伸
+
+#### 折线 Sweep 分段算法（`BuildPolylineSegments`）
+
+将曲线降采样为有限段折线，控制单帧 Sweep 次数，核心步骤：
+
+1. **累积弧长**：按相邻点位置距离累加，得到每点弧长坐标
+2. **旋转优先分段**：累积所有相邻点旋转差（`FQuat::AngularDistance`），按 `PolylineConfig.Z`（旋转阈值）计算段数 `RotSegments`，受 `PolylineConfig.X`（最大段数）上限约束。使用累积差而非首末差，避免 S 形曲线首末旋转接近但中间扭曲导致的欠分段
+3. **共线拐点补充**：剩余段额度内，用 `UBXFunctionLibrary::AreCollinear` 检测三点不共线的位置拐点，按 `PolylineConfig.Y`（共线角度阈值）补充分段点
+4. **弧长等分插值**：按目标弧长位置在相邻烘焙点间插值生成关键点 Transform（位置 Lerp + 旋转 Slerp + 缩放 Lerp），均衡各段长度
+5. **反向延伸填补缺口**：每段起点沿前一段方向反向延伸 `BackOff = ShapeMaxRadius * tan(θ/2)`（θ 为相邻段旋转差，clamp 到 170° 防止跨帧突变时 BackOff 爆炸），填补旋转缺口。首段使用 `FBXCPolylineFrameLink` 提供的上一帧末段信息
+6. **更新跨帧衔接**：将本帧末段方向与姿态写回 `OutFrameLink`，供下一帧使用
+
+调用旧接口（`CapsuleCheck`/`BoxCheck`）时传 `AngleStep=360`，防止旧接口对段内旋转差二次拆分。`PolylineConfig` 在 `UBXTTrackHitBox::PostEditChangeProperty` 与 `BuildPolylineSegments` 双重 Clamp 范围。
 
 #### `UBXShapeComponent` ([BXShapeComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXShapeComponent.h))
 
@@ -887,12 +906,13 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 
 #### 9.1.4 碰撞检测优化
 
-**现状**：`UBXTTrackHitBox` 的 `SweepAngleStep` 控制轨迹采样精度，`TrajectoryOptimization` 控制冗余点去除。
+**现状**：`UBXTTrackHitBox` 通过 `PolylineConfig`（`FIntVector`：X=最大段数 1~10、Y=共线角度阈值 1~60、Z=旋转角度阈值 1~180）控制折线 Sweep 分段。一帧内曲线被折线化为 ≤X 段，每段单次 Sweep；段间与跨帧的旋转缺口由反向延伸（`BackOff = ShapeMaxRadius * tan(θ/2)`，θ clamp 到 170°）填补。`UBXCollisionLibrary::SphereSweepAlongCurve/CapsuleSweepAlongCurve/BoxSweepAlongCurve` 是通用曲线扫描接口，`FBXCPolylineFrameLink` 承载跨帧衔接信息。
 
 **建议**：
-- **LOD 化碰撞检测**：根据目标距离/重要性动态调整 `SweepAngleStep`（远处用大步长，近处用小步长）。
+- **LOD 化碰撞检测**：根据目标距离/重要性动态调整 `PolylineConfig.X`（远处用更少段数，近处用更多段数）。
 - **多线程化**：将碰撞检测任务分派到 Task Graph 并行执行（当前在 `UBXTLManager::Tick` 主线程串行）。可利用 UE 的 `ParallelFor`。
-- **HitResult 对象池**：`FBXTHitResults::Results` 预分配容量（已 `Empty(10)`），可考虑跨任务复用避免反复分配。
+- **HitResult 对象池**：`FBXTHitResults::Results` 预分配容量，可考虑跨任务复用避免反复分配。
+- **ShapeMaxRadius 精度**：`BoxSweepAlongCurve` 当前用 `BoxSize.Size()`（半对角线）作为形状最大半径，会略微高估 BackOff，可改为 `BoxSize.GetMax()` 更精确。
 
 #### 9.1.5 GameplayTag 查询优化
 
