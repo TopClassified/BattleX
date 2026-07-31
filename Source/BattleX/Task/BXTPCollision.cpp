@@ -15,6 +15,7 @@ bool UBXTPCollision::CheckCoolDownCompleted(UBXTCollision* InTask, const FHitRes
 		return false;
 	}
 
+	// 先执行所有检查,全部通过后再写入冷却信息,避免脚本检查失败时已写入冷却导致下次误判
 	if (bUseNativeCheckCoolDown && !CheckCoolDown(InTask, InHitResult, InCheckTime, InOutRTData))
 	{
 		return false;
@@ -23,6 +24,12 @@ bool UBXTPCollision::CheckCoolDownCompleted(UBXTCollision* InTask, const FHitRes
 	if (bUseScriptCheckCoolDown && !ScriptCheckCoolDown(InTask, InHitResult, InCheckTime, InOutRTData))
 	{
 		return false;
+	}
+
+	// 所有检查通过后写入冷却信息
+	if (bUseNativeCheckCoolDown && IsValid(InHitResult.GetActor()))
+	{
+		InOutRTData.CoolDownInformations.Add(InHitResult.GetActor(), InCheckTime);
 	}
 
 	return true;
@@ -35,7 +42,7 @@ bool UBXTPCollision::CheckCoolDown(UBXTCollision* InTask, const FHitResult& InHi
 		return false;
 	}
 
-	// 检查冷却
+	// 仅检查冷却,不写入,由CheckCoolDownCompleted统一写入
 	if (float* FindResult = InOutRTData.CoolDownInformations.Find(InHitResult.GetActor()))
 	{
 		if (InCheckTime - (*FindResult) < InTask->CoolDown)
@@ -43,9 +50,6 @@ bool UBXTPCollision::CheckCoolDown(UBXTCollision* InTask, const FHitResult& InHi
 			return false;
 		}
 	}
-
-	// 添加冷却信息
-	InOutRTData.CoolDownInformations.Add(InHitResult.GetActor(), InCheckTime);
 
 	return true;
 }
@@ -239,7 +243,7 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 			{
 				return Points[FMath::Clamp(Idx, 0, Points.Num() - 1)].Transform;
 			}
-			float Alpha = (SearchTime - Points[Idx - 1].Time) / (Points[Idx].Time - Points[Idx - 1].Time + 1e-8f);
+			float Alpha = FMath::Clamp((SearchTime - Points[Idx - 1].Time) / (Points[Idx].Time - Points[Idx - 1].Time + 1e-8f), 0.0f, 1.0f);
 			FVector Location = FMath::Lerp(Points[Idx - 1].Transform.GetLocation(), Points[Idx].Transform.GetLocation(), Alpha);
 			FQuat Rotation = FQuat::Slerp(Points[Idx - 1].Transform.GetRotation(), Points[Idx].Transform.GetRotation(), Alpha);
 			FVector Scale = FMath::Lerp(Points[Idx - 1].Transform.GetScale3D(), Points[Idx].Transform.GetScale3D(), Alpha);

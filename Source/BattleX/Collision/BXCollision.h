@@ -58,29 +58,6 @@ public:
 	TArray<FName> IgnoreComponentTags;
 
 public:
-	void operator=(const FBXCFilter& Other)
-	{
-		bIgnoreSelf = Other.bIgnoreSelf;
-
-		ClassTypes.Empty();
-		ClassTypes.Append(Other.ClassTypes);
-
-		IgnoreClassTypes.Empty();
-		IgnoreClassTypes.Append(Other.IgnoreClassTypes);
-
-		ActorTags.Empty();
-		ActorTags.Append(Other.ActorTags);
-
-		IgnoreActorTags.Empty();
-		IgnoreActorTags.Append(Other.IgnoreActorTags);
-
-		ComponentTags.Empty();
-		ComponentTags.Append(Other.ComponentTags);
-
-		IgnoreComponentTags.Empty();
-		IgnoreComponentTags.Append(Other.IgnoreComponentTags);
-	}
-
 	void Reset()
 	{
 		bIgnoreSelf = true;
@@ -163,7 +140,7 @@ struct BATTLEX_API FBXCSSphere : public FBXCStrategy
 public:
 	// 球体大小
 	UPROPERTY(EditDefaultsOnly, Meta = (ClampMin = 0.001f))
-	float SpereSize = 50.0f;
+	float SphereSize = 50.0f;
 
 	// 启用扫描
 	UPROPERTY(EditDefaultsOnly)
@@ -214,7 +191,7 @@ struct BATTLEX_API FBXCSHollowCylinder : public FBXCStrategy
 public:
 	// 空心圆柱体大小(内半径、外半径、半高)
 	UPROPERTY(EditDefaultsOnly)
-	FVector HollowCylinderSize = FVector(100.0f, 200.0, 100.0f);
+	FVector HollowCylinderSize = FVector(100.0f, 200.0f, 100.0f);
 
 	// 角度步进越小，碰撞精度越高，性能消耗越大！
 	UPROPERTY(EditDefaultsOnly, Meta = (ClampMin = 10.0f, ClampMax = 60.0f))
@@ -309,7 +286,7 @@ public:
 	
 	// 球体碰撞检查
 	UFUNCTION(BlueprintCallable)
-	static TArray<FHitResult> SphereCheck(const FBXCParameter& Parameter, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, float SpereSize, const FBXCFilter& Filter);
+	static TArray<FHitResult> SphereCheck(const FBXCParameter& Parameter, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, float SphereSize, const FBXCFilter& Filter);
 
 	// 胶囊体碰撞检查
 	UFUNCTION(BlueprintCallable)

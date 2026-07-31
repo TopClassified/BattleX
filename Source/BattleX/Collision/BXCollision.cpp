@@ -183,11 +183,11 @@ void UBXCollisionLibrary::CombineCollisionResults(const TArray<FHitResult>& InSo
 	}
 }
 
-TArray<FHitResult> UBXCollisionLibrary::SphereCheck(const FBXCParameter& Parameter, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, float SpereSize, const FBXCFilter& Filter)
+TArray<FHitResult> UBXCollisionLibrary::SphereCheck(const FBXCParameter& Parameter, const TArray<TEnumAsByte<EObjectTypeQuery>>& ObjectTypes, float SphereSize, const FBXCFilter& Filter)
 {
 	TArray<FHitResult> OutResult;
 
-	if (SpereSize < MiniSize)
+	if (SphereSize < MiniSize)
 	{
 		UE_LOG(BXCOLLISION, Warning, TEXT("Sphere Size Is Too Small, Please Check The Input Value!"));
 		return OutResult;
@@ -205,11 +205,11 @@ TArray<FHitResult> UBXCollisionLibrary::SphereCheck(const FBXCParameter& Paramet
 		return OutResult;
 	}
 
-	float CurrentSphereSize = SpereSize * Parameter.Scale.X;
+	float CurrentSphereSize = SphereSize * Parameter.Scale.X;
 
 	FCollisionShape Sphere = FCollisionShape::MakeSphere(CurrentSphereSize);
 
-	if (Parameter.EndLocation == FVector::ZeroVector)
+	if (Parameter.EndLocation == Parameter.StartLocation)
 	{
 		TArray<FOverlapResult> OverlapResults;
 		QueryWorld->OverlapMultiByObjectType(OverlapResults, Parameter.StartLocation, Parameter.StartRotation.Quaternion(), OQP, Sphere);
@@ -293,7 +293,7 @@ TArray<FHitResult> UBXCollisionLibrary::CapsuleCheck(const FBXCParameter& Parame
 
 	FCollisionShape Capsule = FCollisionShape::MakeCapsule(CurrentCapsuleSize.X, CurrentCapsuleSize.Y);
 
-	if (Parameter.EndLocation == FVector::ZeroVector)
+	if (Parameter.EndLocation == Parameter.StartLocation)
 	{
 		TArray<FOverlapResult> OverlapResults;
 		QueryWorld->OverlapMultiByObjectType(OverlapResults, Parameter.StartLocation, Parameter.StartRotation.Quaternion(), OQP, Capsule);
@@ -359,7 +359,7 @@ TArray<FHitResult> UBXCollisionLibrary::CapsuleCheck(const FBXCParameter& Parame
 				AngleStep = 30.0f;
 			}
 
-			TArray<USceneComponent*> VisitedComponents;
+			TSet<UPrimitiveComponent*> VisitedComponents;
 			TArray<FHitResult> CurrentResult;
 			int32 TotalStep = FMath::CeilToInt(DeltaDegree / AngleStep) + 1;
 			for (int32 i = 0; i < TotalStep; ++i)
@@ -442,7 +442,7 @@ TArray<FHitResult> UBXCollisionLibrary::CylinderCheck(const FBXCParameter& Param
 
 	FCollisionShape Box = FCollisionShape::MakeBox(CurrentBoxSize);
 	TArray<FOverlapResult> OverlapResults2;
-	QueryWorld->OverlapMultiByObjectType(OverlapResults2, Parameter.StartLocation, Parameter.StartRotation.Quaternion(), OQP, Capsule);
+	QueryWorld->OverlapMultiByObjectType(OverlapResults2, Parameter.StartLocation, Parameter.StartRotation.Quaternion(), OQP, Box);
 
 #if WITH_EDITOR
 	if (const UBXSettings* Setting = GetDefault<UBXSettings>())
@@ -525,7 +525,7 @@ TArray<FHitResult> UBXCollisionLibrary::HollowCylinderCheck(const FBXCParameter&
 	float OffsetLength = CurrentHollowCylinderSize.X + CurrentBoxSize.X;
 
 	TArray<FOverlapResult> OverlapResults;
-	TArray<USceneComponent*> VisitedComponents;
+	TSet<UPrimitiveComponent*> VisitedComponents;
 	for (int32 i = 0; i < StepNum; ++i)
 	{
 		OverlapResults.Reset();
@@ -641,7 +641,7 @@ TArray<FHitResult> UBXCollisionLibrary::BoxCheck(const FBXCParameter& Parameter,
 
 	FCollisionShape Box = FCollisionShape::MakeBox(CurrentBoxSize);
 
-	if (Parameter.EndLocation == FVector::ZeroVector)
+	if (Parameter.EndLocation == Parameter.StartLocation)
 	{
 		TArray<FOverlapResult> OverlapResults;
 		QueryWorld->OverlapMultiByObjectType(OverlapResults, Parameter.StartLocation, Parameter.StartRotation.Quaternion(), OQP, Box);
@@ -707,7 +707,7 @@ TArray<FHitResult> UBXCollisionLibrary::BoxCheck(const FBXCParameter& Parameter,
 				AngleStep = 30.0f;
 			}
 
-			TArray<USceneComponent*> VisitedComponents;
+			TSet<UPrimitiveComponent*> VisitedComponents;
 			TArray<FHitResult> CurrentResult;
 			int32 TotalStep = FMath::CeilToInt(DeltaDegree / AngleStep) + 1;
 			for (int32 i = 0; i < TotalStep; ++i)
@@ -1052,6 +1052,7 @@ namespace BXCurveSweepInternal
 		FBXCPolylineFrameLink& OutFrameLink)
 	{
 		int32 NumPoints = CurveTransforms.Num();
+		check(NumPoints >= 2);
 		int32 MaxSegmentCount = FMath::Clamp(PolylineConfig.X, 1, 10);
 		float CollinearThreshold = FMath::Clamp((float)PolylineConfig.Y, 1.0f, 60.0f);
 		float RotationThreshold = FMath::Clamp((float)PolylineConfig.Z, 1.0f, 180.0f);
@@ -1070,9 +1071,13 @@ namespace BXCurveSweepInternal
 		// 收集所有分段点弧长位置
 		TArray<float> SplitArcs;
 
-		// 旋转分段:按Z阈值计算段数,弧长等分产生切分点
-		float TotalRotDeltaDeg = FMath::RadiansToDegrees(
-			CurveTransforms[0].GetRotation().AngularDistance(CurveTransforms.Last().GetRotation()));
+		// 旋转分段:累积所有相邻点的旋转差,避免S形曲线首末旋转接近但中间旋转大的情况
+		float TotalRotDeltaDeg = 0.0f;
+		for (int32 i = 1; i < NumPoints; ++i)
+		{
+			TotalRotDeltaDeg += FMath::RadiansToDegrees(
+				CurveTransforms[i - 1].GetRotation().AngularDistance(CurveTransforms[i].GetRotation()));
+		}
 		int32 RotSegments = 1;
 		if (TotalRotDeltaDeg >= RotationThreshold && RotationThreshold > KINDA_SMALL_NUMBER)
 		{
@@ -1117,7 +1122,7 @@ namespace BXCurveSweepInternal
 
 		int32 SegmentCount = UniqueSplitArcs.Num() + 1;
 
-		UE_LOG(LogTemp, Log, TEXT("[BXC] Polyline: Points=%d Segments=%d RotSeg=%d TotalRotDeg=%.2f RotThr=%.1f ColThr=%.1f MaxSeg=%d"),
+		UE_LOG(BXCOLLISION, Log, TEXT("[BXC] Polyline: Points=%d Segments=%d RotSeg=%d TotalRotDeg=%.2f RotThr=%.1f ColThr=%.1f MaxSeg=%d"),
 			NumPoints, SegmentCount, RotSegments, TotalRotDeltaDeg, RotationThreshold, CollinearThreshold, MaxSegmentCount);
 
 		// 按弧长位置插值生成关键点Transform
@@ -1185,7 +1190,10 @@ namespace BXCurveSweepInternal
 			{
 				PrevDir = PrevDir.GetSafeNormal();
 				float RotDeltaRad = PrevRotation.AngularDistance(SegRotations[s]);
-				float BackOff = ShapeMaxRadius * FMath::Sin(RotDeltaRad);
+				// tan(θ/2)单调递增,sin(θ)在θ>90°时反而减小,tan(θ/2)能正确反映旋转缺口大小
+				// 跨帧首段可能因帧间姿态突变导致旋转差接近π,clamp防止BackOff爆炸
+				float RotDeltaRadClamped = FMath::Min(RotDeltaRad, FMath::DegreesToRadians(170.0f));
+				float BackOff = ShapeMaxRadius * FMath::Tan(RotDeltaRadClamped * 0.5f);
 				Seg.StartLocation -= PrevDir * BackOff;
 			}
 
@@ -1205,6 +1213,7 @@ TArray<FHitResult> UBXCollisionLibrary::SphereSweepAlongCurve(AActor* Requester,
 
 	if (CurveTransforms.Num() <= 0)
 	{
+		InOutFrameLink.bValid = false;
 		return OutResult;
 	}
 
@@ -1216,8 +1225,8 @@ TArray<FHitResult> UBXCollisionLibrary::SphereSweepAlongCurve(AActor* Requester,
 	{
 		SegParam.StartLocation = CurveTransforms[0].GetLocation();
 		SegParam.StartRotation = CurveTransforms[0].GetRotation().Rotator();
-		SegParam.EndLocation = FVector::ZeroVector;
-		SegParam.EndRotation = FRotator::ZeroRotator;
+		SegParam.EndLocation = SegParam.StartLocation;
+		SegParam.EndRotation = SegParam.StartRotation;
 		SegParam.Scale = CurveTransforms[0].GetScale3D();
 		InOutFrameLink.bValid = false;
 		return SphereCheck(SegParam, ObjectTypes, SphereSize, Filter);
@@ -1249,6 +1258,7 @@ TArray<FHitResult> UBXCollisionLibrary::CapsuleSweepAlongCurve(AActor* Requester
 
 	if (CurveTransforms.Num() <= 0)
 	{
+		InOutFrameLink.bValid = false;
 		return OutResult;
 	}
 
@@ -1260,8 +1270,8 @@ TArray<FHitResult> UBXCollisionLibrary::CapsuleSweepAlongCurve(AActor* Requester
 	{
 		SegParam.StartLocation = CurveTransforms[0].GetLocation();
 		SegParam.StartRotation = CurveTransforms[0].GetRotation().Rotator();
-		SegParam.EndLocation = FVector::ZeroVector;
-		SegParam.EndRotation = FRotator::ZeroRotator;
+		SegParam.EndLocation = SegParam.StartLocation;
+		SegParam.EndRotation = SegParam.StartRotation;
 		SegParam.Scale = CurveTransforms[0].GetScale3D();
 		InOutFrameLink.bValid = false;
 		return CapsuleCheck(SegParam, ObjectTypes, CapsuleSize, Filter, 360.0f);
@@ -1294,6 +1304,7 @@ TArray<FHitResult> UBXCollisionLibrary::BoxSweepAlongCurve(AActor* Requester, co
 
 	if (CurveTransforms.Num() <= 0)
 	{
+		InOutFrameLink.bValid = false;
 		return OutResult;
 	}
 
@@ -1305,8 +1316,8 @@ TArray<FHitResult> UBXCollisionLibrary::BoxSweepAlongCurve(AActor* Requester, co
 	{
 		SegParam.StartLocation = CurveTransforms[0].GetLocation();
 		SegParam.StartRotation = CurveTransforms[0].GetRotation().Rotator();
-		SegParam.EndLocation = FVector::ZeroVector;
-		SegParam.EndRotation = FRotator::ZeroRotator;
+		SegParam.EndLocation = SegParam.StartLocation;
+		SegParam.EndRotation = SegParam.StartRotation;
 		SegParam.Scale = CurveTransforms[0].GetScale3D();
 		InOutFrameLink.bValid = false;
 		return BoxCheck(SegParam, ObjectTypes, BoxSize, Filter, 360.0f);
