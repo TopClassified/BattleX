@@ -1,5 +1,9 @@
 #include "BXConditionManager.h"
 #include "BXSubSystem.h"
+#include "HAL/PlatformTime.h"
+#include "Engine/World.h"
+#include "Task/Condition/BXTaskCondition.h"
+#include "DecisionTree/BXDecisionTreeCondition.h"
 
 
 
@@ -51,6 +55,14 @@ UBXConditionManager* UBXConditionManager::Get(UObject* InWorldContext)
 void UBXConditionManager::Initialize()
 {
 	ConditionToFunctionMap.Reset();
+	NativeCheckMap.Reset();
+
+	// 注册组合条件Native检查
+	RegisterNativeCheck(UBXTaskConditionComposite::StaticClass(), &UBXConditionManager::NativeCheckTaskComposite);
+	RegisterNativeCheck(UBXDecisionTreeConditionComposite::StaticClass(), &UBXConditionManager::NativeCheckDecisionTreeComposite);
+
+	// 绑定 World Tick Start 回调，在帧最早时机刷新时间戳
+	FWorldDelegates::OnWorldTickStart.AddUObject(this, &UBXConditionManager::OnWorldTickStart);
 
 	UClass* Class = GetClass();
 	if (!IsValid(Class))
@@ -138,9 +150,23 @@ void UBXConditionManager::Initialize()
 
 void UBXConditionManager::Deinitialize()
 {
-	
+	FWorldDelegates::OnWorldTickStart.RemoveAll(this);
+	NativeCheckMap.Empty();
+	DerivedCache_Int.Empty();
+	DerivedCache_Float.Empty();
+	DerivedCache_Struct.Empty();
 }
 #pragma endregion Important
+
+
+
+#pragma region FrameTime
+void UBXConditionManager::OnWorldTickStart(UWorld* InWorld, ELevelTick InTickType, float InDeltaTime)
+{
+	// 在 World Tick 最早时机刷新当前帧时间戳，确保本帧后续 CheckCondition 调用都用同一值
+	CurrentFrameTime = FPlatformTime::Seconds();
+}
+#pragma endregion FrameTime
 
 
 
@@ -197,49 +223,166 @@ bool UBXConditionManager::CheckCondition(UBXCondition* InCondition, UScriptStruc
 	{
 		return false;
 	}
-	
-	if (FBXConditionFunctionParameter* FindResult = ConditionToFunctionMap.Find(InCondition->GetClass()))
+
+	const TSubclassOf<UBXCondition> CondClass = InCondition->GetClass();
+	bool CheckResult = false;
+	bool bEvaluated = false;
+
+	// 快速路径：Native函数直接调用，绕过ProcessEvent
+	if (FBXNativeCheckFunc* NativeFunc = NativeCheckMap.Find(CondClass))
 	{
-		if (!IsValid(FindResult->Function) || FindResult->ParameterNames.Num() != 3)
+		CheckResult = (this->**NativeFunc)(InCondition, InParameterType, InParameterAddress);
+		bEvaluated = true;
+	}
+	// 慢速路径：通过ProcessEvent调用蓝图UFunction
+	else if (FBXConditionFunctionParameter* FindResult = ConditionToFunctionMap.Find(CondClass))
+	{
+		if (IsValid(FindResult->Function) && FindResult->ParameterNames.Num() == 3)
 		{
-			return false;
+			FObjectProperty* ConditionProperty = CastField<FObjectProperty>(FindResult->Function->FindPropertyByName(FindResult->ParameterNames[0]));
+			FStructProperty* ParameterProperty = CastField<FStructProperty>(FindResult->Function->FindPropertyByName(FindResult->ParameterNames[1]));
+
+			if (ConditionProperty && ParameterProperty
+				&& CondClass == ConditionProperty->PropertyClass
+				&& InParameterType == ParameterProperty->Struct)
+			{
+				uint8* Buffer = static_cast<uint8*>(FMemory::MallocZeroed(FindResult->Function->ParmsSize));
+				if (Buffer)
+				{
+					FMemory::Memcpy(Buffer, &InCondition, ConditionProperty->GetSize());
+					FMemory::Memcpy(Buffer + ConditionProperty->GetSize(), InParameterAddress, ParameterProperty->GetSize());
+
+					ProcessEvent(FindResult->Function, Buffer);
+					CheckResult = *(reinterpret_cast<bool*>(Buffer + ConditionProperty->GetSize() + ParameterProperty->GetSize()));
+					FMemory::Free(Buffer);
+					bEvaluated = true;
+				}
+			}
 		}
-
-		FObjectProperty* ConditionProperty = CastField<FObjectProperty>(FindResult->Function->FindPropertyByName(FindResult->ParameterNames[0]));
-		if (!ConditionProperty || InCondition->GetClass() != ConditionProperty->PropertyClass)
-		{
-			return false;
-		}
-
-		FStructProperty* ParameterProperty = CastField<FStructProperty>(FindResult->Function->FindPropertyByName(FindResult->ParameterNames[1]));
-		if (!ParameterProperty || InParameterType != ParameterProperty->Struct)
-		{
-			return false;
-		}
-
-		// 申请函数参数内存
-		uint8* Buffer = static_cast<uint8*>(FMemory::MallocZeroed(FindResult->Function->ParmsSize));
-		if (!Buffer)
-		{
-			return false;
-		}
-		
-		// 拷贝条件内存
-		FMemory::Memcpy(Buffer, &InCondition, ConditionProperty->GetSize());
-		// 拷贝参数内存
-		FMemory::Memcpy(Buffer + ConditionProperty->GetSize(), InParameterAddress, ParameterProperty->GetSize());
-
-		// 执行函数
-		ProcessEvent(FindResult->Function, Buffer);
-		// 得到结果
-		bool CheckResult = *(reinterpret_cast<bool*>(Buffer + ConditionProperty->GetSize() + ParameterProperty->GetSize()));
-
-		// 释放内存
-		FMemory::Free(Buffer);
-
-		return CheckResult;
 	}
 
-	return false;
+	if (!bEvaluated)
+	{
+		return false;
+	}
+
+	return InCondition->bNot ? !CheckResult : CheckResult;
 }
 #pragma endregion Condition
+
+
+
+#pragma region DerivedKey
+bool FBXDerivedKey::operator==(const FBXDerivedKey& Other) const
+{
+	return ConditionClass == Other.ConditionClass
+		&& ParamType == Other.ParamType
+		&& ParamHash == Other.ParamHash;
+}
+
+uint32 GetTypeHash(const FBXDerivedKey& Key)
+{
+	return HashCombineFast(
+		HashCombineFast(
+			GetTypeHash(Key.ConditionClass),
+			GetTypeHash(Key.ParamType)
+		),
+		Key.ParamHash
+	);
+}
+#pragma endregion DerivedKey
+
+
+
+#pragma region ConditionFunctions
+void UBXConditionManager::RegisterNativeCheck(TSubclassOf<UBXCondition> InClass, FBXNativeCheckFunc InFunc)
+{
+	if (InClass && InFunc)
+	{
+		NativeCheckMap.Add(InClass, InFunc);
+	}
+}
+
+bool UBXConditionManager::NativeCheckTaskComposite(UBXCondition* InCondition, UScriptStruct* InParameterType, void* InParameterAddress)
+{
+	UBXTaskConditionComposite* Composite = Cast<UBXTaskConditionComposite>(InCondition);
+	if (!Composite)
+	{
+		return false;
+	}
+
+	// 空Children永远返回True
+	if (Composite->Children.Num() == 0)
+	{
+		return true;
+	}
+
+	for (UBXTaskCondition* Child : Composite->Children)
+	{
+		if (!IsValid(Child))
+		{
+			continue;
+		}
+
+		const bool bChildResult = CheckCondition(Child, InParameterType, InParameterAddress);
+
+		if (Composite->Logic == EBXLogicOperator::And)
+		{
+			if (!bChildResult)
+			{
+				return false;
+			}
+		}
+		else
+		{
+			if (bChildResult)
+			{
+				return true;
+			}
+		}
+	}
+
+	return Composite->Logic == EBXLogicOperator::And;
+}
+
+bool UBXConditionManager::NativeCheckDecisionTreeComposite(UBXCondition* InCondition, UScriptStruct* InParameterType, void* InParameterAddress)
+{
+	UBXDecisionTreeConditionComposite* Composite = Cast<UBXDecisionTreeConditionComposite>(InCondition);
+	if (!Composite)
+	{
+		return false;
+	}
+
+	if (Composite->Children.Num() == 0)
+	{
+		return true;
+	}
+
+	for (UBXDecisionTreeCondition* Child : Composite->Children)
+	{
+		if (!IsValid(Child))
+		{
+			continue;
+		}
+
+		const bool bChildResult = CheckCondition(Child, InParameterType, InParameterAddress);
+
+		if (Composite->Logic == EBXLogicOperator::And)
+		{
+			if (!bChildResult)
+			{
+				return false;
+			}
+		}
+		else
+		{
+			if (bChildResult)
+			{
+				return true;
+			}
+		}
+	}
+
+	return Composite->Logic == EBXLogicOperator::And;
+}
+#pragma endregion ConditionFunctions

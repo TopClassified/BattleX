@@ -112,14 +112,14 @@ BattleX/
     │   ├── BXEnums.h / BXStructs.h / BXCurves.h
     │   ├── Animation/           # 动画实例与动画库
     │   ├── Collision/           # 碰撞检测、形状组件、受击反应
-    │   ├── Condition/           # 条件系统（决策树用）
-    │   ├── DecisionTree/        # 决策树（含 BeatenTree / CombatTree）
+    │   ├── Condition/           # 条件系统（基类、枚举、管理器、派生缓存）
+    │   ├── DecisionTree/        # 决策树（含 BeatenTree / CombatTree + 决策树系列条件）
     │   ├── Event/               # 事件系统
     │   ├── Gear/                # 装备系统（含冷兵器）
     │   ├── Lock/                # 锁定系统（占位）
     │   ├── Movement/            # 角色移动与 RootMotion
     │   ├── State/               # 状态机与行为代理
-    │   ├── Task/                # 任务系统（Task + Processor + 具体任务）
+    │   ├── Task/                # 任务系统（Task + Processor + 具体任务 + Task系列条件）
     │   ├── Timeline/            # 时间轴系统（资产、管理器、组件）
     │   └── Unit/                # 投射物/法术场（占位）
     └── BattleXEditor/           # 编辑器模块
@@ -444,7 +444,7 @@ UPrimaryDataAsset
 
 #### `UBXCondition` / `UBXConditionManager`
 
-条件基类有 `bNot` 反转标志。`UBXConditionManager` 通过反射将条件类映射到 UFunction 进行评估，配置 `ConditionToFunctionConfig`，运行时缓存 `ConditionToFunctionMap`。
+决策树系列条件继承自 `UBXDecisionTreeCondition`（详见 [4.10 Condition 条件系统](#410-condition-条件系统)）。条件基类有 `bNot` 反转标志；`UBXConditionManager` 支持 Native 快速路径（绕过 `ProcessEvent`）与反射慢速路径双路求值，并提供同帧派生结果缓存。
 
 #### BeatenTree（受击树）
 
@@ -568,13 +568,95 @@ API：`RegisterGlobalEvent` / `UnregisterGlobalEvent` / `BroadcastGlobalEvent`�
 
 ### 4.10 Condition 条件系统
 
-#### `UBXCondition` ([BXCondition.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Condition/BXCondition.h))
+条件系统提供数据驱动的条件判定框架，支持系列隔离、组合嵌套（AND/OR/NOT）、Native 快速路径与同帧运算结果缓存。
 
-条件基类。`Abstract, Blueprintable, EditInlineNew`。`bNot` 反转标志。编辑器 `GetDescription()` 用于显示。
+#### `EBXLogicOperator` ([BXConditionEnums.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionEnums.h))
 
-#### `UBXConditionManager` ([BXConditionManager.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Condition/BXConditionManager.h))
+逻辑运算枚举，用于组合条件的短路求值：
+- `And`：所有子条件都满足时为真
+- `Or`：任一子条件满足时为真
 
-单例管理器。`CheckCondition<T>(Condition, Param)` 模板版（转发 `UScriptStruct*` + 指针到 `InternalCheckCondition`）、BP CustomThunk 版、结构体/类型+地址版。配置 `ConditionToFunctionConfig`（条件类 → UFunction + 参数名），运行时缓存 `ConditionToFunctionMap`。`FBXConditionFunctionParameter` 持有反射的 `UFunction*` 与参数名列表。
+#### `UBXCondition` ([BXCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXCondition.h))
+
+条件基类。`Abstract, Blueprintable, EditInlineNew`。
+- `bNot`：结果取反标志
+- `GetDescription()`：编辑器显示用描述（WITH_EDITOR）
+
+#### 系列隔离机制
+
+条件系统通过 **抽象基类 + Instanced 属性** 实现不同业务模块的条件子类互不可见，防止子系统间条件类混用：
+
+| 系列 | 基类 | 组合条件 | 参数结构体 | 文件 |
+|---|---|---|---|---|
+| **Task 系列** | `UBXTaskCondition` | `UBXTaskConditionComposite` | `FBXTaskConditionParameter` | [BXTaskCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/Condition/BXTaskCondition.h) |
+| **决策树系列** | `UBXDecisionTreeCondition` | `UBXDecisionTreeConditionComposite` | （按需补充） | [BXDecisionTreeCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/DecisionTree/BXDecisionTreeCondition.h) |
+
+每个系列的 `Composite.Children` 数组通过 `Instanced` 属性限定为该系列基类指针，编辑器细节面板只能选取同系列子类。
+
+#### 组合条件（Composite 模式）
+
+`UBXTaskConditionComposite` / `UBXDecisionTreeConditionComposite` 支持嵌套条件判断，可实现 `((A&&B&&C)||(D&&E))` 等复杂表达式：
+
+| 字段 | 说明 |
+|---|---|
+| `Logic` | 逻辑运算类型（`EBXLogicOperator::And` / `Or`） |
+| `Children` | 子条件列表（Instanced 内联编辑，限定同系列） |
+
+求值规则（`NativeCheckTaskComposite` / `NativeCheckDecisionTreeComposite`）：
+- **空 Children** 永远返回 `True`
+- **AND 模式**：短路求值，遇到 `false` 立即返回 `False`
+- **OR 模式**：短路求值，遇到 `true` 立即返回 `True`
+- **NOT 取反**：继承自 `UBXCondition::bNot`，在 `CheckCondition` 最外层统一处理
+
+#### `UBXConditionManager` ([BXConditionManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionManager.h))
+
+单例管理器，核心职责包括条件求值、Native 函数注册与派生结果缓存。
+
+**条件求值**（三种重载）：
+- `CheckCondition<T>(Condition, Param)`：模板版，转发 `UScriptStruct*` + 指针
+- `CheckCondition(Condition, int32)`：BP CustomThunk 版（`execCheckCondition` 从蓝图 VM 栈提取结构体）
+- `CheckCondition(Condition, UScriptStruct*, void*)`：类型擦除版，实际执行
+
+**求值路径（双路）**：
+1. **快速路径（Native）**：若条件类在 `NativeCheckMap` 中注册了原生函数，直接 C++ 调用，绕过 `ProcessEvent`
+2. **慢速路径（反射）**：通过 `ConditionToFunctionMap` 查找 `UFunction`，分配 ParmsSize 缓冲区，`Memcpy` 参数后 `ProcessEvent` 调用
+
+最终结果统一经 `bNot` 取反后返回。
+
+**帧时间戳机制**：
+- `OnWorldTickStart` 回调在 World Tick 最早时机刷新 `CurrentFrameTime`（`FPlatformTime::Seconds()`）
+- 帧内所有 `CheckCondition` / 派生缓存共用同一时间戳，确保同帧一致性
+
+**Native 检查函数注册**：
+```cpp
+using FBXNativeCheckFunc = bool(UBXConditionManager::*)(UBXCondition*, UScriptStruct*, void*);
+void RegisterNativeCheck(TSubclassOf<UBXCondition> InClass, FBXNativeCheckFunc InFunc);
+```
+`Initialize()` 中注册两个组合条件的 Native 检查函数：
+- `UBXTaskConditionComposite` → `NativeCheckTaskComposite`
+- `UBXDecisionTreeConditionComposite` → `NativeCheckDecisionTreeComposite`
+
+**派生结果缓存系统**：
+
+针对"同一种条件 + 相同参数"在同一帧内重复进行复杂运算的场景，提供三类型缓存（int / float / FInstancedStruct），由调用方自行决定是否缓存：
+
+| 缓存类型 | 查询方法 | 写入方法 |
+|---|---|---|
+| int32 | `GetDerivedInt(Class, Param)` → `const int32*` | `SetDerivedInt(Class, Param, Value)` → `const int32*` |
+| float | `GetDerivedFloat(Class, Param)` → `const float*` | `SetDerivedFloat(Class, Param, Value)` → `const float*` |
+| Struct | `GetDerivedStruct<TResult>(Class, Param)` → `const TResult*` | `SetDerivedStruct<TResult>(Class, Param, Value)` → `const TResult*` |
+
+缓存键 `FBXDerivedKey` 由三部分组成：
+- `ConditionClass`：条件类（`UClass*`）
+- `ParamType`：参数结构体类型（`UScriptStruct*`）
+- `ParamHash`：参数实例哈希（`UScriptStruct::GetStructTypeHash`）
+
+缓存项 `TBXDerivedEntry<T>` 持有 `Value` 与 `CachedTime`，查询时校验 `CachedTime == CurrentFrameTime` 确保同帧有效。超过 `MaxDerivedEntries`（1024）时整体清空，防止内存膨胀。
+
+**反射配置**：
+- `ConditionToFunctionConfig`：编辑器配置表（条件类 → UFunction 名）
+- `ConditionToFunctionMap`：运行时缓存（条件类 → `FBXConditionFunctionParameter`，含 `UFunction*` 与参数名列表）
+- `FBXConditionFunctionParameter`：持有反射的 `UFunction*` 与参数名列表，`Initialize` 时校验三参数签名（条件对象 / 参数结构体 / bool 返回值）
 
 ---
 
@@ -1012,7 +1094,7 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 | 移动系统 | [BXCharacterMovementComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Movement/BXCharacterMovementComponent.h) / [BXRootMotionSource.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Movement/BXRootMotionSource.h) |
 | 碰撞系统 | [BXCollision.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXCollision.h) / [BXShapeComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXShapeComponent.h) / [BXHitReactionComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXHitReactionComponent.h) |
 | 事件系统 | [BXEventManager.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Event/BXEventManager.h) / [BXEventStructs.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Event/BXEventStructs.h) |
-| 条件系统 | [BXCondition.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Condition/BXCondition.h) / [BXConditionManager.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Condition/BXConditionManager.h) |
+| 条件系统 | [BXCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXCondition.h) / [BXConditionEnums.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionEnums.h) / [BXConditionManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionManager.h) / [BXTaskCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/Condition/BXTaskCondition.h) / [BXDecisionTreeCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/DecisionTree/BXDecisionTreeCondition.h) |
 | 编辑器入口 | [BattleXEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/BattleXEditor.h) |
 | 时间轴编辑器 | [BXTLEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineEditor/BXTLEditor.h) |
 | 决策树编辑器 | [BXDTEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/DecisionTreeEditor/BXDTEditor.h) |
@@ -1036,6 +1118,7 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 | `EBXStateMachineFunction` | BXStateMachine.h | Native/BP × Init/Cleanup/Update/EnterState/ExitState (Bitflags) |
 | `EBXBehaviorAgentFunction` | BXBehaviorAgent.h | Native/BP × Init/Cleanup/Start/Stop/CheckStart (Bitflags) |
 | `EBXForbiddenBehaviorReason` | BXStateEnums.h | 行为禁用原因 |
+| `EBXLogicOperator` | BXConditionEnums.h | And / Or（组合条件逻辑运算） |
 
 ---
 

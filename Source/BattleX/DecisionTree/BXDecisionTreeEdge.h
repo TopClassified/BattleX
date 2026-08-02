@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 
-#include "BXCondition.h"
+#include "BXDecisionTreeCondition.h"
 
 #include "BXDecisionTreeEdge.generated.h"
 
@@ -19,7 +19,7 @@ public:
 public:
 	// 该节点的检查条件
 	UPROPERTY(EditDefaultsOnly, Instanced)
-	UBXCondition* Condition = nullptr;
+	UBXDecisionTreeCondition* Condition = nullptr;
 	
 	// 边的出发节点
 	UPROPERTY(VisibleDefaultsOnly)

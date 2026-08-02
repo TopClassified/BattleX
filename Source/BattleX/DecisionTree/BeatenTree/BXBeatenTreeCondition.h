@@ -3,14 +3,14 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 
-#include "BXCondition.h"
+#include "BXDecisionTreeCondition.h"
 
 #include "BXBeatenTreeCondition.generated.h"
 
 
 
 UCLASS()
-class BATTLEX_API UBXBeatenTreeCondition : public UBXCondition
+class BATTLEX_API UBXBeatenTreeCondition : public UBXDecisionTreeCondition
 {
 	GENERATED_BODY()
 

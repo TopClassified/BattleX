@@ -36,7 +36,7 @@ void UBXDecisionTreeEdge::CopyData(UBXDecisionTreeEdge* OtherEdge)
 
 	if (OtherEdge->Condition)
 	{
-		Condition = NewObject<UBXCondition>(this, OtherEdge->Condition->GetClass());
+		Condition = NewObject<UBXDecisionTreeCondition>(this, OtherEdge->Condition->GetClass());
 		UBXFunctionLibrary::CopyObject(Condition, OtherEdge->Condition);
 	}
 

@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 
-#include "BXCondition.h"
+#include "BXDecisionTreeCondition.h"
 
 #include "BXDecisionTreeNode.generated.h"
 
@@ -45,7 +45,7 @@ public:
 public:
 	// 该节点的检查条件
 	UPROPERTY(EditDefaultsOnly, Instanced)
-	UBXCondition* Condition = nullptr;
+	UBXDecisionTreeCondition* Condition = nullptr;
 	
 	// 从该节点出发的边的索引
 	UPROPERTY(VisibleDefaultsOnly)

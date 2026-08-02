@@ -44,7 +44,7 @@ void UBXDecisionTreeNode::CopyData(UBXDecisionTreeNode* OtherNode)
 
 	if (OtherNode->Condition)
 	{
-		Condition = NewObject<UBXCondition>(this, OtherNode->Condition->GetClass());
+		Condition = NewObject<UBXDecisionTreeCondition>(this, OtherNode->Condition->GetClass());
 		UBXFunctionLibrary::CopyObject(Condition, OtherNode->Condition);
 	}
 
