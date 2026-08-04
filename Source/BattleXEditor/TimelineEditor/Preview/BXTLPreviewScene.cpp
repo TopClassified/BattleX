@@ -51,12 +51,10 @@ void FBXTLPreviewScene::OnCreateViewport(SBXTLEditorViewport* InEditorViewport, 
 		FloorOwner->SetActorLocation(FVector(0.0f, 0.0f, -110.0f));
 		UStaticMeshComponent* NewFloor = NewObject<UStaticMeshComponent>(FloorOwner.Get());
 		FloorOwner->SetRootComponent(NewFloor);
-		FloorOwner->AttachToActor(FloorOwner.Get(), FAttachmentTransformRules::KeepWorldTransform);
 
 		NewFloor->RegisterComponent();
 		NewFloor->SetStaticMesh(FloorMesh);
 		NewFloor->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
-		NewFloor->AttachToComponent(FloorOwner->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
 		NewFloor->SetRelativeLocation(FVector::ZeroVector);
 		NewFloor->SetRelativeScale3D(FVector(10.0f, 10.0f, 1.0f));
 		NewFloor->bReceivesDecals = true;

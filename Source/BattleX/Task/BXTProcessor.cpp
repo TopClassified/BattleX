@@ -146,35 +146,41 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 	const UBXSettings* Settings = GetDefault<UBXSettings>();
 	if (!Settings)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[AddPendingTask] Settings is null"));
 		return false;
 	}
 
 	UBXTLAsset* Asset = InOutRTData.Timeline;
 	if (!Asset)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[AddPendingTask] Timeline is null"));
 		return false;
 	}
 
 	if (!Asset->Sections.IsValidIndex(InOutRTSData.Index))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[AddPendingTask] Section index invalid: %d"), InOutRTSData.Index);
 		return false;
 	}
 
 	const FBXTLSection& Section = Asset->Sections[InOutRTSData.Index];
 	if (!Section.TaskList.IsValidIndex(InOutRTTData.Index))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[AddPendingTask] TaskList index invalid: %d"), InOutRTTData.Index);
 		return false;
 	}
 
 	UBXTask* Task = Section.TaskList[InOutRTTData.Index];
 	if (!Task)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[AddPendingTask] Task is null"));
 		return false;
 	}
 
 	FBXTEvent* EventPointer = Task->Events.Find(InEventTag);
 	if (!EventPointer)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[AddPendingTask] EventTag not found in Task=%s Events: Tag=%s, Events.Num=%d"), *Task->GetName(), *InEventTag.ToString(), Task->Events.Num());
 		return false;
 	}
 
@@ -190,6 +196,7 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 		int32 FullIndex = UBXFunctionLibrary::GetSoftTaskFullIndex(Asset, It->Key);
 		if (FullIndex < 0)
 		{
+			UE_LOG(LogTemp, Warning, TEXT("[AddPendingTask] FullIndex invalid for SoftTask=%s"), It->Key.IsValid() ? *It->Key.ToSoftObjectPath().ToString() : TEXT("invalid"));
 			continue;
 		}
 
@@ -216,7 +223,7 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 					break;
 				}
 			}
-			
+
 			if (Flag)
 			{
 				InOutRTSData.TaskStackInFrame.Add(FInt64Vector2(LocalIndex, InScope));

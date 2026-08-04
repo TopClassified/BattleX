@@ -14,6 +14,7 @@ namespace BXGameplayTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Move, "BXBehavior.Locomotion.Move", "主动移动");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Rotate, "BXBehavior.Locomotion.Rotate", "主动转向");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXPlayMontage_Default, "BXBehavior.PlayMontage.Default", "播放Montage默认Tag");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXImmBehavior_Locomotion_Jump, "BXImmBehavior.Locomotion.Jump", "主动跳跃(瞬间行为)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXImmBehavior_Locomotion_Landed, "BXImmBehavior.Locomotion.Landed", "落地(瞬间行为)");
 
@@ -97,6 +98,23 @@ namespace BXGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Success, "BXTEvent.Success", "成功");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Failure, "BXTEvent.Failure", "失败");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Trigger, "BXTEvent.Trigger", "触发");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch01, "BXTEvent.Branch01", "分支01");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch02, "BXTEvent.Branch02", "分支02");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch03, "BXTEvent.Branch03", "分支03");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch04, "BXTEvent.Branch04", "分支04");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch05, "BXTEvent.Branch05", "分支05");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch06, "BXTEvent.Branch06", "分支06");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch07, "BXTEvent.Branch07", "分支07");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch08, "BXTEvent.Branch08", "分支08");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch09, "BXTEvent.Branch09", "分支09");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch10, "BXTEvent.Branch10", "分支10");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch11, "BXTEvent.Branch11", "分支11");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch12, "BXTEvent.Branch12", "分支12");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch13, "BXTEvent.Branch13", "分支13");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch14, "BXTEvent.Branch14", "分支14");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch15, "BXTEvent.Branch15", "分支15");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_Branch16, "BXTEvent.Branch16", "分支16");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTEvent_BranchDefault, "BXTEvent.BranchDefault", "默认分支");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTData_Transform, "BXTData.Transform", "方位");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXTData_ColResults1, "BXTData.ColResults1", "碰撞结果1");

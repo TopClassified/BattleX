@@ -1122,9 +1122,6 @@ namespace BXCurveSweepInternal
 
 		int32 SegmentCount = UniqueSplitArcs.Num() + 1;
 
-		UE_LOG(BXCOLLISION, Log, TEXT("[BXC] Polyline: Points=%d Segments=%d RotSeg=%d TotalRotDeg=%.2f RotThr=%.1f ColThr=%.1f MaxSeg=%d"),
-			NumPoints, SegmentCount, RotSegments, TotalRotDeltaDeg, RotationThreshold, CollinearThreshold, MaxSegmentCount);
-
 		// 按弧长位置插值生成关键点Transform
 		TArray<FTransform> KeyTransforms;
 		KeyTransforms.Reserve(SegmentCount + 1);

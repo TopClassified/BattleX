@@ -155,4 +155,17 @@ public:
 #endif
 #pragma endregion Editor
 
+
+
+#pragma region PinChangeDetection
+#if WITH_EDITOR
+private:
+	// 构建Pin相关属性签名，用于检测任意形式变更
+	FString BuildPinRelatedSignature();
+
+	// 上次检测时的Pin相关属性签名
+	FString CachedPinSignature;
+#endif
+#pragma endregion PinChangeDetection
+
 };

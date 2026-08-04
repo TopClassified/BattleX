@@ -13,7 +13,7 @@ class BATTLEX_API UBXCondition : public UObject
 
 public:
 	// 结果取反
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Condition")
 	bool bNot = false;
 
 #if WITH_EDITOR

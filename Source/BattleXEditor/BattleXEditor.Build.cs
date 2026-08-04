@@ -72,6 +72,8 @@ public class BattleXEditor : ModuleRules
                 "AdvancedPreviewScene",
                 "ComponentVisualizers",
                 "InteractiveToolsFramework",
+                "PropertyEditor",
+                "AnimGraphRuntime",
 
                 "Slate",
 				"SlateCore",

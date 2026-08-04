@@ -22,7 +22,6 @@ public class BattleX : ModuleRules
 			{
                 "BattleX",
                 "BattleX/Task",
-                "BattleX/Task/Condition",
                 "BattleX/Unit",
                 "BattleX/Lock",
                 "BattleX/Gear",

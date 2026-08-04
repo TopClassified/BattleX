@@ -75,7 +75,7 @@ public:
 USTRUCT(BlueprintType)
 struct FBXBoneSelector
 {
-	GENERATED_USTRUCT_BODY()
+	GENERATED_BODY()
 
 public:
 	// 骨骼名称
@@ -87,6 +87,25 @@ public:
 	UPROPERTY(EditAnywhere)
 	TSoftObjectPtr<class USkeletalMesh> SkeletalMesh = nullptr;
 #endif
+
+};
+
+
+
+// 函数选择器
+USTRUCT(BlueprintType)
+struct FBXFunctionSelector
+{
+	GENERATED_BODY()
+
+public:
+	// 目标类（为空时使用所属对象的类）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TSubclassOf<UObject> TargetClass = nullptr;
+
+	// 函数名称
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName FunctionName = NAME_None;
 
 };
 

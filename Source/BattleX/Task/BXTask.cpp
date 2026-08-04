@@ -116,36 +116,16 @@ void UBXTask::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent
 			CollisionInputDatas[i].SetDisplayName(FName(TEXT("InCol") + FString::FromInt(i)));
 			CollisionInputDatas[i].SetStructType(FBXTHitResults::StaticStruct());
 		}
-		
-		RefreshInputOutput.Broadcast();
 	}
-	if (PropertyChangedEvent.GetPropertyName().IsEqual(TEXT("CollisionInputDatas")))
+	else if (PropertyChangedEvent.GetPropertyName().IsEqual(TEXT("CollisionInputDatas")))
 	{
 		for (int32 i = 0; i < CollisionInputDatas.Num(); ++i)
 		{
 			CollisionInputDatas[i].SetDisplayName(FName(TEXT("InCol") + FString::FromInt(i)));
 			CollisionInputDatas[i].SetStructType(FBXTHitResults::StaticStruct());
 		}
-		
-		RefreshInputOutput.Broadcast();
 	}
-	
-	if (PropertyChangedEvent.GetPropertyName().IsEqual(TEXT("InputDatas")))
-	{
-		RefreshInputOutput.Broadcast();
-	}
-	
-	if (PropertyChangedEvent.GetPropertyName().IsEqual(TEXT("OutputDatas")))
-	{
-		RefreshInputOutput.Broadcast();
-	}
-
-	if (PropertyChangedEvent.GetPropertyName().IsEqual(TEXT("OriginType")))
-	{
-		RefreshTransformCreaters();
-	}
-
-	if (PropertyChangedEvent.GetPropertyName().IsEqual(TEXT("XAxisType")))
+	else if (PropertyChangedEvent.GetPropertyName().IsEqual(TEXT("OriginType")) || PropertyChangedEvent.GetPropertyName().IsEqual(TEXT("XAxisType")))
 	{
 		RefreshTransformCreaters();
 	}
@@ -156,8 +136,43 @@ void UBXTask::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent
 	{
 		TriggerTypes = (1 << (int32)EBXTTriggerType::T_Timeline);
 	}
-	
+
 	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	// 检测Pin相关属性任意形式变更并广播
+	const FString CurrentSignature = BuildPinRelatedSignature();
+	if (CurrentSignature != CachedPinSignature)
+	{
+		CachedPinSignature = CurrentSignature;
+		RefreshInputOutput.Broadcast();
+	}
+}
+
+FString UBXTask::BuildPinRelatedSignature()
+{
+	FString Signature;
+	Signature += EnablePassiveTrigger() ? TEXT("1") : TEXT("0");
+	Signature += TEXT("|");
+	for (TMap<FGameplayTag, FBXTEvent>::TConstIterator It(Events); It; ++It)
+	{
+		Signature += It->Key.ToString() + TEXT(";");
+	}
+	Signature += TEXT("|");
+	for (FBXTInputInfo& Info : CollisionInputDatas)
+	{
+		Signature += FString::FromInt(Info.GetUniqueID()) + TEXT(":") + Info.GetDisplayName().ToString() + TEXT(";");
+	}
+	Signature += TEXT("|");
+	for (FBXTInputInfo& Info : InputDatas)
+	{
+		Signature += FString::FromInt(Info.GetUniqueID()) + TEXT(":") + Info.GetDisplayName().ToString() + TEXT(";");
+	}
+	Signature += TEXT("|");
+	for (FBXTOutputInfo& Info : OutputDatas)
+	{
+		Signature += FString::FromInt(Info.GetUniqueID()) + TEXT(":") + Info.DataTag.ToString() + TEXT(";");
+	}
+	return Signature;
 }
 
 void UBXTask::RefreshTransformCreaters()

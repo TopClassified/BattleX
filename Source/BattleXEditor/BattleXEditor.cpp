@@ -3,17 +3,21 @@
 #include "UnrealEdGlobals.h"
 #include "Editor/UnrealEdEngine.h"
 #include "AssetToolsModule.h"
+#include "PropertyEditorModule.h"
 #include "BXDecisionTreeTemplate.h"
 
 #include "BXTLAsset.h"
 #include "BXSkillAsset.h"
 #include "BXShapeComponent.h"
+#include "BXStructs.h"
 
 #include "BXTLAssetTypeActions.h"
 #include "BXTLAssetThumbnailRenderer.h"
 #include "BXDTAssetTypeActions.h"
 #include "BXDTAssetThumbnailRenderers.h"
-#include "ComponentVisualizers/BXShapeComponentVisualizer.h" 
+#include "ComponentVisualizers/BXShapeComponentVisualizer.h"
+#include "CustomLayout/BXBoneSelectorCustomization.h"
+#include "CustomLayout/BXFunctionSelectorCustomization.h"
 
 
 
@@ -46,6 +50,11 @@ void FBattleXEditorModule::StartupModule()
 	UThumbnailManager::Get().RegisterCustomRenderer(UBXTLAsset::StaticClass(), UBXTLAssetThumbnailRenderer::StaticClass());
 	UThumbnailManager::Get().UnregisterCustomRenderer(UBXDecisionTreeTemplate::StaticClass());
 	UThumbnailManager::Get().RegisterCustomRenderer(UBXDecisionTreeTemplate::StaticClass(), UBXDTAssetThumbnailRenderers::StaticClass());
+
+	// 注册属性定制
+	FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
+	PropertyModule.RegisterCustomPropertyTypeLayout(FBXBoneSelector::StaticStruct()->GetFName(), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FBXBoneSelectorCustomization::MakeInstance));
+	PropertyModule.RegisterCustomPropertyTypeLayout(FBXFunctionSelector::StaticStruct()->GetFName(), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FBXFunctionSelectorCustomization::MakeInstance));
 }
 
 void FBattleXEditorModule::ShutdownModule()
@@ -53,6 +62,14 @@ void FBattleXEditorModule::ShutdownModule()
 	if (GUnrealEd)
 	{
 		GUnrealEd->UnregisterComponentVisualizer(UBXShapeComponent::StaticClass()->GetFName());
+	}
+
+	// 注销属性定制
+	if (FModuleManager::Get().IsModuleLoaded("PropertyEditor"))
+	{
+		FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
+		PropertyModule.UnregisterCustomPropertyTypeLayout(FBXBoneSelector::StaticStruct()->GetFName());
+		PropertyModule.UnregisterCustomPropertyTypeLayout(FBXFunctionSelector::StaticStruct()->GetFName());
 	}
 }
 

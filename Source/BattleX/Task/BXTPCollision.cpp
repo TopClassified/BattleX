@@ -185,9 +185,6 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 	float SearchStartTime = StartTime + Task->StartTime;
 	float SearchStopTime = StopTime + Task->StartTime;
 
-	UE_LOG(LogTemp, Log, TEXT("[BXTrackColl] CollisionCheck: Task=%s Trajectory=%d TimeRange=[%.4f,%.4f]"),
-		*Task->GetName(), Points.Num(), StartTime, StopTime);
-
 	// 遍历每个ShapeComponent
 	for (TArray<UBXShapeComponent*>::TIterator SComp(TPC.ShapeComponents); SComp; ++SComp)
 	{
@@ -326,9 +323,6 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 			FinalResults.Results.Add(*It);
 		}
 	}
-
-	UE_LOG(LogTemp, Log, TEXT("[BXTrackColl] CollisionCheck result: Task=%s TimeRange=[%.4f,%.4f] Hits=%d (after cooldown from %d)"),
-		*Task->GetName(), StartTime, StopTime, FinalResults.Results.Num(), HitResults.Num());
 
 	int64 Scope = UBXTProcessor::GenerateContextScope(InOutRTData, InOutRTTData);
 	// 触发成功事件，并写入碰撞数据

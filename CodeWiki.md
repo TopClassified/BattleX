@@ -1,7 +1,7 @@
 # BattleX Code Wiki
 
 > 高性能动作游戏技能系统 · Unreal Engine 5 插件
-> 仓库根：`BattleX/`  ·  版本：1.0 (Beta)  ·  文档生成日期：2026-07-25
+> 仓库根：`BattleX/`  ·  版本：1.0 (Beta)  ·  文档生成日期：2026-08-04
 
 ---
 
@@ -119,14 +119,14 @@ BattleX/
     │   ├── Lock/                # 锁定系统（占位）
     │   ├── Movement/            # 角色移动与 RootMotion
     │   ├── State/               # 状态机与行为代理
-    │   ├── Task/                # 任务系统（Task + Processor + 具体任务 + Task系列条件）
+    │   ├── Task/                # 任务系统（Task + Processor + 具体任务 + FlowControl + Task系列条件）
     │   ├── Timeline/            # 时间轴系统（资产、管理器、组件）
     │   └── Unit/                # 投射物/法术场（占位）
     └── BattleXEditor/           # 编辑器模块
         ├── BattleXEditor.{h,cpp}     # 模块入口（注册资产类型/可视化器）
         ├── BattleXEditor.Build.cs
         ├── ComponentVisualizers/ # 形状组件可视化
-        ├── CustomLayout/        # 自定义 Slate 控件
+        ├── CustomLayout/        # 自定义 Slate 控件（骨骼选择器、函数选择器、任务组选择器）
         ├── DecisionTreeEditor/  # 决策树图编辑器
         ├── SimpleEditor/        # 通用编辑器视口基类
         ├── TimelineBase/        # 通用时间轴 Slate 控件框架
@@ -163,7 +163,7 @@ BattleX/
 使用 `UE_DECLARE_GAMEPLAY_TAG_EXTERN` 声明的原生 GameplayTag 命名空间，是整个系统的" vocabulary"。主要包括：
 
 - **事件**：`BXEvent_TimelineStarted/Closing`、`BXEvent_ChangeForbiddenBehavior`、`BXEvent_Behavior_Move/Rotate/Jump/Landed`
-- **行为**：`BXBehavior_Locomotion_Move/Rotate`、`BXImmBehavior_Locomotion_Jump/Landed`
+- **行为**：`BXBehavior_Locomotion_Move/Rotate`、`BXBehavior_PlayMontage_Default`、`BXImmBehavior_Locomotion_Jump/Landed`
 - **硬直状态**：Normal / Knockback / Knockdown / Prone / Ascending / Falling / Floating / Execution
 - **攻击类型**：Light / KnockBack / KnockDown / Launch / Uppercut / AirKnockdown / Drag
 - **攻击力度**：`BXAttackForce_0` ~ `BXAttackForce_5`
@@ -173,6 +173,7 @@ BattleX/
 - **关系/角色类型**：Self/Friendly/Neutral/Hostile；Player/NPC/Monster/BOSS
 - **时间轴数据标签**：`BXTData_Transform`、`BXTData_ColResults1~5`
 - **时间轴事件标签**：`BXTEvent_Start/End/Success/Failure/Trigger`
+- **Switch 分支事件标签**：`BXTEvent_Branch01~16`（16 个编号分支）、`BXTEvent_BranchDefault`（默认分支，用于 `UBXTSwitch` 流程控制任务）
 
 Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `BattleX/Config/Tags`。
 
@@ -300,6 +301,19 @@ Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `Battle
 | **Editor** | `DisplayName` / `Annotation` | 编辑器显示 |
 | | `TriggeredByList` | 被哪些任务触发（反向索引） |
 | | `bNeedCollisionInput` | 是否需要碰撞输入 |
+| **PinChangeDetection** | `CachedPinSignature` | 上次检测时的 Pin 相关属性签名（WITH_EDITOR） |
+
+**Pin 变更签名检测机制**（WITH_EDITOR）：
+
+`UBXTask::PostEditChangeProperty` 末尾通过 `BuildPinRelatedSignature()` 构建 Pin 相关属性的字符串签名，与 `CachedPinSignature` 比较来决定是否广播 `RefreshInputOutput`。签名编码了以下属性：
+
+- `EnablePassiveTrigger()` 返回值
+- `Events` 映射表的所有 Key
+- `CollisionInputDatas` 每个条目的 GUID + DisplayName
+- `InputDatas` 每个条目的 GUID + DisplayName
+- `OutputDatas` 每个条目的 GUID + DataTag
+
+子类只需在 `PostEditChangeProperty` 中修改属性后调用 `Super::PostEditChangeProperty`，基类自动通过签名比较触发 Pin 刷新，避免子类遗漏 `RefreshInputOutput.Broadcast()` 调用。
 
 #### `UBXTProcessor` ([BXTProcessor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTProcessor.h)) ★
 
@@ -349,6 +363,24 @@ Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `Battle
 - **`UBXTIntervalCollision`**：间隔检测基类，增加 `Interval`（检测间隔）、`Count`（检测次数，编辑器自动计算）
 - **`UBXTTrackHitBox`**：轨迹碰撞盒检测。`HitBoxTag`（碰撞盒标签，未设置则匹配任意）、`PolylineConfig`（折线 Sweep 配置 `FIntVector`：X=最大段数 1~10、Y=共线检测角度阈值 1~60、Z=旋转分段角度阈值 1~180）、`BoneSampledTrajectory`（烘焙的骨骼模型空间轨迹）。运行时按帧时间范围在烘焙轨迹上采样，调用 `UBXCollisionLibrary::SphereSweepAlongCurve/CapsuleSweepAlongCurve/BoxSweepAlongCurve` 执行折线 Sweep
 - **`UBXTTrackWeaponHitBox`**：武器轨迹碰撞，增加 `WeaponSlot`（默认右手）
+
+##### `UBXTSwitch` ([BXTFlowControl.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTFlowControl.h)) ★
+
+流程控制 Switch 任务（`L_Instant` 生命周期）。按顺序评估分支条件，首个匹配的分支触发对应事件后结束。
+
+| 字段 | 说明 |
+|---|---|
+| `Cases` | 分支列表（`FBXTSwitchCase` 数组），每个 Case 含 `Condition`（`UBXTaskCondition*`，Instanced 内联编辑）与 `EventTag`（满足时触发的事件 Tag） |
+| `DefaultEventTag` | 所有分支都不匹配时触发的事件 Tag（默认 `BXTEvent_BranchDefault`） |
+
+**执行流程**（`UBXTPSwitch::Start`）：
+1. 首次使用时通过 `BuildTaskConditionParameter<FBXTaskConditionParameter>` 构建参数（填充 Owner/Instigator），后续 Case 复用
+2. 逐个 Case 调用 `CheckCondition` 评估，首个匹配的 Case 通过 `AddPendingTask` 触发其 `EventTag` 后返回
+3. 全部不匹配时触发 `DefaultEventTag`
+
+**编辑器行为**（`PostEditChangeProperty`）：
+- Cases 变更时自动为 `EventTag` 无效的 Case 分配未使用的 `BXTEvent_Branch01~16`（从小序号开始）
+- 重建 `Events` 映射表：所有 Case 的 `EventTag` + `DefaultEventTag`，供 GraphNode Pin 显示
 
 #### `EBXTLifeType`（生命周期）
 
@@ -588,7 +620,7 @@ API：`RegisterGlobalEvent` / `UnregisterGlobalEvent` / `BroadcastGlobalEvent`�
 
 | 系列 | 基类 | 组合条件 | 参数结构体 | 文件 |
 |---|---|---|---|---|
-| **Task 系列** | `UBXTaskCondition` | `UBXTaskConditionComposite` | `FBXTaskConditionParameter` | [BXTaskCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/Condition/BXTaskCondition.h) |
+| **Task 系列** | `UBXTaskCondition` | `UBXTaskConditionComposite` | `FBXTaskConditionParameter` | [BXTaskCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTaskCondition.h) |
 | **决策树系列** | `UBXDecisionTreeCondition` | `UBXDecisionTreeConditionComposite` | （按需补充） | [BXDecisionTreeCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/DecisionTree/BXDecisionTreeCondition.h) |
 
 每个系列的 `Composite.Children` 数组通过 `Instanced` 属性限定为该系列基类指针，编辑器细节面板只能选取同系列子类。
@@ -610,12 +642,12 @@ API：`RegisterGlobalEvent` / `UnregisterGlobalEvent` / `BroadcastGlobalEvent`�
 
 #### `UBXConditionManager` ([BXConditionManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionManager.h))
 
-单例管理器，核心职责包括条件求值、Native 函数注册与派生结果缓存。
+单例管理器，核心职责包括条件求值、条件参数构造、Native 函数注册与派生结果缓存。
 
 **条件求值**（三种重载）：
-- `CheckCondition<T>(Condition, Param)`：模板版，转发 `UScriptStruct*` + 指针
+- `CheckCondition<T>(Condition, Param)`：模板版，转发 `UScriptStruct*` + `const void*`（const 正确性从模板层传递）
 - `CheckCondition(Condition, int32)`：BP CustomThunk 版（`execCheckCondition` 从蓝图 VM 栈提取结构体）
-- `CheckCondition(Condition, UScriptStruct*, void*)`：类型擦除版，实际执行
+- `CheckCondition(Condition, UScriptStruct*, const void*)`：类型擦除版，实际执行
 
 **求值路径（双路）**：
 1. **快速路径（Native）**：若条件类在 `NativeCheckMap` 中注册了原生函数，直接 C++ 调用，绕过 `ProcessEvent`
@@ -623,40 +655,91 @@ API：`RegisterGlobalEvent` / `UnregisterGlobalEvent` / `BroadcastGlobalEvent`�
 
 最终结果统一经 `bNot` 取反后返回。
 
+**Native 函数签名与 int64 指针承载**：
+
+由于 UHT 不支持 `void*` 作为 UFUNCTION 参数，Native 函数签名使用 `int64` 承载指针地址：
+```cpp
+using FBXNativeCheckFunc = bool(UBXConditionManager::*)(UBXCondition* InCondition, int64 InParameterTypeAddress, int64 InParameterAddress);
+```
+Native 函数入口通过 `check` 断言校验指针非零，`reinterpret_cast` 还原后使用。调用方在转发时通过 `const_cast` 去除 const（仅绕过签名限制，Native 函数内部不应修改入参）。
+
+**Native 函数 Registry 自动注册机制**：
+
+Native 函数通过宏驱动自动注册到 Registry，避免手动维护静态表导致的遗漏：
+
+```cpp
+// 宏：定义Native条件检查函数并自动注册到Registry
+#define IMPLEMENT_NATIVE_CHECK(Class, FuncName) \
+    static bool GRegistered_##FuncName = (AccessNativeCheckRegistry().Add(TEXT(#FuncName), &Class::FuncName), true); \
+    bool Class::FuncName(UBXCondition* InCondition, int64 InParameterTypeAddress, int64 InParameterAddress)
+```
+
+- `AccessNativeCheckRegistry()` / `AccessNativeTaskParamBuilderRegistry()`：函数内静态变量，避免跨翻译单元初始化顺序问题
+- 漏写宏 = 函数未定义 = 链接错误（编译期暴露问题）
+- `Initialize()` 时遍历 `ConditionToFunctionConfig`，Registry 命中则注册到 `NativeCheckMap`（Native 通道），否则走蓝图 UFunction 通道
+
+**条件参数构造（TaskConditionParamBuilder）**：
+
+为 Task 条件提供参数构造机制，支持 Native 与蓝图双通道：
+
+| 方法 | 说明 |
+|---|---|
+| `BuildTaskConditionParameter<TParam>(Condition, RTData, RTSData, RTTData)` | C++ 模板版，返回 `TOptional<TParam>` |
+| `BuildTaskConditionParameter(Condition, RTData, RTSData, RTTData, OutParam)` | BP CustomThunk 版，`OutParameter` 为通配符输出引脚 |
+| `InternalBuildTaskConditionParameter(Condition, RTData, RTSData, RTTData, OutParamType, OutParamAddress)` | 运行时实现，向上回溯查找 Builder |
+
+**Builder 查找流程**（`InternalBuildTaskConditionParameter`）：
+1. 向上回溯 `InCondition` 的类继承链，查找 Native Builder → 命中则直接 C++ 调用写入内存
+2. 未命中 Native 则查找蓝图 Builder → 通过 `ProcessEvent` 调用 UFunction（签名：Condition, OutParam&）
+3. 均未命中则回退到 `NativeBuildDefaultTaskParam`（填充 Owner/Instigator 基础参数）
+
+**类型安全校验**：
+- 蓝图 Builder 通道校验 `ConditionProperty->PropertyClass` 是否为当前类的派生
+- 校验 `InOutParamType` 是否为 `ParamProperty->Struct` 的派生（避免越界写入）
+- 校验 `InOutParamType` 是否为 `FBXTaskConditionParameter` 的派生（确保可预填 Owner/Instigator）
+- Native 函数入口 `check` 断言指针非零
+
+**Native ParamBuilder 宏**：
+```cpp
+#define IMPLEMENT_NATIVE_TASK_PARAM_BUILDER(Class, FuncName) \
+    static bool GRegistered_##FuncName = (AccessNativeTaskParamBuilderRegistry().Add(TEXT(#FuncName), &Class::FuncName), true); \
+    void Class::FuncName(UBXTaskCondition* InCondition, const FBXTLRunTimeData& InRTData, ...)
+```
+
 **帧时间戳机制**：
 - `OnWorldTickStart` 回调在 World Tick 最早时机刷新 `CurrentFrameTime`（`FPlatformTime::Seconds()`）
 - 帧内所有 `CheckCondition` / 派生缓存共用同一时间戳，确保同帧一致性
 
-**Native 检查函数注册**：
-```cpp
-using FBXNativeCheckFunc = bool(UBXConditionManager::*)(UBXCondition*, UScriptStruct*, void*);
-void RegisterNativeCheck(TSubclassOf<UBXCondition> InClass, FBXNativeCheckFunc InFunc);
-```
-`Initialize()` 中注册两个组合条件的 Native 检查函数：
-- `UBXTaskConditionComposite` → `NativeCheckTaskComposite`
-- `UBXDecisionTreeConditionComposite` → `NativeCheckDecisionTreeComposite`
-
 **派生结果缓存系统**：
 
-针对"同一种条件 + 相同参数"在同一帧内重复进行复杂运算的场景，提供三类型缓存（int / float / FInstancedStruct），由调用方自行决定是否缓存：
+针对"同一种条件 + 相同参数"在同一帧内重复进行复杂运算的场景，提供三类型缓存（int32 / float / FInstancedStruct），由调用方自行决定是否缓存。每类缓存均提供 C++ 模板版本与 Blueprint 可调用版本：
 
-| 缓存类型 | 查询方法 | 写入方法 |
-|---|---|---|
-| int32 | `GetDerivedInt(Class, Param)` → `const int32*` | `SetDerivedInt(Class, Param, Value)` → `const int32*` |
-| float | `GetDerivedFloat(Class, Param)` → `const float*` | `SetDerivedFloat(Class, Param, Value)` → `const float*` |
-| Struct | `GetDerivedStruct<TResult>(Class, Param)` → `const TResult*` | `SetDerivedStruct<TResult>(Class, Param, Value)` → `const TResult*` |
+| 缓存类型 | C++ 模板查询 | Blueprint 查询 | Blueprint 写入 |
+|---|---|---|---|
+| int32 | `GetDerivedInt<TParam>(Class, Param)` → `const int32*` | `GetDerivedInt(Class, InParam, OutValue)` → `bool` | `SetDerivedInt(Class, InParam, InValue)` |
+| float | `GetDerivedFloat<TParam>(Class, Param)` → `const float*` | `GetDerivedFloat(Class, InParam, OutValue)` → `bool` | `SetDerivedFloat(Class, InParam, InValue)` |
+| Struct | `GetDerivedStruct<TResult,TParam>(Class, Param)` → `const TResult*` | `GetDerivedStruct(Class, InParam, OutResult)` → `bool` | `SetDerivedStruct(Class, InParam, InResult)` |
 
-缓存键 `FBXDerivedKey` 由三部分组成：
-- `ConditionClass`：条件类（`UClass*`）
-- `ParamType`：参数结构体类型（`UScriptStruct*`）
-- `ParamHash`：参数实例哈希（`UScriptStruct::GetStructTypeHash`）
+- Blueprint 版本通过 `CustomThunk` + `CustomStructureParam` 实现通配符结构体参数，`exec*` 函数从蓝图 VM 栈提取结构体地址与类型
+- Internal Get 系列函数标记 `const`（仅读操作）
+- 缓存键 `FBXDerivedKey` 由 `ConditionClass` + `ParamType` + `ParamHash` 组成
+- 缓存项 `TBXDerivedEntry<T>` 持有 `Value` 与 `CachedTime`，查询时校验 `CachedTime == CurrentFrameTime` 确保同帧有效
+- 超过 `MaxDerivedEntries`（1024）时整体清空，防止内存膨胀
 
-缓存项 `TBXDerivedEntry<T>` 持有 `Value` 与 `CachedTime`，查询时校验 `CachedTime == CurrentFrameTime` 确保同帧有效。超过 `MaxDerivedEntries`（1024）时整体清空，防止内存膨胀。
+**配置表（使用 `FBXFunctionSelector`）**：
 
-**反射配置**：
-- `ConditionToFunctionConfig`：编辑器配置表（条件类 → UFunction 名）
-- `ConditionToFunctionMap`：运行时缓存（条件类 → `FBXConditionFunctionParameter`，含 `UFunction*` 与参数名列表）
-- `FBXConditionFunctionParameter`：持有反射的 `UFunction*` 与参数名列表，`Initialize` 时校验三参数签名（条件对象 / 参数结构体 / bool 返回值）
+`FBXFunctionSelector`（[BXStructs.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BXStructs.h)）是统一的函数选择器结构体，包含 `TargetClass`（目标类，为空时使用所属对象的类）与 `FunctionName`（函数名）。编辑器中通过自定义属性布局（`FBXFunctionSelectorCustomization`）提供可搜索的函数列表下拉。
+
+| 配置表 | 说明 |
+|---|---|
+| `ConditionToFunctionConfig` | 条件检查函数配置（`TSubclassOf<UBXCondition>` → `FBXFunctionSelector`） |
+| `ConditionToFunctionMap` | 条件检查运行时映射（蓝图通道，含 `UFunction*` 与参数名列表） |
+| `NativeCheckMap` | Native 条件检查函数映射（直接 C++ 调用） |
+| `TaskConditionParamBuilderConfig` | 条件参数构造函数配置（`TSubclassOf<UBXTaskCondition>` → `FBXFunctionSelector`） |
+| `TaskConditionParamBuilderMap` | 条件参数构造运行时映射（蓝图通道） |
+| `NativeTaskParamBuilderMap` | Native 参数构造函数映射 |
+
+`FBXConditionFunctionParameter` 持有反射的 `UFunction*` 与参数名列表，`Initialize` 时校验参数签名（条件检查为 3 参数：条件对象 / 参数结构体 / bool 返回值；参数构造为 2 参数：条件对象 / OutParam&）。
 
 ---
 
@@ -752,7 +835,10 @@ void RegisterNativeCheck(TSubclassOf<UBXCondition> InClass, FBXNativeCheckFunc I
 
 - **ComponentVisualizers**：`FBXShapeComponentVisualizer`，在视口中绘制 `UBXShapeComponent` 形状（`DrawCircle` / `DrawHalfCircle`）
 - **SimpleEditor**：`SSimpleEditorViewport : SEditorViewport` + `FSimpleEditorViewportClient`，通用可复用的编辑器视口基类，接收 `FEditorViewportParameter`（预览场景 + 资产工具包 + 视口索引）
-- **CustomLayout**：共享自定义 Slate 控件，如 `SBXTLTaskGroupPicker`
+- **CustomLayout**：共享自定义 Slate 控件
+  - `SBXTLTaskGroupPicker`：任务组选择器
+  - `FBXFunctionSelectorCustomization`：`FBXFunctionSelector` 的自定义属性布局，ComboButton 弹出可搜索的函数列表（按 TargetClass 过滤 UFunction），选中后自动关闭下拉
+  - `FBXBoneSelectorCustomization`：`FBXBoneSelector` 的自定义属性布局，ComboButton 弹出 `SBXBonePicker` 骨骼树选择窗口（基于 `STreeView`，支持搜索过滤），用于 `FBXTTransformCreater::OriginBoneName` 等骨骼选取场景。依赖 `AnimGraphRuntime` 模块
 
 ---
 
@@ -1087,18 +1173,19 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 | 工具函数 | [BXFunctionLibrary.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BXFunctionLibrary.h) |
 | 时间轴核心 | [BXTLAsset.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXTLAsset.h) / [BXTLManager.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXTLManager.h) / [BXTLComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXTLComponent.h) / [BXTLStructs.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXTLStructs.h) |
 | 任务系统 | [BXTask.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTask.h) / [BXTProcessor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTProcessor.h) |
-| 具体任务 | [BXTAnimation.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTAnimation.h) / [BXTCollision.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTCollision.h) |
+| 具体任务 | [BXTAnimation.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTAnimation.h) / [BXTCollision.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTCollision.h) / [BXTFlowControl.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTFlowControl.h) |
 | 状态系统 | [BXBehaviorComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/State/BXBehaviorComponent.h) / [BXBehaviorAgent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/State/BehaviorAgent/BXBehaviorAgent.h) / [BXStateMachine.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/State/StateMachine/BXStateMachine.h) |
 | 决策树 | [BXDecisionTreeTemplate.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/DecisionTree/BXDecisionTreeTemplate.h) / [BXDecisionTreeActuator.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/DecisionTree/BXDecisionTreeActuator.h) |
 | 装备系统 | [BXGear.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Gear/BXGear.h) / [BXGearComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Gear/BXGearComponent.h) / [BXMeleeWeapon.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Gear/BXMeleeWeapon.h) |
 | 移动系统 | [BXCharacterMovementComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Movement/BXCharacterMovementComponent.h) / [BXRootMotionSource.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Movement/BXRootMotionSource.h) |
 | 碰撞系统 | [BXCollision.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXCollision.h) / [BXShapeComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXShapeComponent.h) / [BXHitReactionComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXHitReactionComponent.h) |
 | 事件系统 | [BXEventManager.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Event/BXEventManager.h) / [BXEventStructs.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Event/BXEventStructs.h) |
-| 条件系统 | [BXCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXCondition.h) / [BXConditionEnums.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionEnums.h) / [BXConditionManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionManager.h) / [BXTaskCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/Condition/BXTaskCondition.h) / [BXDecisionTreeCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/DecisionTree/BXDecisionTreeCondition.h) |
+| 条件系统 | [BXCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXCondition.h) / [BXConditionEnums.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionEnums.h) / [BXConditionManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionManager.h) / [BXTaskCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTaskCondition.h) / [BXDecisionTreeCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/DecisionTree/BXDecisionTreeCondition.h) |
 | 编辑器入口 | [BattleXEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/BattleXEditor.h) |
 | 时间轴编辑器 | [BXTLEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineEditor/BXTLEditor.h) |
 | 决策树编辑器 | [BXDTEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/DecisionTreeEditor/BXDTEditor.h) |
 | 时间轴控件 | [STimeline.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineBase/STimeline.h) / [TimelineController.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineBase/TimelineController.h) |
+| 自定义属性布局 | [BXFunctionSelectorCustomization.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/CustomLayout/BXFunctionSelectorCustomization.h) / [BXBoneSelectorCustomization.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/CustomLayout/BXBoneSelectorCustomization.h) / [SBXBonePicker.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/CustomLayout/SBXBonePicker.h) |
 
 ---
 

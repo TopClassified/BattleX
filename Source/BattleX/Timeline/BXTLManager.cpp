@@ -585,6 +585,7 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 {
 	if (!InOutData.Timeline || !InOutData.Timeline->Sections.IsValidIndex(InOutSectionData.Index) || !InOutData.Timeline->Sections[InOutSectionData.Index].TaskList.IsValidIndex(InTaskIndex))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[ExecuteTimelineTask] Invalid: Timeline=%s SectionIdx=%d TaskIdx=%d"), InOutData.Timeline ? *InOutData.Timeline->GetName() : TEXT("null"), InOutSectionData.Index, InTaskIndex);
 		return false;
 	}
 
@@ -597,6 +598,7 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 	UBXTask* InTask = Section.TaskList[InTaskIndex];
 	if (!InTask)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[ExecuteTimelineTask] Task is null at index %d"), InTaskIndex);
 		return false;
 	}
 
@@ -632,12 +634,14 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 	}
 	if (!bResult)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[ExecuteTimelineTask] NetType check failed: Task=%s NetTypes=%d NetMode=%d LocalRole=%d"), *InTask->GetName(), InTask->NetTypes, (int32)InNetMode, (int32)InRoleType);
 		return false;
 	}
 
 	UScriptStruct* CustomDataType = TimelineTaskTypeMap.FindRef(InTask->GetClass());
 	if (!CustomDataType)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[ExecuteTimelineTask] CustomDataType not found for Task=%s Class=%s"), *InTask->GetName(), *InTask->GetClass()->GetName());
 		return false;
 	}
 
@@ -649,7 +653,7 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 		NewTaskData.Index = InTaskIndex;
 		NewTaskData.ParentScope = InParentScope;
 		NewTaskData.DynamicData.InitializeAs(CustomDataType);
-		
+
 		// 找到Task处理器
 		if (UBXTProcessor* Processor = GetTLTProcessorByTLTClass(InTask->GetClass()))
 		{
@@ -658,6 +662,10 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 
 			// 结束
 			Processor->EndTask(InOutData, InOutSectionData, NewTaskData, EBXTLFinishReason::FR_EndOfLife);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[ExecuteTimelineTask] Processor not found for Task=%s Class=%s"), *InTask->GetName(), *InTask->GetClass()->GetName());
 		}
 	}
 	else
@@ -669,12 +677,16 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 		NewTaskData.ParentScope = InParentScope;
 		NewTaskData.RunTime = InStartOffset;
 		NewTaskData.DynamicData.InitializeAs(CustomDataType);
-		
+
 		// 找到Task处理器
 		if (UBXTProcessor* Processor = GetTLTProcessorByTLTClass(InTask->GetClass()))
 		{
 			// 开始
 			Processor->StartTask(InOutData, InOutSectionData, NewTaskData);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[ExecuteTimelineTask] Processor not found for Task=%s Class=%s"), *InTask->GetName(), *InTask->GetClass()->GetName());
 		}
 	}
 
