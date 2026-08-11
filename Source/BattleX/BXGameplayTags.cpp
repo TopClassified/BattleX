@@ -132,4 +132,10 @@ namespace BXGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXActorType_NPC, "BXActorType.NPC", "NPC");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXActorType_Monster, "BXActorType.Monster", "小怪");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXActorType_BOSS, "BXActorType.BOSS", "BOSS");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Buff_Added, "BXEvent.Buff.Added", "BUFF添加");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Buff_Removed, "BXEvent.Buff.Removed", "BUFF移除");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Buff_LayerChanged, "BXEvent.Buff.LayerChanged", "BUFF层级改变");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Buff_LevelChanged, "BXEvent.Buff.LevelChanged", "BUFF等级改变");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Buff_LifetimeRefreshed, "BXEvent.Buff.LifetimeRefreshed", "BUFF生命时长刷新");
 }

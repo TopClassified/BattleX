@@ -161,6 +161,45 @@ void FBXTLPreviewProxy::GetRunningSectionIndexes(TArray<int32>& OutIndexes)
 	}
 }
 
+void FBXTLPreviewProxy::GetRunningTasks(TArray<UBXTask*>& OutTasks)
+{
+	OutTasks.Reset();
+
+	if (!CachedEditor.IsValid())
+	{
+		return;
+	}
+
+	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
+	if (!BXTLMgr)
+	{
+		return;
+	}
+
+	FBXTLRunTimeData* RTData = BXTLMgr->GetTimelineRunTimeDataByID(TimelineRunTimeDataID);
+	if (!RTData || !RTData->Timeline)
+	{
+		return;
+	}
+
+	for (const FBXTLSectionRTData& SRTData : RTData->RunningSections)
+	{
+		if (!RTData->Timeline->Sections.IsValidIndex(SRTData.Index))
+		{
+			continue;
+		}
+
+		const FBXTLSection& Section = RTData->Timeline->Sections[SRTData.Index];
+		for (const FBXTLTaskRTData& TRTData : SRTData.RunningTasks)
+		{
+			if (Section.TaskList.IsValidIndex(TRTData.Index))
+			{
+				OutTasks.AddUnique(Section.TaskList[TRTData.Index]);
+			}
+		}
+	}
+}
+
 UBXTLComponent* FBXTLPreviewProxy::GetPreviewTimelineComponent()
 {
 	TSharedPtr<FBXTLPreviewScene> Scene = CachedEditor.Pin()->GetPreviewScene();
@@ -193,11 +232,13 @@ void FBXTLPreviewProxy::Play()
 {
 	if (!CachedAsset.IsValid())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("FBXTLPreviewProxy::Play failed: CachedAsset is invalid."));
 		return;
 	}
 
 	if (!CachedEditor.IsValid())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("FBXTLPreviewProxy::Play failed: CachedEditor is invalid, Asset=%s."), *CachedAsset->GetName());
 		return;
 	}
 
@@ -205,7 +246,7 @@ void FBXTLPreviewProxy::Play()
 	CachedAsset->RefreshDataBeforePreview();
 
 	GEditor->SelectNone(false, true, false);
-	
+
 	InternalPlay();
 
 	bPlaying = true;
@@ -287,38 +328,45 @@ void FBXTLPreviewProxy::InternalPlay()
 	UBXTLManager* BXTLMgr = CachedEditor.Pin()->GetCachedManager<UBXTLManager>();
 	if (!BXTLMgr)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("FBXTLPreviewProxy::InternalPlay failed: BXTLManager is null, Asset=%s."), *CachedAsset->GetName());
 		return;
 	}
 
 	TSharedPtr<FBXTLPreviewScene> Scene = CachedEditor.Pin()->GetPreviewScene();
 	if (!Scene.IsValid())
 	{
+		UE_LOG(LogTemp, Warning, TEXT("FBXTLPreviewProxy::InternalPlay failed: PreviewScene is invalid, Asset=%s."), *CachedAsset->GetName());
 		return;
 	}
 
 	AActor* Player = Scene->GetPlayerActor();
 	if (!Player)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("FBXTLPreviewProxy::InternalPlay failed: PlayerActor is null, Asset=%s."), *CachedAsset->GetName());
 		return;
 	}
-	
-	if (UBXTLComponent* TLComponent = GetPreviewTimelineComponent())
-	{
-		FBXTLPlayContext Context;
-		Context.Instigator = Player;
-		Context.Triggerer = Player;
-		if (AActor* Target = Scene->GetTargetActor())
-		{
-			if (UBXHitReactionComponent* HitReaction = Target->FindComponentByClass<UBXHitReactionComponent>())
-			{
-				FBXBodyPartSelection& NewSelection = Context.LockParts.AddDefaulted_GetRef();
-				NewSelection.BodyPart = CachedEditor.Pin()->GetLockedBodyPartType();
-				NewSelection.Owner = HitReaction;
-			}
-		}
 
-		TimelineRunTimeDataID = TLComponent->PlayTimeline(CachedAsset.Get(), Context);
+	UBXTLComponent* TLComponent = GetPreviewTimelineComponent();
+	if (!TLComponent)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("FBXTLPreviewProxy::InternalPlay failed: TLComponent is null on Player=%s, Asset=%s."), *Player->GetName(), *CachedAsset->GetName());
+		return;
 	}
+
+	FBXTLPlayContext Context;
+	Context.Instigator = Player;
+	Context.Triggerer = Player;
+	if (AActor* Target = Scene->GetTargetActor())
+	{
+		if (UBXHitReactionComponent* HitReaction = Target->FindComponentByClass<UBXHitReactionComponent>())
+		{
+			FBXBodyPartSelection& NewSelection = Context.LockParts.AddDefaulted_GetRef();
+			NewSelection.BodyPart = CachedEditor.Pin()->GetLockedBodyPartType();
+			NewSelection.Owner = HitReaction;
+		}
+	}
+
+	TimelineRunTimeDataID = TLComponent->PlayTimeline(CachedAsset.Get(), Context);
 }
 
 FBXTLRunTimeData* FBXTLPreviewProxy::GetTimelineRunTimeData()

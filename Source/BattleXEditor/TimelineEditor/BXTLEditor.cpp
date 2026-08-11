@@ -71,6 +71,9 @@ class FBXTLGraphNodeFactory : public FGraphPanelNodeFactory
 };
 TSharedPtr<FGraphPanelNodeFactory> BXTLGraphNodeFactory;
 
+// Debug:正在执行的Task缓存(静态,每帧由FBXTLEditor::Tick刷新)
+TArray<TWeakObjectPtr<UBXTask>> FBXTLEditor::DebugRunningTasksCache;
+
 
 
 TSharedPtr<IBXTLEditor> IBXTLEditor::OpenEditor(UObject* InAsset, const TSharedPtr<IToolkitHost>& InitToolkitHost)
@@ -122,8 +125,8 @@ void FBXTLEditor::InitializeEditor(UBXTLAsset* InAsset, const TSharedPtr<IToolki
 			FBlueprintEditorUtils::CreateNewGraph
 			(
 				EditAsset.Get(), TEXT("Graph"),
-				UBXTLGraph::StaticClass(),
-				UBXTLGraphSchema::StaticClass()
+				GetGraphClass(),
+				GetGraphSchemaClass()
 			)
 		);
 	}
@@ -154,9 +157,24 @@ void FBXTLEditor::InitializeEditor(UBXTLAsset* InAsset, const TSharedPtr<IToolki
 	EditSectionsToShow.Append(EditAsset->StartSectionIndexes);
 
 	// 添加编辑器模式
-	AddApplicationMode(BXTLEditorModes::Timeline, MakeShareable(new FBXTLEditorMode(BXTLEditorModes::Timeline, SharedThis(this))));
+	AddApplicationMode(BXTLEditorModes::Timeline, CreateEditorMode().ToSharedRef());
 	// 使用时间轴模式
 	SetCurrentMode(BXTLEditorModes::Timeline);
+}
+
+TSharedPtr<FApplicationMode> FBXTLEditor::CreateEditorMode()
+{
+	return MakeShareable(new FBXTLEditorMode(BXTLEditorModes::Timeline, SharedThis(this)));
+}
+
+UClass* FBXTLEditor::GetGraphClass() const
+{
+	return UBXTLGraph::StaticClass();
+}
+
+UClass* FBXTLEditor::GetGraphSchemaClass() const
+{
+	return UBXTLGraphSchema::StaticClass();
 }
 
 void FBXTLEditor::Tick(float DeltaTime)
@@ -245,6 +263,43 @@ void FBXTLEditor::Tick(float DeltaTime)
 	{
 		RefreshPanelEvent.Broadcast();
 	}
+
+	// Debug:预览播放时每帧收集正在执行的Task,供节点高亮查询
+	if (PreviewProxy->IsPlaying())
+	{
+		TArray<UBXTask*> CurrentRunningTasks;
+		PreviewProxy->GetRunningTasks(CurrentRunningTasks);
+		RunningTasksChangedEvent.Broadcast(CurrentRunningTasks);
+		DebugRunningTasksCache.Reset();
+		for (UBXTask* Task : CurrentRunningTasks)
+		{
+			DebugRunningTasksCache.Add(Task);
+		}
+	}
+	else
+	{
+		static TArray<UBXTask*> EmptyTasks;
+		RunningTasksChangedEvent.Broadcast(EmptyTasks);
+		DebugRunningTasksCache.Reset();
+	}
+}
+
+bool FBXTLEditor::IsTaskRunning(UBXTask* InTask)
+{
+	if (!InTask)
+	{
+		return false;
+	}
+
+	for (const TWeakObjectPtr<UBXTask>& WeakTask : DebugRunningTasksCache)
+	{
+		if (WeakTask.Get() == InTask)
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 void FBXTLEditor::OnClose()

@@ -29,6 +29,7 @@ public class BattleXEditor : ModuleRules
                 "BattleX/Event",
                 "BattleX/Movement",
                 "BattleX/Timeline",
+                "BattleX/Buff",
                 "BattleX/Animation",
                 "BattleX/Collision",
                 "BattleX/Condition",

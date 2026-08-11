@@ -1,0 +1,772 @@
+#include "BXBuffManager.h"
+
+#include "BXBuffAsset.h"
+#include "BXSubSystem.h"
+#include "BXFunctionLibrary.h"
+#include "BXGameplayTags.h"
+#include "BXTask.h"
+#include "BXTProcessor.h"
+#include "BXTLManager.h"
+#include "BXEventManager.h"
+
+
+
+DEFINE_LOG_CATEGORY(BXMGR_Buff);
+
+
+
+#pragma region Important
+UBXBuffManager* UBXBuffManager::Get(UObject* InWorldContext)
+{
+	if (!InWorldContext)
+	{
+		return nullptr;
+	}
+
+	if (UWorld* World = InWorldContext->GetWorld())
+	{
+		if (UGameInstance* GI = World->GetGameInstance())
+		{
+			if (UBXSubSystem* BXSS = GI->GetSubsystem<UBXSubSystem>())
+			{
+				return BXSS->GetManagerByClass<UBXBuffManager>();
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+void UBXBuffManager::Initialize()
+{
+	Super::Initialize();
+
+	UBXEventManager* EventMgr = UBXEventManager::Get(this);
+	if (EventMgr)
+	{
+		EventMgr->DefineEvent(BXGameplayTags::BXEvent_Buff_Added, FBXEventBuffChanged::StaticStruct());
+		EventMgr->DefineEvent(BXGameplayTags::BXEvent_Buff_Removed, FBXEventBuffChanged::StaticStruct());
+		EventMgr->DefineEvent(BXGameplayTags::BXEvent_Buff_LayerChanged, FBXEventBuffChanged::StaticStruct());
+		EventMgr->DefineEvent(BXGameplayTags::BXEvent_Buff_LevelChanged, FBXEventBuffChanged::StaticStruct());
+		EventMgr->DefineEvent(BXGameplayTags::BXEvent_Buff_LifetimeRefreshed, FBXEventBuffChanged::StaticStruct());
+	}
+}
+
+void UBXBuffManager::Deinitialize()
+{
+	BuffRTDatas.Empty();
+	OwnerBuffMap.Empty();
+
+	Super::Deinitialize();
+}
+
+#pragma endregion Important
+
+
+
+#pragma region Tick
+void UBXBuffManager::Tick(float DeltaTime)
+{
+	bUpdatingBuff = true;
+
+	for (TMap<int64, FBXBuffRuntimeData>::TIterator It(BuffRTDatas); It; ++It)
+	{
+		if (!It->Value.bEarlyFinish)
+		{
+			InternalUpdateBuff(It->Value, DeltaTime);
+		}
+	}
+
+	bUpdatingBuff = false;
+
+	CleanBuffTrash();
+}
+
+void UBXBuffManager::InternalUpdateBuff(FBXBuffRuntimeData& InOutData, float InDeltaTime)
+{
+	UBXTLManager* TLMgr = UBXTLManager::Get(this);
+	if (!TLMgr)
+	{
+		return;
+	}
+
+	if (InOutData.TLRunTimeData.RunningSections.Num() == 0)
+	{
+		return;
+	}
+
+	FBXTLRunTimeData& TLData = InOutData.TLRunTimeData;
+	FBXTLSectionRTData& SectionRT = TLData.RunningSections[0];
+
+	// Task执行交给UBXTLManager
+	TLMgr->UpdateTimelineSectionTasks(TLData, SectionRT, InDeltaTime);
+
+	// 事件链处理交给UBXTLManager
+	TLMgr->ProcessTimelineSectionPendingTasks(TLData, SectionRT);
+
+	// BUFF特有逻辑:生命时长推进
+	UBXBuffAsset* Asset = InOutData.BuffAsset;
+	if (!Asset)
+	{
+		return;
+	}
+
+	if (Asset->LifeType == EBXBuffLifeType::BL_Infinite)
+	{
+		return;
+	}
+
+	if (Asset->LifeType == EBXBuffLifeType::BL_Manual)
+	{
+		return;
+	}
+
+	if (Asset->LayerLifeMode == EBXBuffLayerLifeMode::BLL_Shared)
+	{
+		InOutData.RunTime += InDeltaTime;
+
+		if (InOutData.RunTime >= Asset->BuffDuration)
+		{
+			TLMgr->FinishTimelineSection(TLData, SectionRT, EBXTLFinishReason::FR_EndOfLife);
+			InternalRemoveBuff(InOutData, EBXBuffRemoveReason::BRR_Expired);
+		}
+	}
+	else
+	{
+		for (int32 i = InOutData.LayerRunTimes.Num() - 1; i >= 0; --i)
+		{
+			InOutData.LayerRunTimes[i] += InDeltaTime;
+
+			if (InOutData.LayerRunTimes[i] >= Asset->BuffDuration)
+			{
+				InOutData.LayerRunTimes.RemoveAt(i);
+
+				int32 OldLayer = InOutData.CurrentLayer;
+				InOutData.CurrentLayer = InOutData.LayerRunTimes.Num();
+
+				InternalRefreshBuffTasksByLayer(InOutData, OldLayer, InOutData.CurrentLayer);
+
+				BroadcastBuffEvent(InOutData, BXGameplayTags::BXEvent_Buff_LayerChanged, FBXEventBuffChanged());
+			}
+		}
+
+		if (InOutData.CurrentLayer <= 0)
+		{
+			TLMgr->FinishTimelineSection(TLData, SectionRT, EBXTLFinishReason::FR_EndOfLife);
+			InternalRemoveBuff(InOutData, EBXBuffRemoveReason::BRR_Expired);
+		}
+	}
+}
+
+void UBXBuffManager::CleanBuffTrash()
+{
+	TArray<int64> TrashIDs;
+
+	for (TMap<int64, FBXBuffRuntimeData>::TIterator It(BuffRTDatas); It; ++It)
+	{
+		if (It->Value.bEarlyFinish)
+		{
+			TrashIDs.Add(It->Key);
+		}
+	}
+
+	for (int64 TrashID : TrashIDs)
+	{
+		FBXBuffRuntimeData TrashData;
+		BuffRTDatas.RemoveAndCopyValue(TrashID, TrashData);
+
+		if (AActor* Owner = TrashData.TLRunTimeData.Owner)
+		{
+			if (TArray<int64>* IDs = OwnerBuffMap.Find(Owner))
+			{
+				IDs->Remove(TrashID);
+				if (IDs->Num() == 0)
+				{
+					OwnerBuffMap.Remove(Owner);
+				}
+			}
+		}
+	}
+}
+
+#pragma endregion Tick
+
+
+
+#pragma region Buff
+int64 UBXBuffManager::AddBuff(UBXBuffAsset* InAsset, AActor* InOwner, FBXBuffPlayContext& InContext)
+{
+	if (!InAsset || !InOwner)
+	{
+		UE_LOG(BXMGR_Buff, Warning, TEXT("UBXBuffManager::AddBuff failed: InAsset=%s InOwner=%s."), InAsset ? TEXT("valid") : TEXT("null"), InOwner ? TEXT("valid") : TEXT("null"));
+		return INDEX_NONE;
+	}
+
+	// 共存策略处理
+	if (InAsset->CoexistPolicy == EBXBuffCoexistPolicy::BC_Coexist)
+	{
+		if (FBXBuffRuntimeData* Existing = FindExistingBuff(InOwner, InAsset, InContext.Instigator))
+		{
+			ChangeBuffLayer(Existing->BuffID, InContext.InitLayer);
+
+			if (InAsset->bRefreshLifetimeOnAdd)
+			{
+				RefreshBuffLifetime(Existing->BuffID);
+			}
+
+			return Existing->BuffID;
+		}
+	}
+	else
+	{
+		if (FBXBuffRuntimeData* Best = FindBestBuffToReplace(InOwner, InAsset))
+		{
+			Best->TLRunTimeData.Instigator = InContext.Instigator;
+			Best->TLRunTimeData.Triggerer = InContext.Triggerer;
+
+			ChangeBuffLayer(Best->BuffID, InContext.InitLayer);
+			ChangeBuffLevel(Best->BuffID, InContext.InitLevel - Best->CurrentLevel);
+
+			return Best->BuffID;
+		}
+	}
+
+	// 创建新运行时数据
+	int64 NewID = UBXFunctionLibrary::GetUniqueID();
+	FBXBuffRuntimeData& Data = BuffRTDatas.Add(NewID);
+
+	Data.BuffAsset = InAsset;
+	Data.BuffID = NewID;
+	Data.TLRunTimeData.ID = NewID;
+	Data.TLRunTimeData.Timeline = InAsset;
+	Data.TLRunTimeData.Owner = InOwner;
+
+	InternalAddBuff(Data, InContext);
+
+	OwnerBuffMap.FindOrAdd(InOwner).Add(NewID);
+
+	return NewID;
+}
+
+void UBXBuffManager::RemoveBuff(int64 InID, int32 InLayerDelta)
+{
+	FBXBuffRuntimeData* Data = BuffRTDatas.Find(InID);
+	if (!Data || Data->bEarlyFinish)
+	{
+		return;
+	}
+
+	if (InLayerDelta > 0 && Data->BuffAsset->LayerLifeMode == EBXBuffLayerLifeMode::BLL_Independent)
+	{
+		int32 LayersToRemove = FMath::Min(InLayerDelta, Data->CurrentLayer);
+
+		for (int32 i = 0; i < LayersToRemove; ++i)
+		{
+			if (Data->LayerRunTimes.Num() > 0)
+			{
+				Data->LayerRunTimes.RemoveAt(Data->LayerRunTimes.Num() - 1);
+			}
+		}
+
+		int32 OldLayer = Data->CurrentLayer;
+		Data->CurrentLayer = Data->LayerRunTimes.Num();
+
+		if (Data->CurrentLayer <= 0)
+		{
+			InternalRemoveBuff(*Data, EBXBuffRemoveReason::BRR_Manual);
+		}
+		else
+		{
+			InternalRefreshBuffTasksByLayer(*Data, OldLayer, Data->CurrentLayer);
+		}
+	}
+	else
+	{
+		InternalRemoveBuff(*Data, EBXBuffRemoveReason::BRR_Manual);
+	}
+}
+
+void UBXBuffManager::ChangeBuffLayer(int64 InID, int32 InLayerDelta)
+{
+	FBXBuffRuntimeData* Data = BuffRTDatas.Find(InID);
+	if (!Data || Data->bEarlyFinish)
+	{
+		return;
+	}
+
+	UBXBuffAsset* Asset = Data->BuffAsset;
+	if (!Asset)
+	{
+		return;
+	}
+
+	int32 OldLayer = Data->CurrentLayer;
+	int32 NewLayer = FMath::Clamp(OldLayer + InLayerDelta, 1, Asset->MaxLayer);
+
+	if (NewLayer == OldLayer)
+	{
+		return;
+	}
+
+	Data->CurrentLayer = NewLayer;
+
+	// 独立层级模式:同步LayerRunTimes数组
+	if (Asset->LayerLifeMode == EBXBuffLayerLifeMode::BLL_Independent)
+	{
+		if (NewLayer > OldLayer)
+		{
+			for (int32 i = OldLayer; i < NewLayer; ++i)
+			{
+				Data->LayerRunTimes.Add(0.0f);
+			}
+		}
+		else
+		{
+			for (int32 i = OldLayer; i > NewLayer; --i)
+			{
+				if (Data->LayerRunTimes.Num() > 0)
+				{
+					Data->LayerRunTimes.RemoveAt(Data->LayerRunTimes.Num() - 1);
+				}
+			}
+		}
+	}
+
+	InternalRefreshBuffTasksByLayer(*Data, OldLayer, NewLayer);
+
+	FBXEventBuffChanged Param;
+	Param.OldLayer = OldLayer;
+	Param.NewLayer = NewLayer;
+	BroadcastBuffEvent(*Data, BXGameplayTags::BXEvent_Buff_LayerChanged, Param);
+}
+
+void UBXBuffManager::ChangeBuffLevel(int64 InID, int32 InLevelDelta)
+{
+	FBXBuffRuntimeData* Data = BuffRTDatas.Find(InID);
+	if (!Data || Data->bEarlyFinish)
+	{
+		return;
+	}
+
+	UBXBuffAsset* Asset = Data->BuffAsset;
+	if (!Asset)
+	{
+		return;
+	}
+
+	int32 OldLevel = Data->CurrentLevel;
+	int32 NewLevel = FMath::Clamp(OldLevel + InLevelDelta, 1, Asset->MaxLevel);
+
+	if (NewLevel == OldLevel)
+	{
+		return;
+	}
+
+	Data->CurrentLevel = NewLevel;
+
+	FBXEventBuffChanged Param;
+	Param.OldLevel = OldLevel;
+	Param.NewLevel = NewLevel;
+	BroadcastBuffEvent(*Data, BXGameplayTags::BXEvent_Buff_LevelChanged, Param);
+}
+
+void UBXBuffManager::RefreshBuffLifetime(int64 InID)
+{
+	FBXBuffRuntimeData* Data = BuffRTDatas.Find(InID);
+	if (!Data || Data->bEarlyFinish)
+	{
+		return;
+	}
+
+	Data->RunTime = 0.0f;
+
+	for (float& LayerTime : Data->LayerRunTimes)
+	{
+		LayerTime = 0.0f;
+	}
+
+	BroadcastBuffEvent(*Data, BXGameplayTags::BXEvent_Buff_LifetimeRefreshed, FBXEventBuffChanged());
+}
+
+bool UBXBuffManager::HasBuff(AActor* InOwner, UBXBuffAsset* InAsset) const
+{
+	const TArray<int64>* IDs = OwnerBuffMap.Find(InOwner);
+	if (!IDs)
+	{
+		return false;
+	}
+
+	for (int64 ID : *IDs)
+	{
+		const FBXBuffRuntimeData* Data = BuffRTDatas.Find(ID);
+		if (Data && !Data->bEarlyFinish && Data->BuffAsset == InAsset)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool UBXBuffManager::HasBuffByTag(AActor* InOwner, FGameplayTag InTag) const
+{
+	const TArray<int64>* IDs = OwnerBuffMap.Find(InOwner);
+	if (!IDs)
+	{
+		return false;
+	}
+
+	for (int64 ID : *IDs)
+	{
+		const FBXBuffRuntimeData* Data = BuffRTDatas.Find(ID);
+		if (Data && !Data->bEarlyFinish && Data->BuffAsset && Data->BuffAsset->BuffTags.HasTag(InTag))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+FBXBuffRuntimeData* UBXBuffManager::GetBuffRuntimeDataByID(int64 InID)
+{
+	return BuffRTDatas.Find(InID);
+}
+
+void UBXBuffManager::BroadcastBuffEvent(const FBXBuffRuntimeData& InData, const FGameplayTag& InEventTag, const FBXEventBuffChanged& InParam)
+{
+	UBXEventManager* EventMgr = UBXEventManager::Get(this);
+	if (!EventMgr)
+	{
+		return;
+	}
+
+	FBXEventBuffChanged Param = InParam;
+	Param.BuffInstanceID = InData.BuffID;
+	Param.BuffAsset = InData.BuffAsset;
+	Param.Owner = InData.TLRunTimeData.Owner;
+	Param.Instigator = InData.TLRunTimeData.Instigator;
+	Param.Triggerer = InData.TLRunTimeData.Triggerer;
+	Param.NewLayer = InData.CurrentLayer;
+	Param.NewLevel = InData.CurrentLevel;
+
+	// 单体事件:以Owner为Initiator
+	EventMgr->BroadcastSingleEvent<FBXEventBuffChanged>(InEventTag, InData.TLRunTimeData.Owner, Param);
+
+	// 全局事件:所有监听者都能收到
+	EventMgr->BroadcastGlobalEvent<FBXEventBuffChanged>(InEventTag, Param);
+}
+
+FBXBuffRuntimeData* UBXBuffManager::FindExistingBuff(AActor* InOwner, UBXBuffAsset* InAsset, AActor* InInstigator)
+{
+	const TArray<int64>* IDs = OwnerBuffMap.Find(InOwner);
+	if (!IDs)
+	{
+		return nullptr;
+	}
+
+	for (int64 ID : *IDs)
+	{
+		FBXBuffRuntimeData* Data = BuffRTDatas.Find(ID);
+		if (Data && !Data->bEarlyFinish && Data->BuffAsset == InAsset && Data->TLRunTimeData.Instigator == InInstigator)
+		{
+			return Data;
+		}
+	}
+
+	return nullptr;
+}
+
+FBXBuffRuntimeData* UBXBuffManager::FindBestBuffToReplace(AActor* InOwner, UBXBuffAsset* InAsset)
+{
+	const TArray<int64>* IDs = OwnerBuffMap.Find(InOwner);
+	if (!IDs)
+	{
+		return nullptr;
+	}
+
+	FBXBuffRuntimeData* Best = nullptr;
+
+	for (int64 ID : *IDs)
+	{
+		FBXBuffRuntimeData* Data = BuffRTDatas.Find(ID);
+		if (!Data || Data->bEarlyFinish || Data->BuffAsset != InAsset)
+		{
+			continue;
+		}
+
+		if (!Best)
+		{
+			Best = Data;
+			continue;
+		}
+
+		// 取等级最高
+		if (Data->CurrentLevel > Best->CurrentLevel)
+		{
+			Best = Data;
+		}
+		else if (Data->CurrentLevel == Best->CurrentLevel)
+		{
+			// 等级相同取剩余时长最长
+			float DataRemain = Data->BuffAsset->BuffDuration - Data->RunTime;
+			float BestRemain = Best->BuffAsset->BuffDuration - Best->RunTime;
+
+			if (DataRemain > BestRemain)
+			{
+				Best = Data;
+			}
+		}
+	}
+
+	return Best;
+}
+
+void UBXBuffManager::InternalAddBuff(FBXBuffRuntimeData& InOutData, const FBXBuffPlayContext& InContext)
+{
+	// 填充三角色
+	InOutData.TLRunTimeData.Instigator = InContext.Instigator;
+	InOutData.TLRunTimeData.Triggerer = InContext.Triggerer;
+	InOutData.CurrentLayer = InContext.InitLayer;
+	InOutData.CurrentLevel = InContext.InitLevel;
+
+	// 初始化单Section运行时数据(BUFF只用一个Section)
+	FBXTLSectionRTData SectionRT;
+	SectionRT.Index = 0;
+	InOutData.TLRunTimeData.RunningSections.Add(SectionRT);
+
+	// 独立生命周期初始化每层计时
+	if (InOutData.BuffAsset->LayerLifeMode == EBXBuffLayerLifeMode::BLL_Independent)
+	{
+		InOutData.LayerRunTimes.Init(0.0f, InContext.InitLayer);
+	}
+
+	// 启动符合当前层级的Task
+	StartBuffTasks(InOutData);
+
+	// 广播BUFF添加事件
+	BroadcastBuffEvent(InOutData, BXGameplayTags::BXEvent_Buff_Added, FBXEventBuffChanged());
+}
+
+void UBXBuffManager::InternalRemoveBuff(FBXBuffRuntimeData& InOutData, EBXBuffRemoveReason InReason)
+{
+	// 停止所有Task
+	StopBuffTasks(InOutData);
+
+	InOutData.bEarlyFinish = true;
+
+	// 广播BUFF移除事件
+	FBXEventBuffChanged Param;
+	Param.RemoveReason = static_cast<uint8>(InReason);
+	BroadcastBuffEvent(InOutData, BXGameplayTags::BXEvent_Buff_Removed, Param);
+}
+
+void UBXBuffManager::InternalRefreshBuffTasksByLayer(FBXBuffRuntimeData& InOutData, int32 InOldLayer, int32 InNewLayer)
+{
+	UBXBuffAsset* Asset = InOutData.BuffAsset;
+	if (!Asset)
+	{
+		return;
+	}
+
+	for (const FBXBuffTaskBinding& Binding : Asset->TaskBindings)
+	{
+		if (!Binding.Task)
+		{
+			continue;
+		}
+
+		bool bWasInRange = IsTaskInLayerRange(Binding, InOldLayer);
+		bool bIsInRange = IsTaskInLayerRange(Binding, InNewLayer);
+
+		if (bWasInRange && !bIsInRange)
+		{
+			// 离开区间:停止Task
+			StopBuffTask(InOutData, Binding.Task);
+		}
+		else if (!bWasInRange && bIsInRange)
+		{
+			// 进入区间:启动Task
+			ExecuteBuffTask(InOutData, Binding.Task);
+		}
+		else if (bIsInRange)
+		{
+			// 仍在区间内:重建效果(需求11高级层方案)
+			RebuildBuffTaskEffect(InOutData, Binding.Task, InOldLayer, InNewLayer);
+		}
+	}
+}
+
+#pragma endregion Buff
+
+
+
+#pragma region TaskBridge
+void UBXBuffManager::StartBuffTasks(FBXBuffRuntimeData& InOutData)
+{
+	UBXBuffAsset* Asset = InOutData.BuffAsset;
+	if (!Asset)
+	{
+		return;
+	}
+
+	for (const FBXBuffTaskBinding& Binding : Asset->TaskBindings)
+	{
+		if (!Binding.Task)
+		{
+			UE_LOG(BXMGR_Buff, Warning, TEXT("UBXBuffManager::StartBuffTasks: Binding.Task is null, skipped. BuffID=%lld."), InOutData.BuffID);
+			continue;
+		}
+
+		if (!IsTaskInLayerRange(Binding, InOutData.CurrentLayer))
+		{
+			continue;
+		}
+
+		ExecuteBuffTask(InOutData, Binding.Task);
+	}
+}
+
+void UBXBuffManager::StopBuffTasks(FBXBuffRuntimeData& InOutData)
+{
+	UBXTLManager* TLMgr = UBXTLManager::Get(this);
+	if (!TLMgr)
+	{
+		return;
+	}
+
+	if (InOutData.TLRunTimeData.RunningSections.Num() == 0)
+	{
+		return;
+	}
+
+	TLMgr->FinishTimelineSection(
+		InOutData.TLRunTimeData,
+		InOutData.TLRunTimeData.RunningSections[0],
+		EBXTLFinishReason::FR_Interrupt);
+}
+
+void UBXBuffManager::StopBuffTask(FBXBuffRuntimeData& InOutData, UBXTask* InTask)
+{
+	UBXTLManager* TLMgr = UBXTLManager::Get(this);
+	if (!TLMgr || !InTask)
+	{
+		return;
+	}
+
+	if (InOutData.TLRunTimeData.RunningSections.Num() == 0)
+	{
+		return;
+	}
+
+	FBXTLRunTimeData& TLData = InOutData.TLRunTimeData;
+	FBXTLSectionRTData& SectionRT = TLData.RunningSections[0];
+
+	for (TArray<FBXTLTaskRTData>::TIterator It(SectionRT.RunningTasks); It; ++It)
+	{
+		FBXTLTaskRTData& TaskRT = *It;
+
+		if (TaskRT.Task == InTask)
+		{
+			if (UBXTProcessor* Processor = TLMgr->GetTLTProcessorByTLTClass(InTask->GetClass()))
+			{
+				Processor->EndTask(TLData, SectionRT, TaskRT, EBXTLFinishReason::FR_Interrupt);
+			}
+
+			It.RemoveCurrent();
+			break;
+		}
+	}
+}
+
+void UBXBuffManager::ExecuteBuffTask(FBXBuffRuntimeData& InOutData, UBXTask* InTask)
+{
+	UBXTLManager* TLMgr = UBXTLManager::Get(this);
+	if (!TLMgr || !InTask)
+	{
+		UE_LOG(BXMGR_Buff, Warning, TEXT("UBXBuffManager::ExecuteBuffTask failed: TLMgr=%s InTask=%s."), TLMgr ? TEXT("valid") : TEXT("null"), InTask ? TEXT("valid") : TEXT("null"));
+		return;
+	}
+
+	if (InOutData.TLRunTimeData.RunningSections.Num() == 0)
+	{
+		UE_LOG(BXMGR_Buff, Warning, TEXT("UBXBuffManager::ExecuteBuffTask failed: RunningSections is empty. Task=%s."), *InTask->GetName());
+		return;
+	}
+
+	FBXTLRunTimeData& TLData = InOutData.TLRunTimeData;
+	FBXTLSectionRTData& SectionRT = TLData.RunningSections[0];
+
+	// 查找Task在Sections[0].TaskList中的索引
+	int32 TaskIndex = INDEX_NONE;
+	if (InOutData.BuffAsset && InOutData.BuffAsset->Sections.Num() > 0)
+	{
+		InOutData.BuffAsset->Sections[0].TaskList.Find(InTask, TaskIndex);
+	}
+
+	if (TaskIndex == INDEX_NONE)
+	{
+		UE_LOG(BXMGR_Buff, Warning, TEXT("UBXBuffManager::ExecuteBuffTask failed: Task=%s not found in Sections[0].TaskList, Sections.Num=%d TaskList.Num=%d."), *InTask->GetName(), InOutData.BuffAsset ? InOutData.BuffAsset->Sections.Num() : -1, (InOutData.BuffAsset && InOutData.BuffAsset->Sections.Num() > 0) ? InOutData.BuffAsset->Sections[0].TaskList.Num() : -1);
+		return;
+	}
+
+	// 构造网络上下文
+	ENetMode NetMode = TLData.Owner ? TLData.Owner->GetNetMode() : NM_Standalone;
+	ENetRole LocalRole = TLData.Owner ? TLData.Owner->GetLocalRole() : ROLE_Authority;
+
+	// 完全复用UBXTLManager的Task启动逻辑
+	TLMgr->ExecuteTimelineTask(TLData, SectionRT, TaskIndex, NetMode, LocalRole, 0.0f);
+}
+
+void UBXBuffManager::RebuildBuffTaskEffect(FBXBuffRuntimeData& InOutData, UBXTask* InTask, int32 InOldLayer, int32 InNewLayer)
+{
+	UBXTLManager* TLMgr = UBXTLManager::Get(this);
+	if (!TLMgr || !InTask)
+	{
+		return;
+	}
+
+	if (InOutData.TLRunTimeData.RunningSections.Num() == 0)
+	{
+		return;
+	}
+
+	FBXTLRunTimeData& TLData = InOutData.TLRunTimeData;
+	FBXTLSectionRTData& SectionRT = TLData.RunningSections[0];
+
+	for (FBXTLTaskRTData& TaskRT : SectionRT.RunningTasks)
+	{
+		if (TaskRT.Task == InTask)
+		{
+			if (UBXTProcessor* Processor = TLMgr->GetTLTProcessorByTLTClass(InTask->GetClass()))
+			{
+				Processor->RebuildEffectTask(TLData, SectionRT, TaskRT, InOldLayer, InNewLayer);
+			}
+
+			break;
+		}
+	}
+}
+
+bool UBXBuffManager::IsTaskInLayerRange(const FBXBuffTaskBinding& InBinding, int32 InLayer) const
+{
+	// (0, 0)代表无层级限制
+	if (InBinding.MinLayer == 0 && InBinding.MaxLayer == 0)
+	{
+		return true;
+	}
+
+	if (InBinding.MaxLayer == 0)
+	{
+		return InLayer >= InBinding.MinLayer;
+	}
+
+	if (InBinding.MinLayer == 0)
+	{
+		return InLayer <= InBinding.MaxLayer;
+	}
+
+	return InLayer >= InBinding.MinLayer && InLayer <= InBinding.MaxLayer;
+}
+
+#pragma endregion TaskBridge

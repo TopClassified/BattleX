@@ -1,4 +1,6 @@
-#include "BXTLAsset.h" 
+#include "BXTLAsset.h"
+
+#include "UObject/ObjectSaveContext.h"
 
 
 

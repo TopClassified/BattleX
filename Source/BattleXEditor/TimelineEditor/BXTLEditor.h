@@ -56,7 +56,16 @@ public:
 	virtual ~FBXTLEditor();
 
 	// 初始化
-	void InitializeEditor(UBXTLAsset* InAsset, const TSharedPtr<IToolkitHost>& InitToolkitHost) override;
+	virtual void InitializeEditor(UBXTLAsset* InAsset, const TSharedPtr<IToolkitHost>& InitToolkitHost) override;
+
+	// 创建编辑器模式,子类可重写以替换Mode
+	virtual TSharedPtr<FApplicationMode> CreateEditorMode();
+
+	// 获取图表类型,子类可重写以返回自定义图表类型
+	virtual UClass* GetGraphClass() const;
+
+	// 获取图表Schema类型,子类可重写以返回自定义Schema类型
+	virtual UClass* GetGraphSchemaClass() const;
 
 	// 更新
 	void Tick(float DeltaTime);
@@ -328,6 +337,16 @@ public:
 	FBXTLELogicPreviewChanged PreviewChangedEvent;
 	
 	FBXTLELogicTaskSelected TaskSelectedEvent;
+
+	// Debug:正在执行的Task集合变化事件
+	FBXTLELogicRunningTasksChanged RunningTasksChangedEvent;
+
+	// Debug:查询指定Task是否正在执行(供Graph节点OnPaint高亮使用)
+	static bool IsTaskRunning(class UBXTask* InTask);
+
+private:
+	// Debug:当前正在执行的Task缓存(每帧Tick刷新)
+	static TArray<TWeakObjectPtr<UBXTask>> DebugRunningTasksCache;
 
 #pragma endregion Event
 

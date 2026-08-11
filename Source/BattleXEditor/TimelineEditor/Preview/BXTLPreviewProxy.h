@@ -24,6 +24,9 @@ public:
 
 	void GetRunningSectionIndexes(TArray<int32>& OutIndexes);
 
+	// 获取当前正在执行的Task集合(Debug高亮使用)
+	void GetRunningTasks(TArray<class UBXTask*>& OutTasks);
+
 private:
 	UBXTLComponent* GetPreviewTimelineComponent();
 

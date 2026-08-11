@@ -1,7 +1,7 @@
 # BattleX Code Wiki
 
 > 高性能动作游戏技能系统 · Unreal Engine 5 插件
-> 仓库根：`BattleX/`  ·  版本：1.0 (Beta)  ·  文档生成日期：2026-08-04
+> 仓库根：`BattleX/`  ·  版本：1.1 (Beta)  ·  文档生成日期：2026-08-06
 
 ---
 
@@ -23,6 +23,7 @@
    - 4.10 [Condition 条件系统](#410-condition-条件系统)
    - 4.11 [Animation 动画系统](#411-animation-动画系统)
    - 4.12 [Unit / Lock 系统（占位）](#412-unit--lock-系统占位)
+   - 4.13 [Buff 状态系统（复用 Timeline）](#413-buff-状态系统复用-timeline)
 5. [编辑器模块](#5-编辑器模块)
 6. [依赖关系](#6-依赖关系)
 7. [项目运行方式](#7-项目运行方式)
@@ -77,6 +78,11 @@
 │   │  │      支撑系统: Gear / Movement / Collision /         │  │  │
 │   │  │                Event / Condition / Animation / Unit  │  │  │
 │   │  └──────────────────────────────────────────────────────┘  │  │
+│   │                                                             │  │
+│   │  ┌──────────────────────────────────────────────────────┐  │  │
+│   │  │   Buff (状态系统) ──复用──> Timeline / Task          │  │  │
+│   │  │   (生命时长 / 层级 / 共存 / 事件广播)                  │  │  │
+│   │  └──────────────────────────────────────────────────────┘  │  │
 │   └─────────────────────────────────────────────────────────────┘  │
 │   ┌─────────────────────────────────────────────────────────────┐  │
 │   │                  BattleXEditor (UncookedOnly)               │  │
@@ -111,6 +117,7 @@ BattleX/
     │   ├── BXFunctionLibrary.{h,cpp}  # 工具函数库
     │   ├── BXEnums.h / BXStructs.h / BXCurves.h
     │   ├── Animation/           # 动画实例与动画库
+    │   ├── Buff/                # BUFF状态系统（资产、管理器、组件，复用Timeline/Task）
     │   ├── Collision/           # 碰撞检测、形状组件、受击反应
     │   ├── Condition/           # 条件系统（基类、枚举、管理器、派生缓存）
     │   ├── DecisionTree/        # 决策树（含 BeatenTree / CombatTree + 决策树系列条件）
@@ -761,6 +768,138 @@ Native 函数通过宏驱动自动注册到 Registry，避免手动维护静态�
 
 ---
 
+### 4.13 Buff 状态系统（复用 Timeline）
+
+`Source/BattleX/Buff/` 模块实现了一套数据/逻辑分离的 BUFF 状态系统。**核心思路**：BUFF 本质是简化版 Timeline（单 Section、无 KeyFrame 时间推进、按 BUFF 规则调度），因此直接复用 Timeline 的数据载体与 Task 执行链路，避免重写一套等价的执行机制。
+
+#### 设计原则
+
+| 原则 | 说明 |
+|---|---|
+| 数据/逻辑分离 | 运行时状态存于纯数据结构 `FBXBuffRuntimeData`，逻辑收归 `UBXBuffManager` |
+| Task 执行完全复用 | BUFF 内的 Task 通过 `UBXTLManager` 的方法执行，与技能完全同路径 |
+| 职责清晰分层 | `UBXTLManager` 管所有 Task 的执行，`UBXBuffManager` 只管 BUFF 特有逻辑 |
+| 事件系统复用 | BUFF 生命周期事件通过 `BXEventManager` 单体+全局广播 |
+
+#### 架构对齐
+
+| 层 | 技能系统 | BUFF 系统 | 职责 |
+|---|---|---|---|
+| 静态配置 | `UBXTLAsset` | `UBXBuffAsset : UBXTLAsset` | 继承，复用 Sections/TaskList，额外加 BUFF 字段 |
+| 运行时数据 | `FBXTLRunTimeData` + `FBXTLSectionRTData` | 同上（直接复用） | Timeline 字段指向 BuffAsset |
+| 编排逻辑 | `UBXTLManager` | `UBXBuffManager` | BUFF 特有：生命时长/层级/共存/事件广播 |
+| Task 执行 | `UBXTLManager` | `UBXTLManager`（复用） | Task 启停/更新/事件链/数据传递/作用域 |
+
+#### 核心文件
+
+| 文件 | 说明 |
+|---|---|
+| `BXBuffEnums.h` | 枚举：`EBXBuffLifeType`（Duration/Infinite/Manual）、`EBXBuffLayerLifeMode`（Shared/Independent）、`EBXBuffCoexistPolicy`（Coexist/Replace）、`EBXBuffRemoveReason` |
+| `BXBuffStructs.h` | `FBXBuffRuntimeData`（运行时数据，内嵌 `FBXTLRunTimeData`）、`FBXBuffPlayContext`（施放上下文）、`FBXBuffTaskBinding`（Task 层级区间绑定）、`FBXEventBuffChanged`（事件参数） |
+| `BXBuffAsset.h/.cpp` | BUFF 资产，继承 `UBXTLAsset`。额外字段：`BuffTags`、`LifeType`、`BuffDuration`（-1 代表无限）、`LayerLifeMode`、`MaxLayer`（默认1）、`MaxLevel`、`CoexistPolicy`、`bRefreshLifetimeOnAdd`、`TaskBindings` |
+| `BXBuffManager.h/.cpp` | BUFF 管理器，继承 `UBXManager` + `FTickableGameObject`。管理 BUFF 生命周期、层级、共存策略、事件广播 |
+| `BXBuffComponent.h/.cpp` | Actor 组件，提供 BP 友好 API，EndPlay 时自动移除所有 BUFF |
+| `BXBuffFunctionLibrary.h/.cpp` | 静态 BP API（AddBuff/RemoveBuff/HasBuff 等） |
+
+#### UBXBuffAsset（资产配置）
+
+继承 `UBXTLAsset`，Task 列表配置在 `Sections[0].TaskList`（复用父类字段）。`TaskBindings` 仅存储层级区间配置（MinLayer/MaxLayer），通过 Task 指针与 Section 内的 Task 关联。
+
+**关键设计**：`UBXTProcessor` 执行链路硬依赖 `Asset->Sections[SectionIndex].TaskList[TaskIndex]`，Task 必须在 Sections 里才能被索引和执行。因此 BUFF 资产继承 Timeline 资产，Task 直接放在 Sections[0] 中。
+
+#### UBXBuffManager（管理器）
+
+**职责分层**：
+
+| 职责 | 归属 | 调用方式 |
+|---|---|---|
+| Task 启动 | UBXTLManager | `ExecuteTimelineTask` |
+| Task 更新 | UBXTLManager | `UpdateTimelineSectionTasks`（从 InternalUpdateTimeline 提取） |
+| Task 结束 | UBXTLManager | `FinishTimelineSection` |
+| 事件链处理 | UBXTLManager | `ProcessTimelineSectionPendingTasks` |
+| Processor 缓存 | UBXTLManager | `GetTLTProcessorByTLTClass` |
+| 数据传递/作用域 | UBXTLManager（内嵌于 Task 执行） | 自动 |
+| 生命时长推进 | UBXBuffManager | 自己 |
+| 层数/等级管理 | UBXBuffManager | 自己 |
+| 共存策略 | UBXBuffManager | 自己 |
+| 层级区间 Task 切换 | UBXBuffManager | 调用 TLManager 启停 |
+| 事件广播 | UBXBuffManager | 调用 BXEventManager（单体+全局） |
+| Owner→Buff 索引 | UBXBuffManager | 自己 |
+
+**Tick 流程**：
+
+```
+Tick(DeltaTime)
+  ├ 遍历 BuffRTDatas (UBXBuffManager)
+  │   ├ ① UpdateTimelineSectionTasks (UBXTLManager)     // Task 执行
+  │   ├ ② ProcessTimelineSectionPendingTasks (UBXTLManager) // 事件链
+  │   ├ ③ 生命时长推进 (UBXBuffManager)                  // 共享/独立
+  │   ├ ④ 到期 → FinishTimelineSection (UBXTLManager) + 移除
+  │   └ ⑤ 层级变化 → 区间 Task 切换 + RebuildEffect      // 需求 11
+  └ CleanBuffTrash (UBXBuffManager)
+```
+
+#### Task 层级区间执行（需求 10）
+
+`FBXBuffTaskBinding` 配置每个 Task 的层级执行区间：
+- `MinLayer=0, MaxLayer=0`：无层级限制（所有层级执行）
+- `MinLayer=1, MaxLayer=3`：仅 1~3 层执行
+- 层级变化时，`InternalRefreshBuffTasksByLayer` 自动停止离开区间的 Task、启动进入区间的 Task
+
+#### Task 效果随层级变化（需求 11）
+
+采用**高级层方案（RebuildEffect）**：层级变化时 Task 不重启，而是调用 `RebuildEffect` 接口通知 Task 层级变化，Task 在内部增量调整效果。
+
+扩展 `UBXTProcessor`：
+- `RebuildEffect`（protected virtual）：C++ 重写入口
+- `ScriptRebuildEffect`（BlueprintImplementableEvent）：蓝图重写入口
+- `RebuildEffectTask`（public UFUNCTION）：公开 wrapper，内部调用上述两个函数
+
+调用路径：`UBXBuffManager::InternalRefreshBuffTasksByLayer` → `RebuildBuffTaskEffect` → `Processor->RebuildEffectTask`
+
+**适用场景**：Task 有运行时累积状态（如已造成伤害计数、已播放动画进度），重启会丢失状态，需增量调整效果。
+
+#### 事件广播（需求 9）
+
+5 个 BUFF 生命周期事件（定义在 `BXGameplayTags`）：
+
+| Tag | 触发时机 |
+|---|---|
+| `BXEvent.Buff.Added` | BUFF 添加 |
+| `BXEvent.Buff.Removed` | BUFF 移除（含原因） |
+| `BXEvent.Buff.LayerChanged` | 层数变化 |
+| `BXEvent.Buff.LevelChanged` | 等级变化 |
+| `BXEvent.Buff.LifetimeRefreshed` | 生命时长刷新 |
+
+事件参数结构 `FBXEventBuffChanged`：包含 BuffInstanceID、BuffAsset、三角色（Owner/Instigator/Triggerer）、Old/NewLayer、Old/NewLevel、RemoveReason。
+
+广播方式（单体+全局）：
+- `BroadcastSingleEvent`：以 Owner 为 Initiator，仅注册了 (EventTag, Owner) 的监听者收到
+- `BroadcastGlobalEvent`：所有监听者都能收到
+
+#### 共存策略（需求 5）
+
+| 策略 | 行为 |
+|---|---|
+| `BC_Coexist` | 不同始作俑者共存（各自独立实例），相同 Instigator 加层 |
+| `BC_Replace` | 不共存，取等级最高 + 剩余时长最长的实例替换 |
+
+#### 层级生命周期（需求 3）
+
+| 模式 | 行为 |
+|---|---|
+| `BLL_Shared` | 所有层共享一个 `RunTime`，到期整体移除 |
+| `BLL_Independent` | 每层独立 `LayerRunTimes[i]`，单层到期仅移除该层，触发层级变化 |
+
+#### 注册配置
+
+在 `DefaultGame.ini` 的 `[/Script/BattleX.BXSettings]` 段中添加：
+```
++ManagerClasses=/Script/BattleX.BXBuffManager
+```
+
+---
+
 ## 5. 编辑器模块
 
 `BattleXEditor` 模块（`UncookedOnly`，`PostEngineInit` 加载）提供完整的资产编辑器与可视化工具。
@@ -853,7 +992,7 @@ Native 函数通过宏驱动自动注册到 Registry，避免手动维护静态�
 **PrivateDependencyModuleNames**：
 - `GameplayTags` / `StructUtils`
 
-**PrivateIncludePaths**：暴露了所有子目录（`Task`、`Unit`、`Lock`、`Gear`、`State`、`Event`、`Movement`、`Timeline`、`Animation`、`Collision`、`Condition`、`DecisionTree`）
+**PrivateIncludePaths**：暴露了所有子目录（`Task`、`Unit`、`Lock`、`Gear`、`State`、`Event`、`Movement`、`Timeline`、`Animation`、`Collision`、`Condition`、`DecisionTree`、`Buff`）
 
 ### 6.2 插件依赖
 
@@ -873,6 +1012,10 @@ Timeline (核心) ──依赖──> Task (原子操作)
     │
     └──被依赖──< DecisionTree (决策) ──依赖──> Condition
                                           └──> Skill (引用技能资产)
+
+Buff (状态系统) ──复用──> Timeline (数据载体 + Task执行链路)
+    │              └──复用──> Task (Processor)
+    └──依赖──> Event (BUFF生命周期事件广播)
 
 Gear (装备) ──依赖──> Collision (形状组件)
 Movement ──被依赖──< Task (RootMotion 任务)
@@ -1041,6 +1184,37 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
             └─ return Result  (最深有效匹配，或当前节点)
 ```
 
+### 8.5 BUFF 施加与更新流程
+
+```
+1. 游戏代码: BuffComp->AddBuff(Asset, Instigator, Layer, Level)  或  UBXBuffFunctionLibrary::AddBuff
+       │
+       ↓
+2. UBXBuffManager::AddBuff(Asset, Owner, Context)
+   ├─ 共存策略判断 (Coexist/Replace)
+   │   ├─ BC_Coexist: 查找 (Owner, Asset, Instigator) 唯一实例 → 存在则 ChangeBuffLayer + RefreshBuffLifetime
+   │   └─ BC_Replace: 查找等级最高+剩余时长最长实例 → 替换 Instigator/Triggerer/Layer/Level
+   │
+   ├─ 创建新 FBXBuffRuntimeData，TLRunTimeData.Timeline = BuffAsset
+   ├─ InternalAddBuff: 填充三角色 + 初始化单 SectionRTData + StartBuffTasks + 广播 Added 事件
+   │   └─ StartBuffTasks: 遍历 TaskBindings, 对符合当前层级的 Task 调用 ExecuteBuffTask
+   │       └─ ExecuteBuffTask → UBXTLManager::ExecuteTimelineTask (完全复用技能 Task 启动)
+   │
+   └─ 返回 BuffID
+
+3. UBXBuffManager::Tick(DeltaTime) (每帧)
+   └─ 遍历 BuffRTDatas → InternalUpdateBuff(Data, DeltaTime)
+       ├─ ① UBXTLManager::UpdateTimelineSectionTasks (Task 执行)
+       ├─ ② UBXTLManager::ProcessTimelineSectionPendingTasks (事件链)
+       └─ ③ 生命时长推进
+           ├─ BLL_Shared: RunTime += DeltaTime → 到期则 FinishTimelineSection + RemoveBuff
+           └─ BLL_Independent: 每层独立计时 → 单层到期移除该层 → InternalRefreshBuffTasksByLayer
+               └─ InternalRefreshBuffTasksByLayer:
+                   ├─ 离开区间: StopBuffTask
+                   ├─ 进入区间: ExecuteBuffTask
+                   └─ 仍在区间: RebuildBuffTaskEffect → Processor->RebuildEffectTask (需求11)
+```
+
 ---
 
 ## 9. 优化建议
@@ -1181,6 +1355,7 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 | 碰撞系统 | [BXCollision.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXCollision.h) / [BXShapeComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXShapeComponent.h) / [BXHitReactionComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXHitReactionComponent.h) |
 | 事件系统 | [BXEventManager.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Event/BXEventManager.h) / [BXEventStructs.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Event/BXEventStructs.h) |
 | 条件系统 | [BXCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXCondition.h) / [BXConditionEnums.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionEnums.h) / [BXConditionManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionManager.h) / [BXTaskCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTaskCondition.h) / [BXDecisionTreeCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/DecisionTree/BXDecisionTreeCondition.h) |
+| BUFF 系统 | [BXBuffAsset.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffAsset.h) / [BXBuffManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffManager.h) / [BXBuffComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffComponent.h) / [BXBuffStructs.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffStructs.h) / [BXBuffEnums.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffEnums.h) / [BXBuffFunctionLibrary.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffFunctionLibrary.h) |
 | 编辑器入口 | [BattleXEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/BattleXEditor.h) |
 | 时间轴编辑器 | [BXTLEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineEditor/BXTLEditor.h) |
 | 决策树编辑器 | [BXDTEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/DecisionTreeEditor/BXDTEditor.h) |
@@ -1206,6 +1381,10 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 | `EBXBehaviorAgentFunction` | BXBehaviorAgent.h | Native/BP × Init/Cleanup/Start/Stop/CheckStart (Bitflags) |
 | `EBXForbiddenBehaviorReason` | BXStateEnums.h | 行为禁用原因 |
 | `EBXLogicOperator` | BXConditionEnums.h | And / Or（组合条件逻辑运算） |
+| `EBXBuffLifeType` | BXBuffEnums.h | Duration / Infinite / Manual（BUFF 生命周期类型） |
+| `EBXBuffLayerLifeMode` | BXBuffEnums.h | Shared / Independent（层级生命周期模式） |
+| `EBXBuffCoexistPolicy` | BXBuffEnums.h | Coexist / Replace（BUFF 共存策略） |
+| `EBXBuffRemoveReason` | BXBuffEnums.h | Manual / Expired / OverStack / OwnerLost（BUFF 移除原因） |
 
 ---
 

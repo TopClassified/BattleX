@@ -8,10 +8,12 @@
 
 #include "BXTLAsset.h"
 #include "BXSkillAsset.h"
+#include "BXBuffAsset.h"
 #include "BXShapeComponent.h"
 #include "BXStructs.h"
 
 #include "BXTLAssetTypeActions.h"
+#include "BXBuffAssetTypeActions.h"
 #include "BXTLAssetThumbnailRenderer.h"
 #include "BXDTAssetTypeActions.h"
 #include "BXDTAssetThumbnailRenderers.h"
@@ -38,6 +40,8 @@ void FBattleXEditorModule::StartupModule()
 	AssetToolsModule.RegisterAssetTypeActions(MakeShareable(new FAssetTypeActions_BXTLAsset(CurrentAssetCategory)));
 	// 注册技能资源
 	AssetToolsModule.RegisterAssetTypeActions(MakeShareable(new FAssetTypeActions_BXSkillAsset(CurrentAssetCategory)));
+	// 注册BUFF资源
+	AssetToolsModule.RegisterAssetTypeActions(MakeShareable(new FAssetTypeActions_BXBuffAsset(CurrentAssetCategory)));
 	// 注册决策树资源
 	AssetToolsModule.RegisterAssetTypeActions(MakeShareable(new FBXDecisionTreeAssetTypeActions(CurrentAssetCategory)));
 	// 注册受击树资源

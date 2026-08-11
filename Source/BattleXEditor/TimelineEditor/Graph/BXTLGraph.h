@@ -40,7 +40,7 @@ public:
 	UEdGraphNode* GetGraphNodeByTask(UBXTask* InTask);
 
 	// 创建一个新的Task节点
-	void GenerateGraphNodeByTask(UBXTask* InTask, float InX, float InY);
+	virtual void GenerateGraphNodeByTask(UBXTask* InTask, float InX, float InY);
 
 	// 创建一组新的Task节点
 	void GenerateGraphNodesByTasks(TArray<UBXTask*>& InTaskList);

@@ -44,3 +44,6 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FBXTLELogicPreviewChanged, bool, bool);
 
 // 逻辑改变选取任务事件
 DECLARE_MULTICAST_DELEGATE_OneParam(FBXTLELogicTaskSelected, TArray<class UBXTask*>&);
+
+// Debug:正在执行的Task集合变化事件
+DECLARE_MULTICAST_DELEGATE_OneParam(FBXTLELogicRunningTasksChanged, const TArray<class UBXTask*>&);

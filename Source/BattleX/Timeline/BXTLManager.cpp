@@ -228,11 +228,13 @@ int64 UBXTLManager::PlayTimeline(UBXTLAsset* InAsset, AActor* InOwner, UPARAM(re
 	// 严禁更新时间轴时，播放新的时间轴
 	if (bUpdatingTimeline)
 	{
+		UE_LOG(BXMGR_Timeline, Warning, TEXT("UBXTLManager::PlayTimeline failed: bUpdatingTimeline=true, rejecting new timeline. Owner=%s Asset=%s."), InOwner ? *InOwner->GetName() : TEXT("null"), InAsset ? *InAsset->GetName() : TEXT("null"));
 		return 0;
 	}
 
 	if (!IsValid(InAsset))
 	{
+		UE_LOG(BXMGR_Timeline, Warning, TEXT("UBXTLManager::PlayTimeline failed: InAsset is null, Owner=%s."), InOwner ? *InOwner->GetName() : TEXT("null"));
 		return 0;
 	}
 
@@ -585,7 +587,7 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 {
 	if (!InOutData.Timeline || !InOutData.Timeline->Sections.IsValidIndex(InOutSectionData.Index) || !InOutData.Timeline->Sections[InOutSectionData.Index].TaskList.IsValidIndex(InTaskIndex))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ExecuteTimelineTask] Invalid: Timeline=%s SectionIdx=%d TaskIdx=%d"), InOutData.Timeline ? *InOutData.Timeline->GetName() : TEXT("null"), InOutSectionData.Index, InTaskIndex);
+		UE_LOG(BXMGR_Timeline, Warning, TEXT("UBXTLManager::ExecuteTimelineTask failed: Invalid index. Timeline=%s SectionIdx=%d TaskIdx=%d."), InOutData.Timeline ? *InOutData.Timeline->GetName() : TEXT("null"), InOutSectionData.Index, InTaskIndex);
 		return false;
 	}
 
@@ -598,7 +600,7 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 	UBXTask* InTask = Section.TaskList[InTaskIndex];
 	if (!InTask)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ExecuteTimelineTask] Task is null at index %d"), InTaskIndex);
+		UE_LOG(BXMGR_Timeline, Warning, TEXT("UBXTLManager::ExecuteTimelineTask failed: Task is null at SectionIdx=%d TaskIdx=%d, Asset=%s."), InOutSectionData.Index, InTaskIndex, *InOutData.Timeline->GetName());
 		return false;
 	}
 
@@ -634,14 +636,14 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 	}
 	if (!bResult)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ExecuteTimelineTask] NetType check failed: Task=%s NetTypes=%d NetMode=%d LocalRole=%d"), *InTask->GetName(), InTask->NetTypes, (int32)InNetMode, (int32)InRoleType);
+		UE_LOG(BXMGR_Timeline, Warning, TEXT("UBXTLManager::ExecuteTimelineTask failed: NetType check failed. Task=%s NetTypes=%d NetMode=%d LocalRole=%d."), *InTask->GetName(), InTask->NetTypes, (int32)InNetMode, (int32)InRoleType);
 		return false;
 	}
 
 	UScriptStruct* CustomDataType = TimelineTaskTypeMap.FindRef(InTask->GetClass());
 	if (!CustomDataType)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[ExecuteTimelineTask] CustomDataType not found for Task=%s Class=%s"), *InTask->GetName(), *InTask->GetClass()->GetName());
+		UE_LOG(BXMGR_Timeline, Warning, TEXT("UBXTLManager::ExecuteTimelineTask failed: CustomDataType not registered in TaskCustomDataMap. Task=%s Class=%s."), *InTask->GetName(), *InTask->GetClass()->GetName());
 		return false;
 	}
 
@@ -665,7 +667,7 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[ExecuteTimelineTask] Processor not found for Task=%s Class=%s"), *InTask->GetName(), *InTask->GetClass()->GetName());
+			UE_LOG(BXMGR_Timeline, Warning, TEXT("UBXTLManager::ExecuteTimelineTask failed: Processor not registered in TaskProcessorMap. Task=%s Class=%s."), *InTask->GetName(), *InTask->GetClass()->GetName());
 		}
 	}
 	else
@@ -686,7 +688,7 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 		}
 		else
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[ExecuteTimelineTask] Processor not found for Task=%s Class=%s"), *InTask->GetName(), *InTask->GetClass()->GetName());
+			UE_LOG(BXMGR_Timeline, Warning, TEXT("UBXTLManager::ExecuteTimelineTask failed: Processor not registered in TaskProcessorMap. Task=%s Class=%s."), *InTask->GetName(), *InTask->GetClass()->GetName());
 		}
 	}
 
@@ -723,8 +725,6 @@ void UBXTLManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InD
 	// 标记为更新中
 	bUpdatingTimeline = true;
 
-	EBXTLFinishReason FinishReason;
-
 	UBXTLAsset* Asset = InOutData.Timeline;
 	if (!Asset)
 	{
@@ -752,6 +752,7 @@ void UBXTLManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InD
 		FBXTLSectionRTData& SectionData = *It;
 		if (!Asset->Sections.IsValidIndex(SectionData.Index))
 		{
+			UE_LOG(BXMGR_Timeline, Warning, TEXT("UBXTLManager::InternalUpdateTimeline: SectionData.Index=%d invalid(Sections.Num=%d), removed. Asset=%s."), SectionData.Index, Asset->Sections.Num(), *Asset->GetName());
 			It.RemoveCurrent();
 			continue;
 		}
@@ -760,42 +761,7 @@ void UBXTLManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InD
 		const FBXTLSection& Section = Asset->Sections[SectionData.Index];
 
 		// 更新正在运行的Task
-		for (TArray<FBXTLTaskRTData>::TIterator It2(SectionData.RunningTasks); It2; ++It2)
-		{
-			FBXTLTaskRTData& TaskData = *It2;
-			if (!Section.TaskList.IsValidIndex(TaskData.Index))
-			{
-				It2.RemoveCurrent();
-				continue;
-			}
-
-			UBXTask* Task = Section.TaskList[TaskData.Index];
-			if (!Task)
-			{
-				It2.RemoveCurrent();
-				continue;
-			}
-
-			// 找到Task处理器
-			UBXTProcessor* Processor = GetTLTProcessorByTLTClass(Task->GetClass());
-			if (!Processor)
-			{
-				It2.RemoveCurrent();
-				continue;
-			}
-
-			// 更新
-			if (!UBXTProcessor::IsTaskCompleted(TaskData, FinishReason))
-			{
-				Processor->UpdateTask(InOutData, SectionData, TaskData, FixedDeltaTime);
-			}
-
-			// 结束
-			if (UBXTProcessor::IsTaskCompleted(TaskData, FinishReason))
-			{
-				Processor->EndTask(InOutData, SectionData, TaskData, FinishReason);
-			}
-		}
+		UpdateTimelineSectionTasks(InOutData, SectionData, FixedDeltaTime);
 
 		// 更新时间片段运行时间
 		SectionData.RunTime += FixedDeltaTime;
@@ -860,7 +826,7 @@ void UBXTLManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InD
 			{
 				break;
 			}
-			
+
 			// 执行新的Task
 			for (TArray<int32>::TConstIterator It3(KeyFrame.Tasks); It3; ++It3)
 			{
@@ -875,6 +841,52 @@ void UBXTLManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InD
 		ProcessTimelineSectionPendingTasks(InOutData, SectionData);
 	}
 	bUpdatingTimeline = false;
+}
+
+void UBXTLManager::UpdateTimelineSectionTasks(FBXTLRunTimeData& InOutData, FBXTLSectionRTData& InOutSectionData, float InDeltaTime)
+{
+	UBXTLAsset* Asset = InOutData.Timeline;
+	if (!Asset || !Asset->Sections.IsValidIndex(InOutSectionData.Index))
+	{
+		return;
+	}
+
+	const FBXTLSection& Section = Asset->Sections[InOutSectionData.Index];
+	EBXTLFinishReason FinishReason;
+
+	for (TArray<FBXTLTaskRTData>::TIterator It(InOutSectionData.RunningTasks); It; ++It)
+	{
+		FBXTLTaskRTData& TaskData = *It;
+		if (!Section.TaskList.IsValidIndex(TaskData.Index))
+		{
+			It.RemoveCurrent();
+			continue;
+		}
+
+		UBXTask* Task = Section.TaskList[TaskData.Index];
+		if (!Task)
+		{
+			It.RemoveCurrent();
+			continue;
+		}
+
+		UBXTProcessor* Processor = GetTLTProcessorByTLTClass(Task->GetClass());
+		if (!Processor)
+		{
+			It.RemoveCurrent();
+			continue;
+		}
+
+		if (!UBXTProcessor::IsTaskCompleted(TaskData, FinishReason))
+		{
+			Processor->UpdateTask(InOutData, InOutSectionData, TaskData, InDeltaTime);
+		}
+
+		if (UBXTProcessor::IsTaskCompleted(TaskData, FinishReason))
+		{
+			Processor->EndTask(InOutData, InOutSectionData, TaskData, FinishReason);
+		}
+	}
 }
 
 void UBXTLManager::CleanTimelineTrash()

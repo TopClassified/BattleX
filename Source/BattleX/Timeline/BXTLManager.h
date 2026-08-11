@@ -120,6 +120,9 @@ public:
 	// 执行任务
 	bool ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSectionRTData& InOutSectionData, int32 InTaskIndex, ENetMode InNetMode, ENetRole InRoleType, float InStartOffset, int64 InParentScope = 0);
 
+	// 更新时间片段中的所有任务
+	void UpdateTimelineSectionTasks(FBXTLRunTimeData& InOutData, FBXTLSectionRTData& InOutSectionData, float InDeltaTime);
+
 	// 根据任务类型获取处理器
 	class UBXTProcessor* GetTLTProcessorByTLTClass(UClass* TaskClass);
 

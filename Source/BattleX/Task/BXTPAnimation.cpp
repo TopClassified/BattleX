@@ -12,16 +12,17 @@ void UBXTPPlayAnimation::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData
 	UBXTPlayAnimation* Task = Cast<UBXTPlayAnimation>(InOutRTTData.Task);
 	if (!Task)
 	{
+		UE_LOG(BX_TP, Warning, TEXT("UBXTPPlayAnimation::Start failed: Task cast to UBXPlayAnimation failed, Task=%s."), InOutRTTData.Task ? *InOutRTTData.Task->GetName() : TEXT("null"));
 		return;
 	}
-	
+
 	// 获取任务的自定义数据结构
 	FBXTPPlayAnimationContext& TPC = InOutRTTData.DynamicData.GetMutable<FBXTPPlayAnimationContext>();
 
 	// 获取任务目标
 	TArray<AActor*> Targets;
 	UBXTProcessor::GetTargetActorList(InOutRTData, InOutRTTData, Targets);
-	
+
 	// 尝试获取播放动画的权限并进行播放
 	for (TArray<AActor*>::TIterator It(Targets); It; ++It)
 	{
@@ -30,6 +31,7 @@ void UBXTPPlayAnimation::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData
 		TPC.TComponents.Add(TComponent);
 		if (!IsValid(TComponent))
 		{
+			UE_LOG(BX_TP, Warning, TEXT("UBXTPPlayAnimation::Start: Target[%d] SkeletalMeshComponent invalid, CompName=%s Task=%s."), It.GetIndex(), *Task->PlayComponentName.ToString(), *Task->GetName());
 			TPC.Parameters.Add(FBXTPPAContextParameter());
 			continue;
 		}
@@ -37,18 +39,20 @@ void UBXTPPlayAnimation::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData
 		UBXAnimInstance* AnimIns = Cast<UBXAnimInstance>(TComponent->GetAnimInstance());
 		if (!AnimIns)
 		{
+			UE_LOG(BX_TP, Warning, TEXT("UBXTPPlayAnimation::Start: Target[%d] AnimInstance invalid or not UBXAnimInstance. Task=%s"), It.GetIndex(), *Task->GetName());
 			TPC.Parameters.Add(FBXTPPAContextParameter());
 			continue;
 		}
-		
+
 		// 尝试获取动画播放权限
 		int64 Permission = AnimIns->GetPlayAnimationPermission(Task->PlayAnimBehaviorTag, Task->PlayPriority);
 		TPC.Parameters.Add(FBXTPPAContextParameter(Permission, -1));
 		if (Permission < 0)
 		{
+			UE_LOG(BX_TP, Warning, TEXT("UBXTPPlayAnimation::Start: Target[%d] Permission denied(=%lld), Tag=%s Priority=%d Task=%s."), It.GetIndex(), Permission, *Task->PlayAnimBehaviorTag.ToString(), Task->PlayPriority, *Task->GetName());
 			continue;
 		}
-		
+
 		// 获取要播放的蒙太奇
 		UAnimMontage* Montage = nullptr;
 		if (Task->AssetType == EBXTAnimationAssetType::AAT_Montage)
@@ -61,6 +65,7 @@ void UBXTPPlayAnimation::Start(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData
 		}
 		if (!IsValid(Montage))
 		{
+			UE_LOG(BX_TP, Warning, TEXT("UBXTPPlayAnimation::Start: Target[%d] Montage invalid, AssetType=%d Tag=%s Task=%s."), It.GetIndex(), (int32)Task->AssetType, *Task->Tag.ToString(), *Task->GetName());
 			continue;
 		}
 

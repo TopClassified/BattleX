@@ -42,6 +42,7 @@ int64 UBXTLComponent::PlayTimeline(UBXTLAsset* InAsset, UPARAM(ref) FBXTLPlayCon
 	UBXTLManager* BXMgr = UBXTLManager::Get(GetOwner());
 	if (!IsValid(BXMgr))
 	{
+		UE_LOG(BXMGR_Timeline, Warning, TEXT("UBXTLComponent::PlayTimeline failed: BXTLManager is null, Owner=%s Asset=%s."), *GetOwner()->GetName(), InAsset ? *InAsset->GetName() : TEXT("null"));
 		return 0;
 	}
 

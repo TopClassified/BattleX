@@ -44,7 +44,12 @@ protected:
 
 	virtual void ChangeTickRate(FBXTLTaskRTData& InOutRTTData, float InRate) {}
 	UFUNCTION(BlueprintImplementableEvent, Category = "Important")
-	void ScriptChangeTickRate(FBXTLTaskRTData& InOutRTTData, float InRate);
+	void ScriptChangeTickRate(UPARAM(ref) FBXTLTaskRTData& InOutRTTData, float InRate);
+
+	// BUFF层级变化时重建效果(高级层方案,Task不重启,增量调整效果)
+	virtual void RebuildEffect(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& InOutRTSData, FBXTLTaskRTData& InOutRTTData, int32 InOldLayer, int32 InNewLayer) {}
+	UFUNCTION(BlueprintImplementableEvent, Category = "Important", meta = (DisplayName = "RebuildEffect"))
+	void ScriptRebuildEffect(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, int32 InOldLayer, int32 InNewLayer);
 
 protected:
 	// 要执行的函数(默认只执行C++函数)
@@ -68,7 +73,11 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "API")
 	void ChangeTaskTickRate(UPARAM(ref) FBXTLTaskRTData& InOutRTTData, float InRate);
-	
+
+	// BUFF层级变化时重建效果(调用protected的RebuildEffect虚函数)
+	UFUNCTION(BlueprintCallable, Category = "API")
+	void RebuildEffectTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, int32 InOldLayer, int32 InNewLayer);
+
 #pragma endregion API
 
 

@@ -17,4 +17,7 @@ public:
 
 	bool IsNameReadOnly() const override;
 
+	// Debug:重写OnPaint,在节点最上层叠加黄色呼吸高亮框(正在执行的Task)
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
+
 };

@@ -32,6 +32,7 @@ public class BattleX : ModuleRules
                 "BattleX/Animation",
                 "BattleX/Collision",
                 "BattleX/Condition",
+                "BattleX/Buff",
                 "BattleX/DecisionTree",
             }
 		);

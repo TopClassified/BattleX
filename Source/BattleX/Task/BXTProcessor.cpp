@@ -107,6 +107,13 @@ void UBXTProcessor::ChangeTaskTickRate(UPARAM(ref) FBXTLTaskRTData& InOutRTTData
 	}
 }
 
+void UBXTProcessor::RebuildEffectTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UPARAM(ref) FBXTLSectionRTData& InOutRTSData, UPARAM(ref) FBXTLTaskRTData& InOutRTTData, int32 InOldLayer, int32 InNewLayer)
+{
+	RebuildEffect(InOutRTData, InOutRTSData, InOutRTTData, InOldLayer, InNewLayer);
+
+	ScriptRebuildEffect(InOutRTData, InOutRTSData, InOutRTTData, InOldLayer, InNewLayer);
+}
+
 #pragma endregion Important
 
 
