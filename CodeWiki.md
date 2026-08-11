@@ -1,7 +1,7 @@
 # BattleX Code Wiki
 
 > 高性能动作游戏技能系统 · Unreal Engine 5 插件
-> 仓库根：`BattleX/`  ·  版本：1.1 (Beta)  ·  文档生成日期：2026-08-06
+> 仓库根：`BattleX/`  ·  版本：1.2 (Beta)  ·  文档生成日期：2026-08-11
 
 ---
 
@@ -939,13 +939,15 @@ Tick(DeltaTime)
 
 **预览子系统**（`Preview/`）：
 - `FBXTLPreviewScene : FAdvancedPreviewScene`：预览世界，可加载外部地图、生成玩家/目标 Actor
-- `FBXTLPreviewProxy`：运行时驱动，通过 `UBXTLComponent` 实际播放/暂停/停止时间轴资产
+- `FBXTLPreviewProxy`：运行时驱动，通过 `UBXTLComponent` 实际播放/暂停/停止时间轴资产。提供 `GetRunningTasks(OutTasks)` 接口收集当前正在执行的 Task 集合（Debug 高亮使用）
 - `UBXTLPreviewActor`：描述生成配置（类、Transform、装备、锁定部位）
 - `BXTLPreviewGameMode` / `BXTLPreviewGameState`：预览专用 GameMode
 
 **命令**（`BXTLEditorCommands`）：Play / Pause / Stop / Step / Bake / ResetWorld / ShowCollision / RefreshTimelineAssetProperty / AutoOptimize
 
-**事件**（`BXTLEditorDelegates.h`）：`RefreshPanelEvent`、`PreviewChangedEvent`、`TaskSelectedEvent`
+**事件**（`BXTLEditorDelegates.h`）：`RefreshPanelEvent`、`PreviewChangedEvent`、`TaskSelectedEvent`、`RunningTasksChangedEvent`（Debug：正在执行的 Task 集合变化）
+
+**Debug 高亮系统**：预览播放时,`FBXTLEditor::Tick` 每帧收集当前 RunningTasks 并更新静态缓存 `DebugRunningTasksCache`,提供 `IsTaskRunning(UBXTask*)` 静态查询接口。Graph 节点（`SBXTLGraphNode::OnPaint`）和时间轴节点（`SBXTLTaskTrackNode::OnPaint`）在绘制末尾查询该接口,若命中则在最顶层叠加黄色呼吸高亮框（4 条 2px 边,用 `FPlatformTime::Seconds()` 驱动 sin 呼吸 alpha,范围 0.35~0.8）。由于 `SBXBuffGraphNode` 继承 `SBXTLGraphNode` 且 `FBXBuffEditor` 继承 `FBXTLEditor`,BUFF 编辑器自动复用整套高亮机制。
 
 ### 5.3 决策树编辑器（DecisionTreeEditor）
 
@@ -1289,7 +1291,7 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 
 #### 9.2.3 调试与可视化增强
 
-**现状**：`UBXTLManager` 有 `bShowCollision` 调试开关，`UBXFunctionLibrary` 有编辑器调试绘制。
+**现状**：`UBXTLManager` 有 `bShowCollision` 调试开关，`UBXFunctionLibrary` 有编辑器调试绘制。编辑器预览时已实现 **Debug 节点高亮**：正在执行的 Task 对应的 Graph 节点和时间轴节点叠加黄色呼吸高亮框（见 [5.2 Debug 高亮系统](#52-时间轴编辑器timelineeditor)）。
 
 **建议**：
 - **运行时技能调试 HUD**：实现 `UBXSettings` 中的调试开关，运行时显示当前播放的时间轴 ID、Section、RunTime、活跃任务数。
@@ -1357,9 +1359,11 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 | 条件系统 | [BXCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXCondition.h) / [BXConditionEnums.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionEnums.h) / [BXConditionManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionManager.h) / [BXTaskCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTaskCondition.h) / [BXDecisionTreeCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/DecisionTree/BXDecisionTreeCondition.h) |
 | BUFF 系统 | [BXBuffAsset.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffAsset.h) / [BXBuffManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffManager.h) / [BXBuffComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffComponent.h) / [BXBuffStructs.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffStructs.h) / [BXBuffEnums.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffEnums.h) / [BXBuffFunctionLibrary.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffFunctionLibrary.h) |
 | 编辑器入口 | [BattleXEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/BattleXEditor.h) |
-| 时间轴编辑器 | [BXTLEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineEditor/BXTLEditor.h) |
+| 时间轴编辑器 | [BXTLEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineEditor/BXTLEditor.h) / [BXTLEditorDelegates.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/BXTLEditorDelegates.h) / [BXTLPreviewProxy.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Preview/BXTLPreviewProxy.h) |
 | 决策树编辑器 | [BXDTEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/DecisionTreeEditor/BXDTEditor.h) |
 | 时间轴控件 | [STimeline.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineBase/STimeline.h) / [TimelineController.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineBase/TimelineController.h) |
+| Graph 节点 | [SBXTLGraphNode.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Graph/SBXTLGraphNode.h) / [SBXBuffGraphNode.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Graph/SBXBuffGraphNode.h) / [BXTLGraphNode.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Graph/BXTLGraphNode.h) |
+| 时间轴 Task 节点 | [SBXTLTaskTrackNode.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Timeline/SBXTLTaskTrackNode.h) / [SBXTLTaskTrack.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Timeline/SBXTLTaskTrack.h) |
 | 自定义属性布局 | [BXFunctionSelectorCustomization.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/CustomLayout/BXFunctionSelectorCustomization.h) / [BXBoneSelectorCustomization.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/CustomLayout/BXBoneSelectorCustomization.h) / [SBXBonePicker.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/CustomLayout/SBXBonePicker.h) |
 
 ---
