@@ -1,67 +1,143 @@
 #include "BXTLEditorUtilities.h"
 
-#include "ClassViewerFilter.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "Engine/Blueprint.h"
 
 #include "BXTLEditorSettings.h"
 #include "BXTLAsset.h"
-#include "BXTask.h" 
+#include "BXTask.h"
 
 
 
 #define LOCTEXT_NAMESPACE "BXTLEditorUtilities"
 
-void FBXTLEditorUtilities::MakeNewTaskPicker(FMenuBuilder& MenuBuilder, const FOnClassPicked& OnTaskClassPicked)
+TArray<UClass*> FBXTLEditorUtilities::CollectBPTaskClasses()
 {
-	class FNotifyStateClassFilter : public IClassViewerFilter
+	TArray<UClass*> TaskClasses;
+
+	auto CheckClass = [&TaskClasses](const FAssetData& AssetMsg)
 	{
-	public:
-		FNotifyStateClassFilter() {}
-
-		bool IsClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const UClass* InClass, TSharedRef< FClassViewerFilterFuncs > InFilterFuncs) override
+		// 仅处理BP_BXT_前缀的蓝图
+		FString AssetName = AssetMsg.AssetName.ToString();
+		if (!AssetName.StartsWith(TEXT("BP_BXT_")))
 		{
-			const bool bChildOfObjectClass = InClass->IsChildOf(UBXTask::StaticClass());
-			const bool bMatchesFlags = !InClass->HasAnyClassFlags(CLASS_Hidden | CLASS_HideDropDown | CLASS_Deprecated | CLASS_Abstract);
-
-			return bChildOfObjectClass && bMatchesFlags && InClass->GetName().Contains(TEXT("BP_BXT_"));
+			return;
 		}
 
-		virtual bool IsUnloadedClassAllowed(const FClassViewerInitializationOptions& InInitOptions, const TSharedRef< const IUnloadedBlueprintData > InUnloadedClassData, TSharedRef< FClassViewerFilterFuncs > InFilterFuncs) override
-		{
-			const bool bChildOfObjectClass = InUnloadedClassData->IsChildOf(UBXTask::StaticClass());
-			const bool bMatchesFlags = !InUnloadedClassData->HasAnyClassFlags(CLASS_Hidden | CLASS_HideDropDown | CLASS_Deprecated | CLASS_Abstract);
+		// 优先从GeneratedClass标签直接拿类路径,避免依赖UBlueprint中间对象
+		FString GeneratedClassPath;
+		AssetMsg.GetTagValue(FName("GeneratedClassPath"), GeneratedClassPath);
 
-			return bChildOfObjectClass && bMatchesFlags && InUnloadedClassData->GetClassName()->Contains(TEXT("BP_BXT_"));
+		UClass* CurClass = nullptr;
+		if (!GeneratedClassPath.IsEmpty())
+		{
+			CurClass = LoadClass<UBXTask>(nullptr, *GeneratedClassPath);
+		}
+		else
+		{
+			// 回退到加载Blueprint对象取GeneratedClass
+			UBlueprint* CurBP = LoadObject<UBlueprint>(nullptr, *AssetMsg.GetSoftObjectPath().ToString());
+			if (CurBP)
+			{
+				CurClass = CurBP->GeneratedClass;
+			}
+		}
+
+		if (!CurClass || CurClass->HasAnyClassFlags(CLASS_Abstract))
+		{
+			return;
+		}
+
+		if (CurClass->IsChildOf(UBXTask::StaticClass()))
+		{
+			TaskClasses.AddUnique(CurClass);
 		}
 	};
+
+	FARFilter Filter;
+	Filter.bRecursivePaths = true;
+	Filter.bRecursiveClasses = true;
+	Filter.ClassPaths.AddUnique(UBlueprint::StaticClass()->GetClassPathName());
+
+	TArray<FAssetData> BlueprintList;
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	AssetRegistryModule.Get().GetAssets(Filter, BlueprintList);
+	for (const FAssetData& AssetMsg : BlueprintList)
+	{
+		CheckClass(AssetMsg);
+	}
+
+	return TaskClasses;
+}
+
+void FBXTLEditorUtilities::MakeNewTaskPicker(FMenuBuilder& MenuBuilder, const FOnClassPicked& OnTaskClassPicked)
+{
+	TArray<UClass*> TaskClasses = CollectBPTaskClasses();
+	if (TaskClasses.Num() == 0)
+	{
+		return;
+	}
 
 	if (MenuBuilder.GetMultiBox()->GetBlocks().Num() > 1)
 	{
 		MenuBuilder.AddMenuSeparator();
 	}
 
-	FClassViewerInitializationOptions InitOptions;
-	InitOptions.Mode = EClassViewerMode::ClassPicker;
-	InitOptions.bShowObjectRootClass = false;
-	InitOptions.bShowUnloadedBlueprints = true;
-	InitOptions.bShowNoneOption = false;
-	InitOptions.bEnableClassDynamicLoading = true;
-	InitOptions.bExpandRootNodes = true;
-	InitOptions.NameTypeToDisplay = EClassViewerNameTypeToDisplay::DisplayName;
-	InitOptions.ClassFilters.Add(MakeShared<FNotifyStateClassFilter>());
-	InitOptions.bShowBackgroundBorder = false;
+	// 按BlueprintNamespace分组
+	TMap<FString, TArray<UClass*>> NamespaceToClasses;
+	for (UClass* TaskClass : TaskClasses)
+	{
+		UBXTask* TaskCDO = Cast<UBXTask>(TaskClass->GetDefaultObject(true));
+		FString Namespace = TaskCDO ? TaskCDO->GetBlueprintNamespace().ToString() : FString();
+		if (Namespace.IsEmpty())
+		{
+			Namespace = TEXT("Tasks");
+		}
 
-	FClassViewerModule& ClassViewerModule = FModuleManager::LoadModuleChecked<FClassViewerModule>("ClassViewer");
-	MenuBuilder.AddWidget
-	(
-		SNew(SBox)
-		.MinDesiredWidth(300.0f)
-		.MaxDesiredHeight(400.0f)
-		[
-			ClassViewerModule.CreateClassViewer(InitOptions, OnTaskClassPicked)
-		],
-		FText(), true, false
-	);
+		NamespaceToClasses.FindOrAdd(Namespace).Add(TaskClass);
+	}
+
+	TArray<FString> Namespaces;
+	NamespaceToClasses.GetKeys(Namespaces);
+	Namespaces.Sort();
+
+	for (const FString& Namespace : Namespaces)
+	{
+		if (TArray<UClass*>* ClassesPtr = NamespaceToClasses.Find(Namespace))
+		{
+			TArray<UClass*> Classes = *ClassesPtr;
+
+			// 每个命名空间作为可折叠展开的子菜单
+			MenuBuilder.AddSubMenu
+			(
+				FText::FromString(Namespace),
+				FText::FromString(Namespace),
+				FNewMenuDelegate::CreateLambda([Classes, OnTaskClassPicked](FMenuBuilder& SubMenuBuilder)
+				{
+					for (UClass* TaskClass : Classes)
+					{
+						UBXTask* TaskCDO = Cast<UBXTask>(TaskClass->GetDefaultObject(true));
+						FText DisplayName = TaskCDO ? TaskCDO->GetBlueprintDisplayName() : FText();
+						if (DisplayName.IsEmpty())
+						{
+							DisplayName = TaskClass->GetDisplayNameText();
+						}
+
+						FText ToolTip = FText::FromString(TaskClass->GetDescription());
+
+						SubMenuBuilder.AddMenuEntry
+						(
+							DisplayName,
+							ToolTip,
+							FSlateIcon(),
+							FUIAction(FExecuteAction::CreateLambda([OnTaskClassPicked, TaskClass]() { OnTaskClassPicked.ExecuteIfBound(TaskClass); }))
+						);
+					}
+				})
+			);
+		}
+	}
 }
 
 void FBXTLEditorUtilities::MakeNewTaskTemplatePicker(class FMenuBuilder& MenuBuilder, const FBXTLPickTaskGroup& OnTemplatePicked)

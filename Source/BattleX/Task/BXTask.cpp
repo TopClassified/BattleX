@@ -52,21 +52,55 @@ void UBXTask::AlignTimeProperty(float InAlign)
 	}
 }
 
+FText UBXTask::GetBlueprintNamespace() const
+{
+	FString NamespaceStr = GetClass()->GetMetaData(FName(TEXT("Namespace")));
+	return FText::FromString(NamespaceStr);
+}
+
+FText UBXTask::GetBlueprintDisplayName() const
+{
+	FString DisplayNameStr = GetClass()->GetMetaData(FName(TEXT("DisplayName")));
+	if (!DisplayNameStr.IsEmpty())
+	{
+		return FText::FromString(DisplayNameStr);
+	}
+
+	FString Name = GetClass()->GetName();
+	Name = Name.Replace(TEXT("BP_BXT_"), TEXT(""));
+	Name = Name.Replace(TEXT("_C"), TEXT(""));
+
+	return FText::FromString(Name);
+}
+
 FText UBXTask::GetDisplayName() const
 {
 	FString Name = this->GetName();
 	Name = Name.Replace(TEXT("BP_BXT_"), TEXT(""));
 	Name = Name.Replace(TEXT("_C"), TEXT(""));
 
-	if (!DisplayName.IsEmpty())
+	FString DisplayNameStr = GetClass()->GetMetaData(FName(TEXT("DisplayName")));
+	FString NamespaceStr = GetClass()->GetMetaData(FName(TEXT("Namespace")));
+
+	if (!DisplayNameStr.IsEmpty())
 	{
+		FString Result;
+		if (!NamespaceStr.IsEmpty())
+		{
+			Result = NamespaceStr + TEXT(":") + DisplayNameStr;
+		}
+		else
+		{
+			Result = DisplayNameStr;
+		}
+
 		int32 Index = 0;
 		if (Name.FindLastChar('_', Index))
 		{
-			Name = Name.Right(Name.Len() - Index);
+			Result += Name.Right(Name.Len() - Index);
 		}
-		
-		Name = DisplayName.ToString() + Name;
+
+		return FText::FromString(Result);
 	}
 
 	return FText::FromString(Name);

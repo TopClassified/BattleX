@@ -2,11 +2,6 @@
 
 
 
-UBXTPlayAnimation::UBXTPlayAnimation()
-{
-	DisplayName = FText::FromString(TEXT("播放动画"));
-}
-
 #pragma region Editor
 #if WITH_EDITOR
 bool UBXTPlayAnimation::EnablePassiveTrigger()

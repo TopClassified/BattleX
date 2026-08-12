@@ -1,14 +1,12 @@
 #include "BXBuffGraphSchema.h"
 
 #include "ScopedTransaction.h"
-#include "UObject/UObjectIterator.h"
-#include "AssetRegistry/AssetRegistryModule.h"
-#include "Engine/Blueprint.h"
 
 #include "BXBuffGraph.h"
 #include "BXBuffGraphNode.h"
 #include "BXBuffAsset.h"
 #include "BXTask.h"
+#include "BXTLEditorUtilities.h"
 
 
 
@@ -59,60 +57,27 @@ void UBXBuffGraphSchema::GetGraphContextActions(FGraphContextMenuBuilder& Contex
 {
 	Super::GetGraphContextActions(ContextMenuBuilder);
 
-	// 收集所有BP派生的非抽象Task子类(与技能编辑器保持一致,只显示BP_BXT_前缀的蓝图,避免列出未注册到TaskProcessorMap/TaskCustomDataMap的native C++类)
-	TArray<UClass*> TaskClasses;
+	// 收集所有BP派生的非抽象Task子类(只显示BP_BXT_前缀的蓝图,避免列出未注册到TaskProcessorMap/TaskCustomDataMap的native C++类)
+	TArray<UClass*> TaskClasses = FBXTLEditorUtilities::CollectBPTaskClasses();
 
-	auto CheckClass = [&](FAssetData& AssetMsg)
+	for (UClass* TaskClass : TaskClasses)
 	{
-		FString ClassPath = AssetMsg.GetSoftObjectPath().ToString();
-		if (!ClassPath.Contains(TEXT("BP_BXT_")))
-		{
-			return;
-		}
-
-		UBlueprint* CurBP = LoadObject<UBlueprint>(nullptr, *ClassPath);
-		if (!CurBP)
-		{
-			return;
-		}
-
-		UClass* CurClass = CurBP->GeneratedClass;
-		if (!CurClass || CurClass->HasAnyClassFlags(CLASS_Abstract))
-		{
-			return;
-		}
-
-		if (UBXTask* Task = Cast<UBXTask>(CurClass->GetDefaultObject()))
-		{
-			TaskClasses.AddUnique(Task->GetClass());
-		}
-	};
-
-	FARFilter Filter;
-	Filter.bRecursivePaths = true;
-	Filter.bRecursiveClasses = true;
-	Filter.ClassPaths.AddUnique(UBlueprint::StaticClass()->GetClassPathName());
-	Filter.ClassPaths.AddUnique(UBlueprintGeneratedClass::StaticClass()->GetClassPathName());
-
-	TArray<FAssetData> BlueprintList;
-	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
-	AssetRegistryModule.Get().GetAssets(Filter, BlueprintList);
-	for (int32 i = 0; i < BlueprintList.Num(); ++i)
-	{
-		CheckClass(BlueprintList[i]);
-	}
-
-	FText CategoryName = LOCTEXT("TaskCategory", "Tasks");
-
-	for (int32 i = 0; i < TaskClasses.Num(); ++i)
-	{
-		UClass* TaskClass = TaskClasses[i];
 		if (!TaskClass)
 		{
 			continue;
 		}
 
-		FText TaskName = TaskClass->GetDisplayNameText();
+		UBXTask* TaskCDO = Cast<UBXTask>(TaskClass->GetDefaultObject(true));
+		if (!TaskCDO)
+		{
+			continue;
+		}
+
+		// 以BlueprintNamespace作为分类,未设置时回退到"Tasks"
+		FText Namespace = TaskCDO->GetBlueprintNamespace();
+		FText CategoryName = Namespace.IsEmpty() ? LOCTEXT("TaskCategory", "Tasks") : Namespace;
+
+		FText TaskName = TaskCDO->GetBlueprintDisplayName();
 		FText TaskToolTip = FText::FromString(TaskClass->GetDescription());
 
 		TSharedPtr<FBXBuffCreateTaskAction> NewAction = MakeShareable(new FBXBuffCreateTaskAction(CategoryName, TaskName, TaskToolTip, 0, TaskClass));

@@ -305,7 +305,7 @@ Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `Battle
 | **RunTimeData** | `InputDatas` | 数据读取声明：从哪个 Task 读取哪个 Tag 的数据 |
 | | `OutputDatas` | 数据输出声明：生产名为 xxx 的 xxx 类型数据 |
 | **Event** | `Events` | 事件触发表：Tag → `FBXTEvent`（含 bMulticast 与延迟触发） |
-| **Editor** | `DisplayName` / `Annotation` | 编辑器显示 |
+| **Editor** | `Annotation` | 编辑器注释 |
 | | `TriggeredByList` | 被哪些任务触发（反向索引） |
 | | `bNeedCollisionInput` | 是否需要碰撞输入 |
 | **PinChangeDetection** | `CachedPinSignature` | 上次检测时的 Pin 相关属性签名（WITH_EDITOR） |
@@ -321,6 +321,18 @@ Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `Battle
 - `OutputDatas` 每个条目的 GUID + DataTag
 
 子类只需在 `PostEditChangeProperty` 中修改属性后调用 `Super::PostEditChangeProperty`，基类自动通过签名比较触发 Pin 刷新，避免子类遗漏 `RefreshInputOutput.Broadcast()` 调用。
+
+**显示名与命名空间机制**（WITH_EDITOR）：
+
+Task 的显示名和分类使用引擎自带的蓝图元数据字段，**不使用自定义 UPROPERTY**。在蓝图 Class Settings 面板设置 "Blueprint Display Name" 和 "Blueprint Namespace"，蓝图编译时引擎自动写入 `UClass` 的 Metadata（参考 `KismetCompiler.cpp:3077-3090`）。
+
+| Getter | 读取方式 | 回退值 |
+|---|---|---|
+| `GetBlueprintNamespace()` | `GetClass()->GetMetaData("Namespace")` | 空字符串 |
+| `GetBlueprintDisplayName()` | `GetClass()->GetMetaData("DisplayName")` | 去除 `BP_BXT_`/`_C` 后缀的类名 |
+| `GetDisplayName()` | 组合 `"Namespace:DisplayName"` + 实例后缀（如 `_0`） | 去除前缀的实例名 |
+
+> **注意**：Metadata key 名是 `"DisplayName"` / `"Namespace"`，**不是** `"BlueprintDisplayName"` / `"BlueprintNamespace"`。不要在 C++ 中用 UPROPERTY 重新定义这两个字段——`WITH_EDITORONLY_DATA` 块内的 UPROPERTY 会被自动加上 `CPF_Transient` 标志导致不序列化。
 
 #### `UBXTProcessor` ([BXTProcessor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTProcessor.h)) ★
 
@@ -948,6 +960,15 @@ Tick(DeltaTime)
 **事件**（`BXTLEditorDelegates.h`）：`RefreshPanelEvent`、`PreviewChangedEvent`、`TaskSelectedEvent`、`RunningTasksChangedEvent`（Debug：正在执行的 Task 集合变化）
 
 **Debug 高亮系统**：预览播放时,`FBXTLEditor::Tick` 每帧收集当前 RunningTasks 并更新静态缓存 `DebugRunningTasksCache`,提供 `IsTaskRunning(UBXTask*)` 静态查询接口。Graph 节点（`SBXTLGraphNode::OnPaint`）和时间轴节点（`SBXTLTaskTrackNode::OnPaint`）在绘制末尾查询该接口,若命中则在最顶层叠加黄色呼吸高亮框（4 条 2px 边,用 `FPlatformTime::Seconds()` 驱动 sin 呼吸 alpha,范围 0.35~0.8）。由于 `SBXBuffGraphNode` 继承 `SBXTLGraphNode` 且 `FBXBuffEditor` 继承 `FBXTLEditor`,BUFF 编辑器自动复用整套高亮机制。
+
+**Task 创建菜单**（[BXTLEditorUtilities.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/BXTLEditorUtilities.h)）：
+
+三个编辑器（时间轴 Graph 右键菜单、时间轴 Task Track 添加菜单、BUFF Graph 右键菜单）统一的 Task 创建入口：
+- `FBXTLEditorUtilities::CollectBPTaskClasses()`：通过 Asset Registry 收集所有 `BP_BXT_` 前缀的非抽象蓝图 Task 类（过滤掉原生 C++ Task 类，避免显示未注册到 `TaskProcessorMap`/`TaskCustomDataMap` 的类）
+- `FBXTLEditorUtilities::MakeNewTaskPicker()`：构建按 `BlueprintNamespace` 分组的可折叠子菜单，每个子菜单内列出该命名空间下的 Task，显示 `BlueprintDisplayName`
+- `UBXBuffGraphSchema::GetGraphContextActions()`：BUFF Graph 右键菜单，以 `BlueprintNamespace` 作为 `FEdGraphSchemaAction` 的 Category 分组，显示 `BlueprintDisplayName`
+
+节点标题显示格式为 `"Namespace:DisplayName"` + 实例后缀（如 `"动画:播放动画_0"`），由 `UBXTask::GetDisplayName()` 提供。
 
 ### 5.3 决策树编辑器（DecisionTreeEditor）
 

@@ -87,9 +87,6 @@ class BATTLEX_API UBXTTrackHitBox : public UBXTCollision
 	GENERATED_BODY()
 
 public:
-	UBXTTrackHitBox();
-
-public:
 	// 碰撞盒标签,用于从ShapeComponent上匹配对应的碰撞盒信息
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Collision")
 	FGameplayTag HitBoxTag;
@@ -129,9 +126,6 @@ UCLASS(BlueprintType, Blueprintable)
 class BATTLEX_API UBXTTrackWeaponHitBox : public UBXTTrackHitBox
 {
 	GENERATED_BODY()
-
-public:
-	UBXTTrackWeaponHitBox();
 
 public:
 	// 武器插槽

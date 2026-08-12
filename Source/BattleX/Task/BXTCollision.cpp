@@ -44,11 +44,6 @@ void UBXTIntervalCollision::PostEditChangeProperty(struct FPropertyChangedEvent&
 
 
 
-UBXTTrackHitBox::UBXTTrackHitBox()
-{
-	DisplayName = FText::FromString(TEXT("碰撞盒轨迹命中检测"));
-}
-
 #pragma region Editor
 #if WITH_EDITOR
 void UBXTTrackHitBox::PreSave(FObjectPreSaveContext SaveContext)
@@ -373,10 +368,6 @@ bool UBXTTrackHitBox::EnablePassiveTrigger()
 
 
 
-UBXTTrackWeaponHitBox::UBXTTrackWeaponHitBox()
-{
-	DisplayName = FText::FromString(TEXT("武器碰撞盒轨迹命中检测"));
-}
 
 #pragma region Editor
 #if WITH_EDITOR

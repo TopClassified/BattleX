@@ -11,6 +11,9 @@
 class FBXTLEditorUtilities
 {
 public:
+	// 收集所有BP派生的非抽象Task子类(仅BP_BXT_前缀)
+	static TArray<UClass*> CollectBPTaskClasses();
+
 	// 创建Task选择器
 	static void MakeNewTaskPicker(class FMenuBuilder& MenuBuilder, const FOnClassPicked& OnTaskClassPicked);
 

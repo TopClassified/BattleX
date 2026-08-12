@@ -16,9 +16,6 @@ class BATTLEX_API UBXTPlayAnimation : public UBXTask
 	GENERATED_BODY()
 
 public:
-	UBXTPlayAnimation();
-	
-public:
 	// 动画资源类型
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	EBXTAnimationAssetType AssetType;

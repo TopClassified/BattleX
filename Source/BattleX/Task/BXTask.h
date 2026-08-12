@@ -97,10 +97,6 @@ public:
 #pragma region Editor
 #if WITH_EDITORONLY_DATA
 public:
-	// 编辑器名称
-	UPROPERTY(EditDefaultsOnly, Category = "Editor")
-	FText DisplayName;
-
 	// 编辑器注释
 	UPROPERTY(EditDefaultsOnly, Category = "Editor")
 	FText Annotation;
@@ -129,6 +125,12 @@ public:
 	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
 	
 	virtual void AlignTimeProperty(float InAlign);
+
+	// 获取蓝图命名空间,未设置时返回空
+	virtual FText GetBlueprintNamespace() const;
+
+	// 获取蓝图显示名称,未设置时回退到类名
+	virtual FText GetBlueprintDisplayName() const;
 
 	virtual FText GetDisplayName() const;
 
