@@ -7,7 +7,7 @@
 
 
 
-UCLASS(Config = Game, DefaultConfig, Meta = (DisplayName = "BattleX Settings"))
+UCLASS(Config = BattleX, DefaultConfig, Meta = (DisplayName = "BattleX Settings"))
 class BATTLEX_API UBXSettings : public UDeveloperSettings
 {
 	GENERATED_BODY()
