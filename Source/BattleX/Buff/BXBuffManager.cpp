@@ -1,6 +1,7 @@
 #include "BXBuffManager.h"
 
 #include "BXBuffAsset.h"
+#include "BXBuffComponent.h"
 #include "BXSubSystem.h"
 #include "BXFunctionLibrary.h"
 #include "BXGameplayTags.h"
@@ -12,6 +13,19 @@
 
 
 DEFINE_LOG_CATEGORY(BXMGR_Buff);
+
+
+
+// 服务器端获取Owner的BUFF组件(客户端不维护复制快照)
+static UBXBuffComponent* GetOwnerBuffComponent(AActor* InOwner)
+{
+	if (!InOwner || InOwner->GetNetMode() == NM_Client)
+	{
+		return nullptr;
+	}
+
+	return InOwner->FindComponentByClass<UBXBuffComponent>();
+}
 
 
 
@@ -67,13 +81,22 @@ void UBXBuffManager::Deinitialize()
 #pragma region Tick
 void UBXBuffManager::Tick(float DeltaTime)
 {
+	// 快照遍历:Task执行/移除广播回调可能同步添加BUFF(BUFF链),避免TMap迭代器因扩容rehash失效
+	TArray<int64> TickBuffIDs;
+	TickBuffIDs.Reserve(BuffRTDatas.Num());
+	for (const TPair<int64, FBXBuffRuntimeData>& Pair : BuffRTDatas)
+	{
+		TickBuffIDs.Add(Pair.Key);
+	}
+
 	bUpdatingBuff = true;
 
-	for (TMap<int64, FBXBuffRuntimeData>::TIterator It(BuffRTDatas); It; ++It)
+	for (int64 BuffID : TickBuffIDs)
 	{
-		if (!It->Value.bEarlyFinish)
+		FBXBuffRuntimeData* Data = BuffRTDatas.Find(BuffID);
+		if (Data && !Data->bEarlyFinish)
 		{
-			InternalUpdateBuff(It->Value, DeltaTime);
+			InternalUpdateBuff(*Data, DeltaTime);
 		}
 	}
 
@@ -245,7 +268,53 @@ int64 UBXBuffManager::AddBuff(UBXBuffAsset* InAsset, AActor* InOwner, FBXBuffPla
 
 	OwnerBuffMap.FindOrAdd(InOwner).Add(NewID);
 
+	// 服务器维护复制快照(新连接/新相关客户端重建用)
+	if (UBXBuffComponent* BuffComponent = GetOwnerBuffComponent(InOwner))
+	{
+		BuffComponent->AddBuffReplicatedState(NewID);
+	}
+
 	return NewID;
+}
+
+int64 UBXBuffManager::AddBuffWithID(UBXBuffAsset* InAsset, AActor* InOwner, const FBXBuffPlayContext& InContext, int64 InBuffID)
+{
+	if (!InAsset || !InOwner || InBuffID == INDEX_NONE)
+	{
+		return INDEX_NONE;
+	}
+
+	// 如果ID已存在,直接返回
+	if (BuffRTDatas.Find(InBuffID))
+	{
+		return InBuffID;
+	}
+
+	// 创建新运行时数据
+	FBXBuffRuntimeData& Data = BuffRTDatas.Add(InBuffID);
+
+	Data.BuffAsset = InAsset;
+	Data.BuffID = InBuffID;
+	Data.TLRunTimeData.ID = InBuffID;
+	Data.TLRunTimeData.Timeline = InAsset;
+	Data.TLRunTimeData.Owner = InOwner;
+
+	InternalAddBuff(Data, InContext);
+
+	OwnerBuffMap.FindOrAdd(InOwner).Add(InBuffID);
+
+	return InBuffID;
+}
+
+bool UBXBuffManager::ServerValidateAddBuff(UBXBuffAsset* InAsset, AActor* InOwner, const FBXBuffPlayContext& InContext)
+{
+	if (!InAsset || !InOwner)
+	{
+		return false;
+	}
+
+	// TODO: 根据项目需求补充具体校验逻辑(资产合法性、层数上限、Owner存活等)
+	return true;
 }
 
 void UBXBuffManager::RemoveBuff(int64 InID, int32 InLayerDelta)
@@ -284,6 +353,17 @@ void UBXBuffManager::RemoveBuff(int64 InID, int32 InLayerDelta)
 	{
 		InternalRemoveBuff(*Data, EBXBuffRemoveReason::BRR_Manual);
 	}
+}
+
+void UBXBuffManager::RemoveBuffWithReason(int64 InID, EBXBuffRemoveReason InReason)
+{
+	FBXBuffRuntimeData* Data = BuffRTDatas.Find(InID);
+	if (!Data || Data->bEarlyFinish)
+	{
+		return;
+	}
+
+	InternalRemoveBuff(*Data, InReason);
 }
 
 void UBXBuffManager::ChangeBuffLayer(int64 InID, int32 InLayerDelta)
@@ -334,6 +414,12 @@ void UBXBuffManager::ChangeBuffLayer(int64 InID, int32 InLayerDelta)
 
 	InternalRefreshBuffTasksByLayer(*Data, OldLayer, NewLayer);
 
+	// 服务器刷新复制快照(层数与各层到期时刻变化)
+	if (UBXBuffComponent* BuffComponent = GetOwnerBuffComponent(Data->TLRunTimeData.Owner))
+	{
+		BuffComponent->UpdateBuffReplicatedState(InID);
+	}
+
 	FBXEventBuffChanged Param;
 	Param.OldLayer = OldLayer;
 	Param.NewLayer = NewLayer;
@@ -364,6 +450,12 @@ void UBXBuffManager::ChangeBuffLevel(int64 InID, int32 InLevelDelta)
 
 	Data->CurrentLevel = NewLevel;
 
+	// 服务器刷新复制快照(等级变化)
+	if (UBXBuffComponent* BuffComponent = GetOwnerBuffComponent(Data->TLRunTimeData.Owner))
+	{
+		BuffComponent->UpdateBuffReplicatedState(InID);
+	}
+
 	FBXEventBuffChanged Param;
 	Param.OldLevel = OldLevel;
 	Param.NewLevel = NewLevel;
@@ -383,6 +475,12 @@ void UBXBuffManager::RefreshBuffLifetime(int64 InID)
 	for (float& LayerTime : Data->LayerRunTimes)
 	{
 		LayerTime = 0.0f;
+	}
+
+	// 服务器刷新复制快照(到期时刻重置)
+	if (UBXBuffComponent* BuffComponent = GetOwnerBuffComponent(Data->TLRunTimeData.Owner))
+	{
+		BuffComponent->UpdateBuffReplicatedState(InID);
 	}
 
 	BroadcastBuffEvent(*Data, BXGameplayTags::BXEvent_Buff_LifetimeRefreshed, FBXEventBuffChanged());
@@ -559,6 +657,18 @@ void UBXBuffManager::InternalRemoveBuff(FBXBuffRuntimeData& InOutData, EBXBuffRe
 	FBXEventBuffChanged Param;
 	Param.RemoveReason = static_cast<uint8>(InReason);
 	BroadcastBuffEvent(InOutData, BXGameplayTags::BXEvent_Buff_Removed, Param);
+
+	// 服务器端显式广播移除(所有移除路径统一收束点:手动/到期/层级耗尽),远端客户端同步移除
+	// 客户端本地实例被移除时不广播(Multicast RPC在客户端调用无效)
+	AActor* Owner = InOutData.TLRunTimeData.Owner;
+	if (Owner && Owner->GetNetMode() != NM_Client)
+	{
+		if (UBXBuffComponent* BuffComponent = Owner->FindComponentByClass<UBXBuffComponent>())
+		{
+			BuffComponent->MulticastRemoveBuff(InOutData.BuffID, static_cast<uint8>(InReason));
+			BuffComponent->RemoveBuffReplicatedState(InOutData.BuffID);
+		}
+	}
 }
 
 void UBXBuffManager::InternalRefreshBuffTasksByLayer(FBXBuffRuntimeData& InOutData, int32 InOldLayer, int32 InNewLayer)

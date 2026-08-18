@@ -138,4 +138,16 @@ namespace BXGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Buff_LayerChanged, "BXEvent.Buff.LayerChanged", "BUFF层级改变");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Buff_LevelChanged, "BXEvent.Buff.LevelChanged", "BUFF等级改变");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Buff_LifetimeRefreshed, "BXEvent.Buff.LifetimeRefreshed", "BUFF生命时长刷新");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Skill_Released, "BXEvent.Skill.Released", "技能已释放");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Skill_Finished, "BXEvent.Skill.Finished", "技能已结束(自然/中断/回滚,参数含结束原因)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Skill_PredictSuccess, "BXEvent.Skill.PredictSuccess", "技能预测成功");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Skill_PredictFailed, "BXEvent.Skill.PredictFailed", "技能预测失败");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Collision_Reported, "BXEvent.Collision.Reported", "碰撞结果已上报");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXSkillInput_ReleaseLocation, "BXSkillInput.ReleaseLocation", "技能输入 释放位置");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXSkillInput_ReleaseRotation, "BXSkillInput.ReleaseRotation", "技能输入 释放朝向");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXSkillInput_AimLocation, "BXSkillInput.AimLocation", "技能输入 瞄准位置");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXSkillInput_AimRotation, "BXSkillInput.AimRotation", "技能输入 瞄准朝向");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXSkillInput_LockParts, "BXSkillInput.LockParts", "技能输入 锁定部位列表");
 }

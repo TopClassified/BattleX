@@ -77,9 +77,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Buff")
 	int64 AddBuff(UBXBuffAsset* InAsset, AActor* InOwner, UPARAM(ref) FBXBuffPlayContext& InContext);
 
+	// 施加BUFF(支持外部传入指定ID,用于同步)
+	int64 AddBuffWithID(UBXBuffAsset* InAsset, AActor* InOwner, const FBXBuffPlayContext& InContext, int64 InBuffID);
+
+	// 服务器端校验添加BUFF
+	bool ServerValidateAddBuff(UBXBuffAsset* InAsset, AActor* InOwner, const FBXBuffPlayContext& InContext);
+
 	// 移除BUFF
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Buff")
 	void RemoveBuff(int64 InID, int32 InLayerDelta = 0);
+
+	// 移除BUFF(携带移除原因,网络同步路径用,保证本地事件Reason与服务器一致)
+	void RemoveBuffWithReason(int64 InID, EBXBuffRemoveReason InReason);
 
 	// 改变层数
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Buff")

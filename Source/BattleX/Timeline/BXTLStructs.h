@@ -206,6 +206,8 @@ public:
 		RunTime = 0.0f;
 		bEarlyFinish = true;
 		DynamicData.Reset();
+		ServerExtraLifeTimer = 0.0f;
+		bAwaitingClientCollision = false;
 	}
 
 public:
@@ -236,6 +238,14 @@ public:
 	// 自定义动态数据
 	UPROPERTY(Transient, BlueprintReadWrite)
 	FInstancedStruct DynamicData;
+
+	// 服务器端等待客户端碰撞结果的额外生命计时(<=0代表不在等待)
+	UPROPERTY(Transient)
+	float ServerExtraLifeTimer = 0.0f;
+
+	// 服务器端是否正在等待客户端上报碰撞结果
+	UPROPERTY(Transient)
+	bool bAwaitingClientCollision = false;
 };
 
 

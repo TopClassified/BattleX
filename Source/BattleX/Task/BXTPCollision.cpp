@@ -5,7 +5,30 @@
 #include "BXMeleeWeapon.h"
 #include "BXGearComponent.h"
 #include "BXCharacterMovementComponent.h"
+#include "BXSettings.h"
+#include "BXSkillComponent.h"
 
+
+
+// 是否为"服务器端且服务器碰撞检测已关闭"(此时碰撞检测由拥有连接的客户端执行并上报)
+static bool IsServerWithoutCollisionCheck(const FBXTLRunTimeData& InRTData)
+{
+	const UBXSettings* Settings = GetDefault<UBXSettings>();
+	if (!Settings || Settings->bServerCollisionCheck)
+	{
+		return false;
+	}
+
+	ENetMode NetMode = InRTData.Owner ? InRTData.Owner->GetNetMode() : NM_Standalone;
+	ENetRole LocalRole = InRTData.Owner ? InRTData.Owner->GetLocalRole() : ROLE_Authority;
+	return (NetMode == NM_DedicatedServer) || (NetMode == NM_ListenServer && LocalRole == ROLE_Authority);
+}
+
+// 是否为"拥有连接的客户端"(可调用Server RPC上报碰撞结果)
+static bool IsAutonomousClient(const FBXTLRunTimeData& InRTData)
+{
+	return InRTData.Owner && InRTData.Owner->GetNetMode() == NM_Client && InRTData.Owner->GetLocalRole() == ROLE_AutonomousProxy;
+}
 
 
 bool UBXTPCollision::CheckCoolDownCompleted(UBXTCollision* InTask, const FHitResult& InHitResult, float InCheckTime, UPARAM(ref) FBXTPCollisionContext& InOutRTData)
@@ -117,6 +140,20 @@ void UBXTPTrackHitBox::Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData&
 		return;
 	}
 
+	// 服务器端碰撞检测开关
+	if (IsServerWithoutCollisionCheck(InOutRTData))
+	{
+		// 服务器跳过实际碰撞检测,标记等待客户端上报
+		if (!InOutRTTData.bAwaitingClientCollision)
+		{
+			const UBXSettings* Settings = GetDefault<UBXSettings>();
+			InOutRTTData.bAwaitingClientCollision = true;
+			InOutRTTData.ServerExtraLifeTimer = Settings ? Settings->CollisionTaskServerExtraLife : 0.0f;
+		}
+		InOutRTTData.NextTick = 0.0f;
+		return;
+	}
+
 	// 获取任务的自定义数据结构
 	FBXTPTrackHitBoxContext& TPC = InOutRTTData.DynamicData.GetMutable<FBXTPTrackHitBoxContext>();
 	if (TPC.ShapeComponents.Num() <= 0)
@@ -137,6 +174,12 @@ void UBXTPTrackHitBox::End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& In
 {
 	UBXTTrackHitBox* Task = Cast<UBXTTrackHitBox>(InOutRTTData.Task);
 	if (!Task)
+	{
+		return;
+	}
+
+	// 服务器端等待客户端碰撞结果或已关闭碰撞检测时,跳过结束时碰撞检测(结果由客户端上报)
+	if (InOutRTTData.bAwaitingClientCollision || IsServerWithoutCollisionCheck(InOutRTData))
 	{
 		return;
 	}
@@ -330,6 +373,16 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 	{
 		UBXTProcessor::AddPendingTask(InOutRTData, InOutRTSData, InOutRTTData, Scope, BXGameplayTags::BXTEvent_Success);
 		UBXTProcessor::WriteContextData<FBXTHitResults>(InOutRTData, FullIndex, BXGameplayTags::BXTData_ColResults1, Scope, FinalResults);
+
+		// 客户端上报碰撞结果给服务器(服务器关闭碰撞检测时,由拥有连接的客户端结果驱动服务器侧流程)
+		const UBXSettings* ReportSettings = GetDefault<UBXSettings>();
+		if (IsAutonomousClient(InOutRTData) && ReportSettings && !ReportSettings->bServerCollisionCheck)
+		{
+			if (UBXSkillComponent* SkillComponent = InOutRTData.Owner->FindComponentByClass<UBXSkillComponent>())
+			{
+				SkillComponent->ServerReportCollisionResults(InOutRTData.ID, FullIndex, BXGameplayTags::BXTData_ColResults1, FinalResults);
+			}
+		}
 	}
 	// 触发失败事件
 	else

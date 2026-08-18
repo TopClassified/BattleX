@@ -107,9 +107,18 @@ public:
 	// 改变时间轴更新速率
 	UFUNCTION(BlueprintCallable)
 	void ChangeTimelineTickRate(int64 InID, float InRate);
+
+	// 改变外部持有的时间轴运行数据的更新速率
+	void ChangeTimelineRunTimeDataTickRate(FBXTLRunTimeData& InOutData, float InRate);
 	
 	// 更新时间轴
 	void UpdateTimeline(float InDeltaTime);
+
+	// 更新外部持有的时间轴运行数据(供SkillManager/BuffManager等外部容器复用完整时间轴更新管线)
+	void UpdateTimelineRunTimeData(FBXTLRunTimeData& InOutData, float InDeltaTime);
+
+	// 初始化RunningSections并触发首帧KeyFrame执行(供PlayTimeline和外部容器复用)
+	void StartTimelineSections(FBXTLRunTimeData& InOutData);
 
 	// 结束时间轴片段
 	void FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSectionRTData& InOutSectionData, EBXTLFinishReason InReason);

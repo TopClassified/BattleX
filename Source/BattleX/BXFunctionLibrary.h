@@ -29,6 +29,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Time")
 	static int64 GetUtcMillisecond();
 
+	// 获取服务器世界时间（毫秒）。服务器/单机返回本地世界时间；客户端返回经引擎时间同步校正的估算值。
+	// 网络时间戳校验与延迟估算统一使用本函数，禁止跨机器直接比较本地墙钟。
+	UFUNCTION(BlueprintCallable, Category = "Time", meta = (WorldContext = "InWorldContext"))
+	static int64 GetServerWorldTimeMilliseconds(UObject* InWorldContext);
+
 	// 获取游戏运行时间（微秒）
 	UFUNCTION(BlueprintCallable, Category = "Time")
 	static int64 GetGameMicrosecond();

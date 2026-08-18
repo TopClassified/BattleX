@@ -18,7 +18,7 @@ public class BattleX : ModuleRules
 		
 		PrivateIncludePaths.AddRange
 		(
-			new string[] 
+			new string[]
 			{
                 "BattleX",
                 "BattleX/Task",
@@ -34,6 +34,8 @@ public class BattleX : ModuleRules
                 "BattleX/Condition",
                 "BattleX/Buff",
                 "BattleX/DecisionTree",
+                "BattleX/Skill",
+                "BattleX/Net",
             }
 		);
 		
@@ -58,6 +60,7 @@ public class BattleX : ModuleRules
 			{
                 "GameplayTags",
                 "StructUtils",
+                "NetCore",
             }
 		);
 		

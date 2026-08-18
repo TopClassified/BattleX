@@ -2,6 +2,7 @@
 
 #include "BXTask.h"
 #include "BXTLAsset.h"
+#include "GameFramework/GameStateBase.h"
 #include "Materials/MaterialExpressionChannelMaskParameterColor.h"
 
 #if WITH_EDITOR
@@ -51,6 +52,35 @@ int64 UBXFunctionLibrary::GetUtcMillisecond()
 	int64 DeltaTicks = Current.GetTicks() - FDateTime(1970, 1, 1).GetTicks();
 
 	return DeltaTicks / ETimespan::TicksPerMillisecond;
+}
+
+int64 UBXFunctionLibrary::GetServerWorldTimeMilliseconds(UObject* InWorldContext)
+{
+	if (!IsValid(InWorldContext))
+	{
+		return 0;
+	}
+
+	UWorld* World = InWorldContext->GetWorld();
+	if (!IsValid(World))
+	{
+		return 0;
+	}
+
+	// 服务器/单机:直接使用本地世界时间
+	if (World->GetNetMode() != NM_Client)
+	{
+		return static_cast<int64>(World->GetTimeSeconds() * 1000.0);
+	}
+
+	// 客户端:经引擎时间同步校正的服务器世界时间估算值(GetServerWorldTimeSeconds内部已含偏移)
+	const AGameStateBase* GameState = World->GetGameState();
+	if (!GameState)
+	{
+		return 0;
+	}
+
+	return static_cast<int64>(GameState->GetServerWorldTimeSeconds() * 1000.0);
 }
 
 int64 UBXFunctionLibrary::GetGameMicrosecond()

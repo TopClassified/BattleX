@@ -8,7 +8,7 @@
 #include "BXSkillAsset.h"
 #include "BXTask.h"
 #include "BXTProcessor.h"
-#include "BXTLComponent.h" 
+#include "BXTLComponent.h"
 
 
 
@@ -253,16 +253,9 @@ int64 UBXTLManager::PlayTimeline(UBXTLAsset* InAsset, AActor* InOwner, UPARAM(re
 		NewData.DynamicDatas.Add(FBXTLDynamicDataSearchKey(-1, It->Key), It->Value);
 	}
 
-	// 开始这些时间片段
-	for (int32 i = 0; i < InAsset->StartSectionIndexes.Num(); ++i)
-	{
-		FBXTLSectionRTData& NewSectionData = NewData.RunningSections.AddDefaulted_GetRef();
-		NewSectionData.Index = InAsset->StartSectionIndexes[i];
-	}
+	// 初始化RunningSections并触发首帧KeyFrame执行
+	StartTimelineSections(NewData);
 
-	// 立刻更新一次
-	InternalUpdateTimeline(NewData, 0.0f);
-	
 	return NewID;
 }
 
@@ -335,6 +328,51 @@ void UBXTLManager::ChangeTimelineTickRate(int64 InID, float InRate)
 
 				Processor->ChangeTaskTickRate(TaskData, InRate);
 			}
+		}
+	}
+}
+
+void UBXTLManager::ChangeTimelineRunTimeDataTickRate(FBXTLRunTimeData& InOutData, float InRate)
+{
+	InRate = FMath::Max(InRate, 0.0001f);
+
+	InOutData.RunRate = InRate;
+	UBXTLAsset* Asset = InOutData.Timeline;
+	if (!Asset)
+	{
+		return;
+	}
+
+	for (int32 i = 0; i < InOutData.RunningSections.Num(); ++i)
+	{
+		FBXTLSectionRTData& SectionData = InOutData.RunningSections[i];
+		if (!Asset->Sections.IsValidIndex(SectionData.Index))
+		{
+			continue;
+		}
+
+		const FBXTLSection& Section = Asset->Sections[SectionData.Index];
+		for (int32 j = 0; j < SectionData.RunningTasks.Num(); ++j)
+		{
+			FBXTLTaskRTData& TaskData = SectionData.RunningTasks[j];
+			if (!Section.TaskList.IsValidIndex(TaskData.Index))
+			{
+				continue;
+			}
+
+			UBXTask* Task = Section.TaskList[TaskData.Index];
+			if (!Task)
+			{
+				continue;
+			}
+
+			UBXTProcessor* Processor = GetTLTProcessorByTLTClass(Task->GetClass());
+			if (!Processor)
+			{
+				continue;
+			}
+
+			Processor->ChangeTaskTickRate(TaskData, InRate);
 		}
 	}
 }
@@ -419,6 +457,30 @@ void UBXTLManager::UpdateTimeline(float InDeltaTime)
 			It.RemoveCurrent();
 		}
 	}
+}
+
+void UBXTLManager::UpdateTimelineRunTimeData(FBXTLRunTimeData& InOutData, float InDeltaTime)
+{
+	InternalUpdateTimeline(InOutData, InDeltaTime);
+}
+
+void UBXTLManager::StartTimelineSections(FBXTLRunTimeData& InOutData)
+{
+	UBXTLAsset* Asset = InOutData.Timeline;
+	if (!Asset)
+	{
+		return;
+	}
+
+	// 初始Section填充RunningSections
+	for (int32 i = 0; i < Asset->StartSectionIndexes.Num(); ++i)
+	{
+		FBXTLSectionRTData& NewSectionData = InOutData.RunningSections.AddDefaulted_GetRef();
+		NewSectionData.Index = Asset->StartSectionIndexes[i];
+	}
+
+	// 立刻更新一次,通过KeyFrame触发Task首帧执行
+	InternalUpdateTimeline(InOutData, 0.0f);
 }
 
 void UBXTLManager::FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSectionRTData& InOutSectionData, EBXTLFinishReason InReason)
@@ -766,17 +828,28 @@ void UBXTLManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InD
 		// 更新时间片段运行时间
 		SectionData.RunTime += FixedDeltaTime;
 
+		// 是否存在等待客户端碰撞结果的Task(服务器端):延迟自然结束,等待上报或ExtraLife超时
+		bool bHasAwaitingCollisionTask = false;
+		for (const FBXTLTaskRTData& TaskData : SectionData.RunningTasks)
+		{
+			if (TaskData.bAwaitingClientCollision)
+			{
+				bHasAwaitingCollisionTask = true;
+				break;
+			}
+		}
+
 		// 结束时间片段
 		if (bCloseSectionJump)
 		{
-			if (SectionData.RunTime >= Section.Duration || SectionData.bEarlyFinish)
+			if ((SectionData.RunTime >= Section.Duration && !bHasAwaitingCollisionTask) || SectionData.bEarlyFinish)
 			{
 				FinishTimelineSection(InOutData, SectionData, EBXTLFinishReason::FR_EndOfLife);
 			}
 		}
 		else
 		{
-			if (SectionData.RunTime >= Section.Duration || SectionData.bEarlyFinish || SectionData.ForceJumpSection >= 0)
+			if ((SectionData.RunTime >= Section.Duration && !bHasAwaitingCollisionTask) || SectionData.bEarlyFinish || SectionData.ForceJumpSection >= 0)
 			{
 				if (SectionData.bEarlyFinish || SectionData.ForceJumpSection >= 0)
 				{
@@ -884,7 +957,19 @@ void UBXTLManager::UpdateTimelineSectionTasks(FBXTLRunTimeData& InOutData, FBXTL
 
 		if (UBXTProcessor::IsTaskCompleted(TaskData, FinishReason))
 		{
-			Processor->EndTask(InOutData, InOutSectionData, TaskData, FinishReason);
+			// 服务器端等待客户端碰撞结果的Task不立即结束,递减额外生命计时
+			if (TaskData.bAwaitingClientCollision)
+			{
+				TaskData.ServerExtraLifeTimer -= InDeltaTime;
+				if (TaskData.ServerExtraLifeTimer <= 0.0f)
+				{
+					Processor->EndTask(InOutData, InOutSectionData, TaskData, FinishReason);
+				}
+			}
+			else
+			{
+				Processor->EndTask(InOutData, InOutSectionData, TaskData, FinishReason);
+			}
 		}
 	}
 }

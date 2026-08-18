@@ -18,7 +18,7 @@ public class BattleXEditor : ModuleRules
 				
 		PrivateIncludePaths.AddRange
 		(
-			new string[] 
+			new string[]
 			{
 				"BattleX",
                 "BattleX/Task",
@@ -34,6 +34,8 @@ public class BattleXEditor : ModuleRules
                 "BattleX/Collision",
                 "BattleX/Condition",
                 "BattleX/DecisionTree",
+                "BattleX/Skill",
+                "BattleX/Net",
 
                 "BattleXEditor",
                 "BattleXEditor/CustomLayout",
