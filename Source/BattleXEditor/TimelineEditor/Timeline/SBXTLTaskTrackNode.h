@@ -143,7 +143,7 @@ private:
 
 	float TaskDurationSizeX;
 
-	float NodeDuration;
+	float NodeDuration = 0.0f;
 
 	FVector2D ScreenPosition;
 

@@ -357,7 +357,8 @@ bool UBXTLAsset::RemoveGroup(int32 SectionID, int32 GroupID)
 	}
 	FBXTLTaskGroup& Group = Section.Groups[GroupID];
 
-	for (int32 i = 0; i < Group.TaskList.Num(); ++i)
+	// 倒序遍历:RemoveTask内部对TaskList.Remove左移元素,正序递增会跳过相邻Task导致依赖清理遗漏
+	for (int32 i = Group.TaskList.Num() - 1; i >= 0; --i)
 	{
 		RemoveTask(SectionID, GroupID, Group.TaskList[i].Get());
 	}
@@ -384,7 +385,8 @@ bool UBXTLAsset::RemoveSection(int32 SectionID)
 	}
 	FBXTLSection& Section = Sections[SectionID];
 
-	for (int32 i = 0; i < Section.Groups.Num(); ++i)
+	// 倒序遍历:RemoveGroup内部对Groups.RemoveAt左移元素,正序递增会跳过相邻Group导致组清理遗漏
+	for (int32 i = Section.Groups.Num() - 1; i >= 0; --i)
 	{
 		RemoveGroup(SectionID, i);
 	}

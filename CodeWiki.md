@@ -1,7 +1,7 @@
 # BattleX Code Wiki
 
 > 高性能动作游戏技能系统 · Unreal Engine 5 插件
-> 仓库根：`BattleX/`  ·  版本：1.2 (Beta)  ·  文档生成日期：2026-08-11
+> 仓库根：`BattleX/`  ·  版本：1.3 (Beta)  ·  文档更新日期：2026-08-19
 
 ---
 
@@ -24,11 +24,14 @@
    - 4.11 [Animation 动画系统](#411-animation-动画系统)
    - 4.12 [Unit / Lock 系统（占位）](#412-unit--lock-系统占位)
    - 4.13 [Buff 状态系统（复用 Timeline）](#413-buff-状态系统复用-timeline)
+   - 4.14 [Skill / Net 网络同步系统（客户端预测与服务器权威）](#414-skill--net-网络同步系统客户端预测与服务器权威)
 5. [编辑器模块](#5-编辑器模块)
 6. [依赖关系](#6-依赖关系)
 7. [项目运行方式](#7-项目运行方式)
 8. [关键数据流与执行流程](#8-关键数据流与执行流程)
 9. [优化建议](#9-优化建议)
+10. [附录 A：关键文件速查表](#附录-a关键文件速查表)
+11. [附录 B：核心枚举速查](#附录-b核心枚举速查)
 
 ---
 
@@ -43,7 +46,7 @@
 | **高性能** | 单点 `UBXTLManager` 集中 Tick；任务处理器实例缓存；InstancedStruct 零拷贝传递动态数据；按 Bitmask 选择性启用 C++/BP 执行路径 |
 | **数据驱动** | 技能 = `UBXTLAsset` 资产；任务 = `UBXTask` 内联实例；决策树 = `UBXDecisionTreeTemplate` 资产 |
 | **可扩展** | Task / Processor / BehaviorAgent / StateMachine / Condition 均为 `Abstract + Blueprintable + EditInlineNew`，支持 C++ 与蓝图双轨扩展 |
-| **网络友好** | Task 通过 `EBXTNetType` Bitmask 区分权威端/自主端/模拟端执行；RootMotion 支持网络复制 |
+| **网络友好** | Skill/Buff 客户端预测 + 服务器权威校验 + Reliable 广播 + 加速弥补；Task 通过 `EBXTNetType` Bitmask 区分权威端/自主端/模拟端执行；`COND_InitialOnly` 快照支持 Late Join 重建；服务器可关闭碰撞检测改为客户端上报 |
 | **编辑器集成** | 自定义资产类型 + 工作流应用 (WorkflowOrientedApp) 编辑器 + 自绘时间轴控件 + 图编辑器 |
 
 ### 插件清单（`BattleX.uplugin`）
@@ -83,6 +86,16 @@
 │   │  │   Buff (状态系统) ──复用──> Timeline / Task          │  │  │
 │   │  │   (生命时长 / 层级 / 共存 / 事件广播)                  │  │  │
 │   │  └──────────────────────────────────────────────────────┘  │  │
+│   │                                                             │
+│   │  ┌──────────────────────────────────────────────────────┐  │  │
+│   │  │   Skill (技能系统) ──复用──> Timeline / Task         │  │  │
+│   │  │   (释放条件 / 冷却 / 预测 / 加速)                      │  │  │
+│   │  └──────────────────────────────────────────────────────┘  │  │
+│   │                                                             │  │
+│   │  ┌──────────────────────────────────────────────────────┐  │  │
+│   │  │   Net (同步框架) ──服务于──> Skill / Buff            │  │  │
+│   │  │   (预测头/载荷 / 复制快照 / 资产ID注册表)              │  │  │
+│   │  └──────────────────────────────────────────────────────┘  │  │
 │   └─────────────────────────────────────────────────────────────┘  │
 │   ┌─────────────────────────────────────────────────────────────┐  │
 │   │                  BattleXEditor (UncookedOnly)               │  │
@@ -93,9 +106,10 @@
 ```
 
 **核心抽象**：
-- **技能 = 时间轴资产**：一个技能由若干 `FBXTLSection`（时间片段）组成，每个片段包含若干 `UBXTask`（任务）按时间排布。
+- **技能 = 时间轴资产**：一个技能由若干 `FBXTLSection`（时间片段）组成，每个片段包含若干 `UBXTask`（任务）按时间排布。技能资产 `UBXSkillAsset` 与 BUFF 资产 `UBXBuffAsset` 均派生自 `UBXTLAsset`，分别叠加释放配置（冷却/锁定/释放条件）与 BUFF 配置（层级/共存/生命时长）。
 - **任务 = 原子操作 + 处理器**：`UBXTask` 是配置数据（蓝图可编辑），`UBXTProcessor` 是运行时执行器（C++/蓝图双实现）。每个 Task 类对应一个 Processor 类（通过 `UBXSettings::TaskProcessorMap` 配置）。
 - **数据流 = 上下文数据作用域图**：任务通过 `WriteContextData/ReadContextData` 在 `FBXTLRunTimeData::DynamicDatas` 中以 `(Task全量索引, 数据Tag, 作用域)` 为键存取动态数据，作用域通过 `ScopeGraph` 形成父子链，支持跨任务数据传递与作用域隔离。
+- **同步 = 服务器权威 + 客户端预测**：技能由 `UBXSkillComponent` 承载 RPC（预测→校验→确认/回滚→广播），BUFF 由 `UBXBuffComponent` 承载（请求→钳制校验→广播）；跨端资产引用一律传资产 ID，由 `UBXTLManager` 注册表解析；运行状态通过可复制投影快照支持 Late Join 重建（见 [4.14](#414-skill--net-网络同步系统客户端预测与服务器权威)）。
 
 ---
 
@@ -117,7 +131,7 @@ BattleX/
     │   ├── BXFunctionLibrary.{h,cpp}  # 工具函数库
     │   ├── BXEnums.h / BXStructs.h / BXCurves.h
     │   ├── Animation/           # 动画实例与动画库
-    │   ├── Buff/                # BUFF状态系统（资产、管理器、组件，复用Timeline/Task）
+    │   ├── Buff/                # BUFF状态系统（资产、管理器、组件、复制快照，复用Timeline/Task）
     │   ├── Collision/           # 碰撞检测、形状组件、受击反应
     │   ├── Condition/           # 条件系统（基类、枚举、管理器、派生缓存）
     │   ├── DecisionTree/        # 决策树（含 BeatenTree / CombatTree + 决策树系列条件）
@@ -125,9 +139,11 @@ BattleX/
     │   ├── Gear/                # 装备系统（含冷兵器）
     │   ├── Lock/                # 锁定系统（占位）
     │   ├── Movement/            # 角色移动与 RootMotion
+    │   ├── Net/                 # 网络同步基础（同步枚举、RPC结构、技能复制快照）
+    │   ├── Skill/               # 技能系统（资产、管理器、组件、枚举、结构，复用Timeline/Task）
     │   ├── State/               # 状态机与行为代理
     │   ├── Task/                # 任务系统（Task + Processor + 具体任务 + FlowControl + Task系列条件）
-    │   ├── Timeline/            # 时间轴系统（资产、管理器、组件）
+    │   ├── Timeline/            # 时间轴系统（资产、管理器、组件、复制投影）
     │   └── Unit/                # 投射物/法术场（占位）
     └── BattleXEditor/           # 编辑器模块
         ├── BattleXEditor.{h,cpp}     # 模块入口（注册资产类型/可视化器）
@@ -146,17 +162,17 @@ BattleX/
 
 ### 4.1 基础设施层
 
-#### `UBXManager` ([BXManager.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BXManager.h))
+#### `UBXManager` ([BXManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BXManager.h))
 
 所有全局管理器的基类，提供 `Initialize()` / `Deinitialize()` 生命周期钩子。子类包括 `UBXTLManager`、`UBXEventManager`、`UBXConditionManager` 等。
 
-#### `UBXSubSystem` ([BXSubSystem.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BXSubSystem.h))
+#### `UBXSubSystem` ([BXSubSystem.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BXSubSystem.h))
 
 继承自 `UGameInstanceSubsystem`。在 `Initialize` 时按 `UBXSettings::ManagerClasses` 列表顺序实例化所有 Manager，存入 `ManagerMap`。提供模板方法 `GetManagerByClass<T>()`，支持按基类查询。所有 Manager 通过 `UBXManager::Get(UObject* WorldContext)` 静态方法访问。
 
-#### `UBXSettings` ([BXSettings.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BXSettings.h))
+#### `UBXSettings` ([BXSettings.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BXSettings.h))
 
-继承自 `UDeveloperSettings`（`Config=Game`）。关键配置项：
+继承自 `UDeveloperSettings`（`Config=BattleX`）。关键配置项：
 
 | 字段 | 作用 |
 |---|---|
@@ -164,8 +180,16 @@ BattleX/
 | `CollisionDebugDuration` | 碰撞调试绘制时长（默认 1.0s） |
 | `TaskProcessorMap` | Task 类 → Processor 类的映射（驱动任务执行） |
 | `TaskCustomDataMap` | Task 类 → 自定义动态数据 UScriptStruct 的映射 |
+| `SkillPredictMaxDuration` | 客户端预测最长时长（秒，默认 0.3，超时自动回滚） |
+| `bServerAccelerateOnReceive` / `ServerAccelerateRate` | 服务器收到释放请求时是否加速弥补及倍率（默认开 / 2.0） |
+| `bClientAccelerateOnBroadcast` / `ClientAccelerateRate` | 其他客户端收到广播时是否加速弥补及倍率（默认开 / 2.0） |
+| `bServerCollisionCheck` | 服务器是否做碰撞检测（默认关，由 Autonomous 客户端上报） |
+| `CollisionTaskServerExtraLife` | 服务器等待客户端碰撞结果的额外延迟销毁时长（秒，默认 0.15） |
+| `SkillRequestMaxAgeMs` | 释放请求最大年龄（服务器世界时间域毫秒，默认 500，双向校验防重放/伪造） |
 
-#### `BXGameplayTags` ([BXGameplayTags.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BXGameplayTags.h))
+配置文件为插件自带的 `Config/DefaultBattleX.ini`（`Config=BattleX`），示例：`TaskProcessorMap` 注册蓝图 Task（`BP_BXT_PlayAnimation` → `BXTPPlayAnimation` 等）、`TaskCustomDataMap` 注册对应上下文结构（`BXTPPlayAnimationContext` 等）。
+
+#### `BXGameplayTags` ([BXGameplayTags.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BXGameplayTags.h))
 
 使用 `UE_DECLARE_GAMEPLAY_TAG_EXTERN` 声明的原生 GameplayTag 命名空间，是整个系统的" vocabulary"。主要包括：
 
@@ -181,13 +205,16 @@ BattleX/
 - **时间轴数据标签**：`BXTData_Transform`、`BXTData_ColResults1~5`
 - **时间轴事件标签**：`BXTEvent_Start/End/Success/Failure/Trigger`
 - **Switch 分支事件标签**：`BXTEvent_Branch01~16`（16 个编号分支）、`BXTEvent_BranchDefault`（默认分支，用于 `UBXTSwitch` 流程控制任务）
+- **技能事件标签**：`BXEvent_Skill_Released`（释放）、`BXEvent_Skill_Finished`（结束）、`BXEvent_Skill_PredictSuccess` / `BXEvent_Skill_PredictFailed`（预测成功/失败）
+- **碰撞事件标签**：`BXEvent_Collision_Reported`（碰撞结果上报）
+- **技能输入标签**：`BXSkillInput_ReleaseLocation` / `BXSkillInput_ReleaseRotation`（释放位置/朝向，自动补充）、`BXSkillInput_AimLocation` / `BXSkillInput_AimRotation`（瞄准位置/朝向）、`BXSkillInput_LockParts`（锁定部位）
 
 Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `BattleX/Config/Tags`。
 
-#### `UBXFunctionLibrary` ([BXFunctionLibrary.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BXFunctionLibrary.h))
+#### `UBXFunctionLibrary` ([BXFunctionLibrary.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BXFunctionLibrary.h))
 
 通用工具函数库，分类组织：
-- **时间/ID**：`GetUniqueID`、`GetClientTimeSeconds`、`GetUtcMillisecond`、`GetGameMicrosecond`、`AlignTime`
+- **时间/ID**：`GetUniqueID`、`GetClientTimeSeconds`、`GetUtcMillisecond`、`GetGameMicrosecond`、`AlignTime`、`GetServerWorldTimeMilliseconds`（服务器世界时间域毫秒，网络同步时间戳统一入口，依赖引擎时间同步）
 - **GameplayTag**：`GetLastGameplayTagSubName`
 - **反射拷贝**：`CopyStruct`、`CopyObject`、`CopyData`
 - **时间轴**：`GetTaskFullIndex`、`GetSoftTaskFullIndex`（计算任务在资产中的全量索引）
@@ -201,7 +228,7 @@ Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `Battle
 
 时间轴系统是 BattleX 的核心。一个 **技能** 就是一个 `UBXSkillAsset`（派生自 `UBXTLAsset`），它由若干 **Section（时间片段）** 组成，每个 Section 内按时间排布若干 **Task（任务）**。
 
-#### `UBXTLAsset` ([BXTLAsset.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXTLAsset.h))
+#### `UBXTLAsset` ([BXTLAsset.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Timeline/BXTLAsset.h))
 
 继承自 `UPrimaryDataAsset`。技能/时间轴资产的静态数据容器。
 
@@ -227,17 +254,26 @@ Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `Battle
 | `KeyFrames` | 关键帧列表（用于优化任务触发） |
 | `Groups` | 编辑器内的任务分组（WITH_EDITORONLY_DATA） |
 
-#### `UBXSkillAsset` ([BXSkillAsset.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXSkillAsset.h))
+#### `UBXSkillAsset` ([BXSkillAsset.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Skill/BXSkillAsset.h))
 
-继承自 `UBXTLAsset`，技能资产的语义别名。当前未额外扩展字段，但作为类型标识便于资产分类与编辑器注册。
+继承自 `UBXTLAsset`，技能资产。复用父类 Sections/TaskList，叠加释放配置：
 
-#### `UBXTLManager` ([BXTLManager.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXTLManager.h)) ★
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `ReleaseConditions` | `TArray<UBXTaskCondition*>` | 释放条件列表（服务器校验用，复用 TaskCondition 体系） |
+| `Cooldown` | `float` | 默认冷却时长（秒，-1 代表无冷却） |
+| `LockType` | `EBXSkillLockType` | 锁定类型（None/Target/Location/Direction，决定释放时附带的数据） |
+
+运行时由 `UBXSkillManager` 驱动（见 [4.14](#414-skill--net-网络同步系统客户端预测与服务器权威)）。
+
+#### `UBXTLManager` ([BXTLManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Timeline/BXTLManager.h)) ★
 
 **整个技能系统的运行时中枢**。继承自 `UBXManager` 与 `FTickableGameObject`，是单例（通过 `UBXSubSystem` 管理）。
 
 **核心职责**：
-- **资产索引**：`CollectTimelineAssetPath()` 启动时扫描 AssetRegistry，建立 ID → 资源路径映射表 `TimelineAssetMap`；提供 `GetTimelineAssetByID` / `GetSkillAssetByID`
+- **资产注册表**：`CollectTimelineAssetPath()` 启动时扫描 AssetRegistry，建立 ID → 资源路径映射表 `TimelineAssetMap`；提供 `GetTimelineAssetByID` / `GetSkillAssetByID`（网络同步中资产引用一律传 ID，由注册表解析，防客户端伪造对象引用）
 - **运行时驱动**：每帧 `Tick` 调用 `UpdateTimeline(DeltaTime)`，遍历所有 `TimelineRTDatas` 更新运行数据
+- **外部容器复用**：`UpdateTimelineRunTimeData` / `StartTimelineSections` / `ChangeTimelineRunTimeDataTickRate` 等接口供 `UBXSkillManager` / `UBXBuffManager` 复用完整时间轴更新管线（运行数据存于外部容器）
 - **任务处理器缓存**：`TimelineTaskProcessors` 缓存 Task 类 → Processor 实例的映射（`GetTLTProcessorByTLTClass`）
 - **垃圾清理**：`GCInterval`（默认 20s）周期性调用 `CleanTimelineTrash`
 
@@ -247,31 +283,51 @@ Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `Battle
 |---|---|
 | `PlayTimeline(Asset, Owner, Context)` | 播放时间轴，生成唯一 ID，创建 `FBXTLRunTimeData`，立即更新一次 |
 | `StopTimeline(ID, Reason)` | 停止指定时间轴，通知拥有者组件 |
+| `GetTimelineAssetByID(ID)` / `GetSkillAssetByID(ID)` | 资产注册表查询（返回 TSoftObjectPtr，未加载时调用方 LoadSynchronous） |
 | `ChangeTimelineTickRate(ID, Rate)` | 改变运行速率（影响所有运行中任务） |
+| `ChangeTimelineRunTimeDataTickRate(RTData, Rate)` | 改变外部持有运行数据的速率（加速弥补用） |
 | `UpdateTimeline(DeltaTime)` | 遍历更新所有运行数据，检查是否需要结束 |
+| `UpdateTimelineRunTimeData(RTData, DeltaTime)` | 更新外部持有的运行数据（Skill/Buff Manager 复用） |
+| `StartTimelineSections(RTData)` | 初始化 RunningSections 并触发首帧 KeyFrame（外部容器复用） |
 | `FinishTimelineSection(...)` | 结束时间片段，处理待执行任务 |
 | `ProcessTimelineSectionPendingTasks(...)` | 处理片段内待执行任务队列 |
-| `ExecuteTimelineTask(...)` | 执行单个任务（创建 Processor、StartTask） |
+| `ExecuteTimelineTask(...)` | 执行单个任务（创建 Processor、StartTask，Skill/Buff 复用） |
 
-#### `UBXTLComponent` ([BXTLComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXTLComponent.h))
+#### `UBXTLComponent` ([BXTLComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Timeline/BXTLComponent.h))
 
 挂载在 Actor 上的时间轴组件，是对 `UBXTLManager` 的薄封装。持有 `TimelineRunTimeDataIDs` 列表，提供 `PlayTimeline` / `StopTimeline` / `IsTimelineRunning` 等蓝图接口，并通过 `ScriptReceiveTimelineWillFinish` 暴露结束回调给蓝图。
 
-#### 关键运行时数据结构（[BXTLStructs.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXTLStructs.h)）
+#### 关键运行时数据结构（[BXTLStructs.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Timeline/BXTLStructs.h)）
 
 | 结构体 | 说明 |
 |---|---|
 | `FBXTLPlayContext` | 播放上下文：Instigator / Triggerer / LockParts / InputDatas |
 | `FBXTLRunTimeData` | 时间轴运行时数据：Timeline / ID / Owner / RunningSections / **DynamicDatas** / **ScopeGraph** |
 | `FBXTLSectionRTData` | 片段运行时数据：Index / RunTime / LoopCount / RunningTasks / PendingTasks / BroadcastTasks |
-| `FBXTLTaskRTData` | 任务运行时数据：Task / Index / ParentScope / RunTime / NextTick / **DynamicData (FInstancedStruct)** |
+| `FBXTLTaskRTData` | 任务运行时数据：Task / Index / ParentScope / RunTime / NextTick / **DynamicData (FInstancedStruct)** / ServerExtraLifeTimer / bAwaitingClientCollision（服务器等待客户端碰撞上报的额外生命） |
 | `FBXTLTaskHostingData` | 托管任务数据（脱离时间轴独立运行的任务） |
 | `FBXTLDynamicDataSearchKey` | 动态数据查询键：(Index, Tag, Scope)，含哈希函数 |
 | `FBXTLKeyFrame` | 关键帧：Time + Tasks 索引列表 |
 | `FBXTLPendingTaskInfo` | 待执行任务信息：LocalIndex / ParentScope / Time |
 | `FBXTLBroadcastTaskInfo` | 待广播任务信息：FullIndex / Tag |
+| `FBXTLRunTimeDataReplicated` 系列 | 运行数据可复制投影（见下） |
 
 **作用域图（ScopeGraph）** 是数据流的核心机制：`TMap<int64, FInt64Vector2>`，Key 是作用域 ID，Value 的 X 是父作用域 ID、Y 是 Task 全量索引。读取数据时沿父链向上查找，实现作用域隔离与数据继承。
+
+#### 运行数据可复制投影（[BXTLReplicated.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Timeline/BXTLReplicated.h)）
+
+`FBXTLTaskRTDataReplicated` / `FBXTLSectionRTDataReplicated` / `FBXTLRunTimeDataReplicated` 将运行数据中的指针（Timeline→TimelineID、Task→Index）与不可复制类型转换为可序列化字段，用于 Late Join 快照：
+
+- `BXToTLRunTimeProjection(Source, Target, bSimulatedOnly)`：运行数据 → 投影（服务器 PreReplication 调用；`bSimulatedOnly=true` 时按 `Task.NetTypes` 过滤，仅保留含模拟端位的 Task，避免权威/自主端 Task 上下文中的不可复制指针被复制）
+- `BXFromTLRunTimeProjection(Source, Asset, Target)`：投影 → 运行数据（客户端重建调用，按 (资产, Index) 恢复 Task 指针；内部队列 PendingTasks/BroadcastTasks 不投影，由重建端自行产生）
+
+**投影已知限制**（Late Join 重建的近似性，均不影响续跑正确性）：
+
+- **ScopeGraph 不投影**：作用域图（运行期事件作用域链）不随快照复制，重建端 ScopeGraph 为空——`ReadContextData` 的作用域链查找全部回退到无作用域键（scope=0）；DynamicDatas 投影保留了双键条目，作用域隔离在重建端退化为全局键读取
+- **内部瞬态队列不投影**：PendingTasks / BroadcastTasks / TaskStackInFrame 由重建端自行产生，重建时刻在途的事件链（如碰撞 Success 反应分支）在重建端不会补触发
+- **权威/自主端专属 Task 被过滤**：按 `Task.NetTypes` 过滤后仅保留含模拟端位的 Task，重建端（SimulatedProxy）缺此类 Task 属预期（模拟端不执行）
+- **服务器内部状态不投影**：`bAwaitingClientCollision` / `ServerExtraLifeTimer` 等服务器侧标记不复制（重建端为客户端，无此语义）
+- **快照时点性**：技能侧 `COND_InitialOnly` 快照取 PreReplication 时刻值，重建后与服务器存在一个传播间隔的进度偏差（以 RunTime 直接续跑，不做延迟弥补）
 
 #### `EBXTLFinishReason`（结束原因）
 
@@ -289,7 +345,7 @@ Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `Battle
 
 任务系统采用 **数据/执行分离** 设计：`UBXTask` 是配置数据（随资产序列化），`UBXTProcessor` 是运行时执行器（Transient，由 Manager 缓存）。
 
-#### `UBXTask` ([BXTask.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTask.h)) ★
+#### `UBXTask` ([BXTask.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTask.h)) ★
 
 所有任务的抽象基类。`Abstract, Blueprintable, EditInlineNew`，可在细节面板内联编辑。
 
@@ -334,7 +390,7 @@ Task 的显示名和分类使用引擎自带的蓝图元数据字段，**不使�
 
 > **注意**：Metadata key 名是 `"DisplayName"` / `"Namespace"`，**不是** `"BlueprintDisplayName"` / `"BlueprintNamespace"`。不要在 C++ 中用 UPROPERTY 重新定义这两个字段——`WITH_EDITORONLY_DATA` 块内的 UPROPERTY 会被自动加上 `CPF_Transient` 标志导致不序列化。
 
-#### `UBXTProcessor` ([BXTProcessor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTProcessor.h)) ★
+#### `UBXTProcessor` ([BXTProcessor.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTProcessor.h)) ★
 
 任务执行器基类。`Transient, Abstract, Blueprintable`。每个 Task 子类对应一个 Processor 子类（通过 `UBXSettings::TaskProcessorMap` 配置）。
 
@@ -371,11 +427,11 @@ Task 的显示名和分类使用引擎自带的蓝图元数据字段，**不使�
 
 #### 具体任务类型
 
-##### `UBXTPlayAnimation` ([BXTAnimation.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTAnimation.h))
+##### `UBXTPlayAnimation` ([BXTAnimation.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTAnimation.h))
 
 播放动画任务。支持蒙太奇或动画库（按 Tag）。配置：`PlayRate`、`InterruptedBlendOut`、`DelayInterruptedByMove`（N 秒后可被移动中断）、`PlayComponentName`、`PlayAnimBehaviorTag`、`PlayPriority`、`bStopGroup`（终止同组蒙太奇）、`bEnableRootmotion`。
 
-##### `UBXTCollision` / `UBXTTrackHitBox` / `UBXTTrackWeaponHitBox` ([BXTCollision.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTCollision.h))
+##### `UBXTCollision` / `UBXTTrackHitBox` / `UBXTTrackWeaponHitBox` ([BXTCollision.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTCollision.h))
 
 碰撞检测任务族：
 - **`UBXTCollision`**：基类，配置 `CoolDown`（冷却）、`Limit`（数量限制）、`LimitLogic`（数量限制逻辑）、`CharacterTags`/`RelationshipTags`（筛选）、`ObjectTypes`、`EngineFilter`（`FBXCFilter`）
@@ -418,7 +474,7 @@ Task 的显示名和分类使用引擎自带的蓝图元数据字段，**不使�
 
 状态系统分为 **行为代理（BehaviorAgent）** 与 **状态机（StateMachine）** 两层，由 `UBXBehaviorComponent` 与 `UBXStateComponent` 分别承载。
 
-#### `UBXBehaviorComponent` ([BXBehaviorComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/State/BXBehaviorComponent.h))
+#### `UBXBehaviorComponent` ([BXBehaviorComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/State/BXBehaviorComponent.h))
 
 行为管理组件。通过 GameplayTag 标识行为（如 `BXBehavior_Locomotion_Move`）。
 
@@ -432,7 +488,7 @@ Task 的显示名和分类使用引擎自带的蓝图元数据字段，**不使�
 
 `FBXForbiddenBehaviorInformation` 记录禁用签名 `Sign` 与原因 `EBXForbiddenBehaviorReason`，支持多重禁用计数。
 
-#### `UBXBehaviorAgent` ([BXBehaviorAgent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/State/BehaviorAgent/BXBehaviorAgent.h))
+#### `UBXBehaviorAgent` ([BXBehaviorAgent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/State/BehaviorAgent/BXBehaviorAgent.h))
 
 行为代理基类。`Abstract, Blueprintable`。生命周期：`Initialize` → `StartBehavior` → `StopBehavior` → `Deinitialize`，并有 `CheckStartBehavior` 前置检查。每对方法都有 Native/Script 双版本，由 `BehaviorFunctions` Bitmask（默认 341）控制。
 
@@ -440,11 +496,11 @@ Task 的显示名和分类使用引擎自带的蓝图元数据字段，**不使�
 - `UBXBAMove` / `UBXBARotate`：移动/旋转行为
 - `UBXBAJump` / `UBXBALanded`：跳跃/着陆行为
 
-#### `UBXStateComponent` ([BXStateComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/State/BXStateComponent.h))
+#### `UBXStateComponent` ([BXStateComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/State/BXStateComponent.h))
 
 状态机管理组件。`StateMachineConfig` 配置每个状态机类负责哪些状态 Tag。每帧 `TickComponent` 调用 `UpdateStateMachine` 驱动所有状态机。API：`EnterState` / `EnterStateWithParameter` / `ExitState` / `ExitStateWithParameter`。
 
-#### `UBXStateMachine` ([BXStateMachine.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/State/StateMachine/BXStateMachine.h))
+#### `UBXStateMachine` ([BXStateMachine.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/State/StateMachine/BXStateMachine.h))
 
 状态机基类。生命周期：`Initialize` / `Deinitialize` / `Update` / `EnterState(Tag, Param)` / `ExitState(Tag, Param)`。`StateMachineFunctions` Bitmask（默认 341）控制 Native/BP 执行路径。
 
@@ -476,11 +532,11 @@ UPrimaryDataAsset
       └── UBXCombatTreeTemplate   (战斗连段树)
 ```
 
-#### `UBXDecisionTreeTemplate` ([BXDecisionTreeTemplate.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/DecisionTree/BXDecisionTreeTemplate.h))
+#### `UBXDecisionTreeTemplate` ([BXDecisionTreeTemplate.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/DecisionTree/BXDecisionTreeTemplate.h))
 
 资产容器。`RootNodes`（根节点列表）、`TreeEdges`（所有边的扁平数组）、节点通过 `OutEdges`/`InEdges` 的整数索引引用边。编辑器方法 `InitByEditor` / `InitSaver` / `AddEdgeMessage` / `RefreshLogicMessage` 维护图结构。
 
-#### `UBXDecisionTreeActuator` ([BXDecisionTreeActuator.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/DecisionTree/BXDecisionTreeActuator.h))
+#### `UBXDecisionTreeActuator` ([BXDecisionTreeActuator.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/DecisionTree/BXDecisionTreeActuator.h))
 
 运行时评估器。核心方法 `GetBestNode<T>(WorldContext, Template, Param)`：
 - C++ 模板版：转发 `T::StaticStruct()` + `&Param` 到 `InternalGetBestNode`
@@ -516,7 +572,7 @@ UPrimaryDataAsset
 
 ### 4.6 Gear 装备系统（含冷兵器）
 
-#### `ABXGear` ([BXGear.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Gear/BXGear.h))
+#### `ABXGear` ([BXGear.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Gear/BXGear.h))
 
 装备 Actor 基类（Abstract）。持有 `GearType`（Tag）、`GearData`（资产）、`OwnerComponent`。四个生命周期阶段（每阶段 Pre/Post + C++/BP 双实现）：
 - **Equip/Unequip**：装备/卸载
@@ -525,11 +581,11 @@ UPrimaryDataAsset
 
 `EquipFunctions`/`UseFunctions`/`ChangeStateFunctions` Bitmask（默认 85）控制 Native/BP 执行。通过 `AttachToSocket()` 与 `AttachmentConfigs` 管理附着。
 
-#### `UBXGearComponent` ([BXGearComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Gear/BXGearComponent.h))
+#### `UBXGearComponent` ([BXGearComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Gear/BXGearComponent.h))
 
 每 Actor 装备库存组件。`SlotMaxSize`、`EquipGears`（插槽→装备列表映射）、`UsingGearIndexs`。9 个多播委托（Pre/PostEquip/Unequip、Pre/PostUsing/Unusing、ChangeGearState）。API：`GetEquipGearList`、`SwitchUsingGear`、`ChangeUsingGearState`、`ChangeEquipGear` / `ByClass` / `ByData`、`UnequipAllGears`。
 
-#### `ABXMeleeWeapon` ([BXMeleeWeapon.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Gear/BXMeleeWeapon.h))
+#### `ABXMeleeWeapon` ([BXMeleeWeapon.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Gear/BXMeleeWeapon.h))
 
 近战武器基类。持有 `UBXShapeComponent`（HitBoxComponent）用于命中检测。提供 `GetHitBoxComponent` / `GetHitBoxTransform`。
 
@@ -541,7 +597,7 @@ Bitflags 枚举：`EBXEquipGearFunction`、`EBXUseGearFunction`、`EBXChangeGear
 
 ### 4.7 Movement 移动系统
 
-#### `UBXCharacterMovementComponent` ([BXCharacterMovementComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Movement/BXCharacterMovementComponent.h))
+#### `UBXCharacterMovementComponent` ([BXCharacterMovementComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Movement/BXCharacterMovementComponent.h))
 
 继承 `UCharacterMovementComponent`。新增：
 - `bProactiveMoving` / `bProactiveRotating`：主动移动/旋转标志
@@ -550,7 +606,7 @@ Bitflags 枚举：`EBXEquipGearFunction`、`EBXUseGearFunction`、`EBXChangeGear
 
 重写：`CalcVelocity`、`ComputeSlideVector`、`PhysicsRotation`、`ProcessLanded`、`CanAttemptJump`、`DoJump`。
 
-#### `FBXRootMotionSource_Uppercut` ([BXRootMotionSource.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Movement/BXRootMotionSource.h))
+#### `FBXRootMotionSource_Uppercut` ([BXRootMotionSource.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Movement/BXRootMotionSource.h))
 
 自定义网络复制的 RootMotion 源，用于升龙拳等弧线位移技能。配置：`Direction`、`Distance`、`Height`、`MoveTimeMappingCurve`，可选朝向插值（`bChangeOrientation`、`StartOrientation`/`EndOrientation`、`RotateTimeMappingCurve`）。实现 `PrepareRootMotion` / `Clone` / `Matches` / `UpdateStateFrom` / `NetSerialize`。
 
@@ -558,7 +614,7 @@ Bitflags 枚举：`EBXEquipGearFunction`、`EBXUseGearFunction`、`EBXChangeGear
 
 ### 4.8 Collision 碰撞系统
 
-#### `UBXCollisionLibrary` ([BXCollision.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXCollision.h))
+#### `UBXCollisionLibrary` ([BXCollision.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Collision/BXCollision.h))
 
 蓝图函数库，提供静态碰撞查询 API：
 
@@ -587,11 +643,11 @@ Bitflags 枚举：`EBXEquipGearFunction`、`EBXUseGearFunction`、`EBXChangeGear
 
 调用旧接口（`CapsuleCheck`/`BoxCheck`）时传 `AngleStep=360`，防止旧接口对段内旋转差二次拆分。`PolylineConfig` 在 `UBXTTrackHitBox::PostEditChangeProperty` 与 `BuildPolylineSegments` 双重 Clamp 范围。
 
-#### `UBXShapeComponent` ([BXShapeComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXShapeComponent.h))
+#### `UBXShapeComponent` ([BXShapeComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Collision/BXShapeComponent.h))
 
 持有 `ShapeInformations`（Tag → `FBXShapeInformation`），提供 `GetShapeTransformByTag`。用于在武器/角色上定义具名形状区域。
 
-#### `UBXHitReactionComponent` ([BXHitReactionComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXHitReactionComponent.h))
+#### `UBXHitReactionComponent` ([BXHitReactionComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Collision/BXHitReactionComponent.h))
 
 基于身体部位的受击反应组件。`BodyPartConfigs`（Tag → `FBXBodyPartConfig`）配置、`BodyPartRTDatas`（Tag → `FBXBodyPartRTInformation`）运行时数据。API：`GetBodyPartByType`、`GetBodyPartByComponentAndBone`。
 
@@ -599,7 +655,7 @@ Bitflags 枚举：`EBXEquipGearFunction`、`EBXUseGearFunction`、`EBXChangeGear
 
 ### 4.9 Event 事件系统
 
-#### `UBXEventManager` ([BXEventManager.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Event/BXEventManager.h))
+#### `UBXEventManager` ([BXEventManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Event/BXEventManager.h))
 
 继承 `UBXManager`。轻量级事件系统，以 GameplayTag 为事件名，支持两种事件：
 - **全局事件**：仅以 `FGameplayTag` 为键
@@ -609,7 +665,7 @@ Bitflags 枚举：`EBXEquipGearFunction`、`EBXUseGearFunction`、`EBXChangeGear
 
 API：`RegisterGlobalEvent` / `UnregisterGlobalEvent` / `BroadcastGlobalEvent`（模板/UScriptStruct/BP CustomThunk 三种重载）；单播版同构。
 
-#### 事件参数结构体（[BXEventStructs.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Event/BXEventStructs.h)）
+#### 事件参数结构体（[BXEventStructs.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Event/BXEventStructs.h)）
 
 - `FBXEventEmpty`：无载荷
 - `FBXEventForbiddenBehavior`：`BehaviorTag` + `bForbidden` + `Reason`（`EBXForbiddenBehaviorReason`）
@@ -764,11 +820,11 @@ Native 函数通过宏驱动自动注册到 Registry，避免手动维护静态�
 
 ### 4.11 Animation 动画系统
 
-#### `UBXAnimInstance` ([BXAnimInstance.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Animation/BXAnimInstance.h))
+#### `UBXAnimInstance` ([BXAnimInstance.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Animation/BXAnimInstance.h))
 
 自定义 AnimInstance，对接技能系统的动画播放需求。
 
-#### `UBXAnimationLibrary` ([BXAnimationLibrary.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Animation/BXAnimationLibrary.h))
+#### `UBXAnimationLibrary` ([BXAnimationLibrary.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Animation/BXAnimationLibrary.h))
 
 动画库，支持按 GameplayTag 标签检索动画（`UBXTPlayAnimation` 的 `AAT_Library` 模式使用）。
 
@@ -809,8 +865,9 @@ Native 函数通过宏驱动自动注册到 Registry，避免手动维护静态�
 | `BXBuffEnums.h` | 枚举：`EBXBuffLifeType`（Duration/Infinite/Manual）、`EBXBuffLayerLifeMode`（Shared/Independent）、`EBXBuffCoexistPolicy`（Coexist/Replace）、`EBXBuffRemoveReason` |
 | `BXBuffStructs.h` | `FBXBuffRuntimeData`（运行时数据，内嵌 `FBXTLRunTimeData`）、`FBXBuffPlayContext`（施放上下文）、`FBXBuffTaskBinding`（Task 层级区间绑定）、`FBXEventBuffChanged`（事件参数） |
 | `BXBuffAsset.h/.cpp` | BUFF 资产，继承 `UBXTLAsset`。额外字段：`BuffTags`、`LifeType`、`BuffDuration`（-1 代表无限）、`LayerLifeMode`、`MaxLayer`（默认1）、`MaxLevel`、`CoexistPolicy`、`bRefreshLifetimeOnAdd`、`TaskBindings` |
-| `BXBuffManager.h/.cpp` | BUFF 管理器，继承 `UBXManager` + `FTickableGameObject`。管理 BUFF 生命周期、层级、共存策略、事件广播 |
-| `BXBuffComponent.h/.cpp` | Actor 组件，提供 BP 友好 API，EndPlay 时自动移除所有 BUFF |
+| `BXBuffManager.h/.cpp` | BUFF 管理器，继承 `UBXManager` + `FTickableGameObject`。管理 BUFF 生命周期、层级、共存策略、事件广播、服务器校验（`ServerValidateAddBuff`） |
+| `BXBuffComponent.h/.cpp` | Actor 组件，提供 BP 友好 API + 网络 RPC + 复制快照维护，EndPlay 时自动移除所有 BUFF |
+| `BXBuffReplicated.h` | `FBXBuffReplicatedState`（BUFF 运行状态复制快照：BuffID/BuffAssetID/Layer/Level/到期时间戳） |
 | `BXBuffFunctionLibrary.h/.cpp` | 静态 BP API（AddBuff/RemoveBuff/HasBuff 等） |
 
 #### UBXBuffAsset（资产配置）
@@ -837,6 +894,9 @@ Native 函数通过宏驱动自动注册到 Registry，避免手动维护静态�
 | 层级区间 Task 切换 | UBXBuffManager | 调用 TLManager 启停 |
 | 事件广播 | UBXBuffManager | 调用 BXEventManager（单体+全局） |
 | Owner→Buff 索引 | UBXBuffManager | 自己 |
+| 服务器校验（钳制） | UBXBuffManager | `ServerValidateAddBuff`（层级/等级钳制到资产范围） |
+| 指定ID添加 | UBXBuffManager | `AddBuffWithID`（网络同步路径用，保证跨端 BuffID 一致） |
+| 网络同步 | UBXBuffComponent | RPC + 复制快照（见 [4.14](#414-skill--net-网络同步系统客户端预测与服务器权威)） |
 
 **Tick 流程**：
 
@@ -905,10 +965,94 @@ Tick(DeltaTime)
 
 #### 注册配置
 
-在 `DefaultGame.ini` 的 `[/Script/BattleX.BXSettings]` 段中添加：
+在 `Config/DefaultBattleX.ini` 的 `[/Script/BattleX.BXSettings]` 段中注册 BUFF 管理器（当前项目注册的是蓝图派生类，便于项目侧扩展）：
 ```
-+ManagerClasses=/Script/BattleX.BXBuffManager
++ManagerClasses=/Script/Engine.BlueprintGeneratedClass'/BattleX/BP/Manager/BP_BXM_Buff.BP_BXM_Buff_C'
 ```
+
+#### 网络同步
+
+BUFF 的客户端请求/服务器校验/广播/快照重建机制见 [4.14 Skill / Net 网络同步系统](#414-skill--net-网络同步系统客户端预测与服务器权威)（BUFF 侧子节）。
+
+---
+
+### 4.14 Skill / Net 网络同步系统（客户端预测与服务器权威）
+
+`Source/BattleX/Net/` 与 `Source/BattleX/Skill/` 实现了完整的技能/BUFF 网络同步框架。**核心思路**：服务器权威 + 自主端客户端预测 + 显式 Reliable RPC 维护动态 + 属性复制快照兜底 Late Join。Task 执行链路完全复用 Timeline（技能运行数据 `FBXSkillRuntimeData` 内嵌 `FBXTLRunTimeData`，由 `UBXSkillManager::InternalUpdateSkill` 委托 `UBXTLManager::UpdateTimelineRunTimeData` 推进）。
+
+#### 核心文件
+
+| 文件 | 说明 |
+|---|---|
+| `BXNetEnums.h` | `EBXSyncInitiator`（Client/Server 发起端）+ 同步 ID 位布局宏（bit 61~63 为发起端标识，低 61 位为 ID 数值） |
+| `BXNetStructs.h` | `FBXSkillSyncHeader`（同步头）、`FBXSkillInputEntry`（输入条目，RPC 不支持 TMap）、`FBXSkillSyncPayload`（同步载荷）、`BXMakeSyncID` / `BXGetSyncIDInitiator` |
+| `BXSkillReplicated.h` | `FBXSkillReplicatedState`（技能复制快照条目，含 `FBXTLRunTimeDataReplicated` 投影）；文件头注释完整记录了 UE 属性复制时序与快照方案选型 |
+| `BXSkillAsset.h/.cpp` | 技能资产（见 [4.2](#42-timeline-时间轴系统技能核心)）：释放条件 / 冷却 / 锁定类型 |
+| `BXSkillComponent.h/.cpp` | 技能组件：BP 友好 API + 同步 RPC + 假冷却管理 + 复制快照 |
+| `BXSkillManager.h/.cpp` | 技能管理器：运行数据容器 + 预测生命周期 + 加速弥补 + 服务器校验 + 碰撞结果接收 |
+| `BXSkillEnums.h` | `EBXPredictState`（None/Predicting/Confirmed/RollingBack）、`EBXSkillLockType`（None/Target/Location/Direction） |
+| `BXSkillStructs.h` | `FBXSkillRuntimeData`（技能运行时数据） |
+
+#### 同步 ID 设计（防 ABA 与跨端碰撞）
+
+`SkillID`（int64）由 `BXMakeSyncID(RawID, Initiator)` 构造：高 3 位（bit 61~63）编码发起端类型，低 61 位为 `UBXFunctionLibrary::GetUniqueID()` 生成的递增 ID。服务器校验时通过 `BXGetSyncIDInitiator` 检查发起端标识，拒绝"客户端伪造服务器 ID"或"ID 已存在"的请求，防止跨端 ID 碰撞覆盖正在运行的技能。
+
+#### RPC 传输结构
+
+- **`FBXSkillSyncHeader`**（所有技能 RPC 共用）：`SkillID`（跨端一致的运行时唯一 ID）、`SkillAssetID`（资产 ID，服务器经注册表解析）、`Initiator`、`ClientTimestamp` / `ServerTimestamp`（服务器世界时间域毫秒，经 `GetServerWorldTimeMilliseconds` 取值，禁止跨机器比较本地墙钟）
+- **`FBXSkillSyncPayload`**（兼作施放上下文与 RPC 传输体）：`Instigator` / `Triggerer` / `ClientTimestamp` / `InputDatas`（`TArray<FBXSkillInputEntry>`，承载释放位置/朝向/瞄准/锁定等全部技能输入；释放位置与朝向由 `PlaySkillWithInputData` 自动补充）
+
+#### UBXSkillComponent（组件层）
+
+**RPC 列表**：
+
+| RPC | 可靠性 | 职责 |
+|---|---|---|
+| `ServerPlaySkill(Header, Payload)` | Server, Reliable | 自主端上传释放请求（单一 RPC，所有数据经 Payload） |
+| `ClientPredictResult(SkillID, bSuccess, ServerTimestamp, CooldownRemaining)` | Client, Reliable | 服务器回传预测结果；`CooldownRemaining>=0` 为权威冷却剩余（确认时假冷却转正/拒绝时同步真冷却），-1 代表无服务器冷却（否认时移除假冷却） |
+| `MulticastPlaySkill(Header, Payload)` | NetMulticast, Reliable | 广播完整播放数据（丢包会导致远端永远看不到该技能） |
+| `MulticastStopSkill(SkillID, FinishReason)` | NetMulticast, Reliable | 广播技能中断（服务器主动 Stop / Actor 死亡 / 条件强制中断） |
+| `ServerReportCollisionResults(SkillID, TaskFullIndex, DataTag, HitResults)` | Server, Unreliable | 碰撞结果上报（见下） |
+
+**关键设计**：
+- **服务器校验编排**：`HandleServerPlaySkill`（组件内部方法）串联完整校验链——注册表解析（`UBXTLManager::GetSkillAssetByID`）→ SkillID 校验 → 冷却校验（组件私有状态）→ `ServerValidateRelease`（Manager，时间戳+释放条件）→ 播放 + 回传预测结果 + 加速弥补 + 广播
+- **假冷却**：自主端预测启动时本地立即记录冷却防连点（`PendingCooldownAssetIDs` 标记），服务器确认时转正为权威冷却，否认且无服务器冷却时移除允许重试
+- **复制快照**：`RunningSkillStates` 标记 `COND_InitialOnly`，配合 `PreReplication` 每帧从 `SkillRTDatas` 重建快照——新连接初始同步拿到"打开通道时刻"的最新运行数据投影，已有连接零属性流量（技能动态完全由 Reliable RPC 维护）
+- **OnRep 差分**：新增条目 `RebuildSkillFromState` 重建续跑（已存在 ID 幂等跳过）；消失条目 `StopSkillIfNotPredicting` 兜底停止（仅处理 RPC 与属性乱序竞态，预测中实例不因快照消失而停止）
+- **EndPlay**：停止 `OwnedSkillIDs` 中所有技能（含客户端发起、服务器登记的技能）
+
+#### UBXSkillManager（管理器层）
+
+| 职责 | 关键函数 | 说明 |
+|---|---|---|
+| 播放 | `PlaySkill` / `InternalPlaySkill`（含移动语义重载） / `StopSkill` | Standalone/服务器直接播放；`InternalPlaySkill` 支持外部传入指定 ID（同步用） |
+| 预测生命周期 | `StartPrediction` / `ConfirmPrediction` / `RollbackPrediction` | 预测中实例超时由 `CheckPredictTimeout`（`SkillPredictMaxDuration`）自动回滚；回滚以 `FR_PredictionFailure` 停止所有 Task 并广播 `BXEvent_Skill_PredictFailed` |
+| 加速弥补 | `ServerAccelerate` / `ClientAccelerate` / `UpdateAccelerate` | 服务器按"RPC 上行延迟"、远端客户端按"广播传播延迟"加速播放（`延迟/倍率` 时长内倍速推进）；`ClampAccelerateDuration` 钳制加速时长上限为技能总时长 50%（含无限循环片段的技能总时长无界，跳过钳制） |
+| 释放校验 | `ServerValidateRelease` | 时间戳双向校验（`|RequestAge| > SkillRequestMaxAgeMs` 拒绝，防重放/伪造）+ 释放条件校验（复用 `UBXConditionManager`） |
+| 碰撞接收 | `ReceiveCollisionResults` | 服务器关闭自身碰撞检测时接收客户端上报（开启时忽略，防重复结果）；匹配碰撞 Task 后双键写入数据并触发 `BXTEvent_Success` 驱动服务器侧反应分支 |
+| 快照重建 | `RebuildSkillFromProjection` | 反投影恢复运行数据直接续跑；ID 已存在时幂等返回 |
+| 数据容器 | `SkillRTDatas`（ID→运行数据）/ `OwnerSkillMap`（Owner 反向索引） | 运行数据内嵌 TLRunTimeData，Task 执行复用 `UBXTLManager` |
+
+**技能事件**：`BXEvent_Skill_Released`（释放，InternalPlaySkill 末尾）、`BXEvent_Skill_PredictSuccess` / `BXEvent_Skill_PredictFailed`（预测确认/回滚）、`BXEvent_Skill_Finished`（结束，携带 FinishReason）。均单体+全局双广播。
+
+#### BUFF 侧同步（UBXBuffComponent）
+
+| RPC | 可靠性 | 职责 |
+|---|---|---|
+| `ServerRequestAddBuff(BuffAssetID, Instigator, Layer, Level)` | Server, Reliable | **传资产 ID 而非对象引用**，服务器经 `GetTimelineAssetByID` 注册表解析，防客户端伪造对象引用；`ServerValidateAddBuff` 钳制 Layer/Level 到资产 `[1, MaxLayer]` / `[1, MaxLevel]` 范围（越界 InitLayer 会撑爆 LayerRunTimes 数组） |
+| `ServerRequestRemoveBuff(BuffID, LayerDelta)` | Server, Reliable | 请求移除 |
+| `MulticastAddBuff(...)` / `MulticastRemoveBuff(...)` | NetMulticast, Reliable | 广播增删（移除广播由 `InternalRemoveBuff` 统一收束发送，本地事件 Reason 与服务器一致） |
+
+**复制策略差异**（与技能侧对比）：`RunningBuffStates` 为**无条件复制**（非 COND_InitialOnly）——BUFF 变化低频（增删/层级/时长刷新），快照同时承担初始重建与已重建客户端的层/级/到期持续同步（层级变化唯一同步通道，增删由 Reliable RPC 主通道承担）。到期时间戳使用**服务器世界时间域毫秒**（`SharedExpireServerTimestamp` / `LayerExpireServerTimestamps`），客户端按时间戳差值回填运行时长，Late Join 重建的 BUFF 剩余时长与服务器对齐。
+
+#### 碰撞结果上报
+
+`bServerCollisionCheck=false`（默认）时服务器不执行碰撞检测（省 DedicatedServer 开销），由拥有连接的 Autonomous 客户端执行并经 `ServerReportCollisionResults`（Unreliable）上报。服务器 `ReceiveCollisionResults` 按 TaskFullIndex 匹配碰撞 Task 后：清除等待标记 → 以服务器侧作用域**双键写入** DynamicDatas（无作用域键+作用域键，与客户端 `CollisionCheck` 的 `WriteContextData` 行为一致）→ **触发 `BXTEvent_Success` 事件**（反应分支 Task 在服务器侧启动，事件作用域读取键可达，实现"由客户端结果驱动服务器侧流程"）→ 广播 `BXEvent.Collision.Reported`。Task 已结束时退化为单键写入供后续时间片段按索引读取兜底。服务器端碰撞 Task 以 `ServerExtraLifeTimer`（`CollisionTaskServerExtraLife`）延长生命等待上报，超时销毁。已知缺口：Listen Server 本地客户端的归属判定待测试确认。
+
+#### 端到端流程
+
+- 技能：客户端预测 → 服务器校验 → 确认/回滚 → 广播 → 加速弥补 → Late Join 快照重建，详见 [8.6](#86-技能网络同步与客户端预测流程)
+- BUFF：客户端请求 → 服务器解析钳制 → 广播 → 快照重建，详见 [8.7](#87-buff-网络同步流程)
 
 ---
 
@@ -930,7 +1074,7 @@ Tick(DeltaTime)
 
 基于 `FWorkflowCentricApplication` 的完整资产编辑器工具包。
 
-**`FBXTLEditor`**（[BXTLEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineEditor/BXTLEditor.h)）：
+**`FBXTLEditor`**（[BXTLEditor.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/BXTLEditor.h)）：
 - 继承 `FWorkflowCentricApplication`、`FGCObject`、`FEditorUndoClient`
 - 持有编辑的 `UBXTLAsset`、预览场景、图编辑器、工具栏、命令绑定、任务选择、Manager 缓存
 
@@ -972,7 +1116,7 @@ Tick(DeltaTime)
 
 ### 5.3 决策树编辑器（DecisionTreeEditor）
 
-**`FBXDTEditor : FAssetEditorToolkit, FNotifyHook, FGCObject`**（[BXDTEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/DecisionTreeEditor/BXDTEditor.h)）：
+**`FBXDTEditor : FAssetEditorToolkit, FNotifyHook, FGCObject`**（[BXDTEditor.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/DecisionTreeEditor/BXDTEditor.h)）：
 - 管理 `SGraphEditor` 视口栈（支持钻入子图并返回）
 - 属性/编辑器设置细节面板
 - 复制/剪切/粘贴/复制/重命名命令
@@ -985,9 +1129,9 @@ Tick(DeltaTime)
 
 **资产无关的通用时间轴 Slate 框架**，TimelineEditor 通过子类化复用：
 
-- **`FTimelineController`**（[TimelineController.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineBase/TimelineController.h)）：抽象控制器。管理 `RootTracks`/`SelectedTracks`、`ViewRange`/`WorkingRange`、播放范围、播放头位置、帧率、Track 选择、`OnTracksChanged` 事件
-- **`FTimelineTrack`**（[TimelineTrack.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineBase/TimelineTrack.h)）：Track 基类，树形结构，含 RTTI 宏系统
-- **`STimeline`**（[STimeline.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineBase/STimeline.h)）：时间轴 UI，持有 `SOutliner` + `STrackArea` + `FTimeSliderController` + 顶部 `ITimeSlider`，支持网格、吸附、显示格式切换（帧/百分比/次要）
+- **`FTimelineController`**（[TimelineController.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineBase/TimelineController.h)）：抽象控制器。管理 `RootTracks`/`SelectedTracks`、`ViewRange`/`WorkingRange`、播放范围、播放头位置、帧率、Track 选择、`OnTracksChanged` 事件
+- **`FTimelineTrack`**（[TimelineTrack.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineBase/TimelineTrack.h)）：Track 基类，树形结构，含 RTTI 宏系统
+- **`STimeline`**（[STimeline.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineBase/STimeline.h)）：时间轴 UI，持有 `SOutliner` + `STrackArea` + `FTimeSliderController` + 顶部 `ITimeSlider`，支持网格、吸附、显示格式切换（帧/百分比/次要）
 - **`STrack`**：Track 在 TrackArea 中的包装控件
 - 辅助控件：`SOutliner`、`SOutlinerItem`、`STrackArea`、`STimelineOverlay`、`STimelineSplitterOverlay`、`STimelineTransportControls`、`TimeSliderController`
 
@@ -1013,9 +1157,9 @@ Tick(DeltaTime)
 - `Slate` / `SlateCore` / `DeveloperSettings`
 
 **PrivateDependencyModuleNames**：
-- `GameplayTags` / `StructUtils`
+- `GameplayTags` / `StructUtils` / `NetCore`
 
-**PrivateIncludePaths**：暴露了所有子目录（`Task`、`Unit`、`Lock`、`Gear`、`State`、`Event`、`Movement`、`Timeline`、`Animation`、`Collision`、`Condition`、`DecisionTree`、`Buff`）
+**PrivateIncludePaths**：暴露了所有子目录（`Task`、`Unit`、`Lock`、`Gear`、`State`、`Event`、`Movement`、`Timeline`、`Animation`、`Collision`、`Condition`、`DecisionTree`、`Buff`、`Skill`、`Net`）
 
 ### 6.2 插件依赖
 
@@ -1036,9 +1180,16 @@ Timeline (核心) ──依赖──> Task (原子操作)
     └──被依赖──< DecisionTree (决策) ──依赖──> Condition
                                           └──> Skill (引用技能资产)
 
+Skill (技能系统) ──复用──> Timeline (数据载体 + Task执行链路)
+    │                └──复用──> Task (Processor)
+    └──依赖──> Event (技能事件广播) / Condition (释放条件校验)
+
 Buff (状态系统) ──复用──> Timeline (数据载体 + Task执行链路)
     │              └──复用──> Task (Processor)
     └──依赖──> Event (BUFF生命周期事件广播)
+
+Net (同步框架) ──被依赖──< Skill / Buff (RPC结构与复制快照)
+    └──依赖──> Timeline (BXTLReplicated 投影 + 资产ID注册表)
 
 Gear (装备) ──依赖──> Collision (形状组件)
 Movement ──被依赖──< Task (RootMotion 任务)
@@ -1052,6 +1203,15 @@ Movement ──被依赖──< Task (RootMotion 任务)
 `UBXSettings` 中的两张映射表是系统的"接线图"：
 - **`TaskProcessorMap`**：Task 类 → Processor 类。`UBXTLManager::Initialize` 时加载并缓存为 `TimelineTaskProcessorTypeMap`，运行时通过 `GetTLTProcessorByTLTClass` 查询 Processor 实例
 - **`TaskCustomDataMap`**：Task 类 → 自定义动态数据 UScriptStruct。缓存为 `TimelineTaskTypeMap`
+
+映射键为蓝图 Task 类的软类路径（蓝图 Task 需显式注册，原生 C++ Task 类不显示在编辑器创建菜单中），`Config/DefaultBattleX.ini` 当前注册：
+
+```ini
+TaskProcessorMap=(("/BattleX/BP/Task/Animation/BP_BXT_PlayAnimation.BP_BXT_PlayAnimation_C", "/Script/BattleX.BXTPPlayAnimation"),("/BattleX/BP/Task/Collision/BP_BXT_TrackWeaponHitBox.BP_BXT_TrackWeaponHitBox_C", "/Script/BattleX.BXTPTrackWeaponHitBox"),("/BattleX/BP/Task/FlowControl/BP_BXT_Switch.BP_BXT_Switch_C", "/Script/BattleX.BXTPSwitch"))
+TaskCustomDataMap=(("/BattleX/BP/Task/Animation/BP_BXT_PlayAnimation.BP_BXT_PlayAnimation_C", "/Script/BattleX.BXTPPlayAnimationContext"),("/BattleX/BP/Task/Collision/BP_BXT_TrackWeaponHitBox.BP_BXT_TrackWeaponHitBox_C", "/Script/BattleX.BXTPTrackHitBoxContext"),("/BattleX/BP/Task/FlowControl/BP_BXT_Switch.BP_BXT_Switch_C", "/Script/BattleX.BXTPSwitchContext"))
+```
+
+查找使用**精确类匹配**：新建蓝图 Task（如 `BP_BXT_TrackHitBox`）必须在此注册，否则 `GetTLTProcessorByTLTClass` 无法命中。
 
 ---
 
@@ -1083,21 +1243,29 @@ Movement ──被依赖──< Task (RootMotion 任务)
 
 ### 7.4 运行时触发技能
 
-在角色 Actor 上挂载 `UBXTLComponent`，蓝图调用：
+**推荐方式**：在角色 Actor 上挂载 `UBXSkillComponent`，走技能系统（含冷却/释放条件/网络同步/客户端预测）：
 
 ```cpp
-// C++ 示例
+// C++ 示例（网络下自主端自动走客户端预测，服务器端直接权威播放）
+UBXSkillComponent* SkillComp = FindComponentByClass<UBXSkillComponent>();
+int64 SkillID = SkillComp->PlaySkill(SkillAsset, /*Instigator*/ this);
+// 定向变体：PlaySkillWithTarget / PlaySkillWithLocation / PlaySkillWithDirection / PlaySkillWithInputData
+```
+
+```blueprint
+// 蓝图示例
+Play Skill (InAsset: SkillAsset, InInstigator: Self) → Returns SkillID
+```
+
+**免网络的单机路径**：直接挂 `UBXTLComponent` 播放时间轴（无冷却/预测逻辑）：
+
+```cpp
 FBXTLPlayContext Context;
 Context.Instigator = this;
 Context.Triggerer = this;
 // Context.LockParts / Context.InputDatas 可选
 UBXTLComponent* TLComp = FindComponentByClass<UBXTLComponent>();
 int64 TimelineID = TLComp->PlayTimeline(SkillAsset, Context);
-```
-
-```blueprint
-// 蓝图示例
-Play Timeline (InAsset: SkillAsset, InContext: Context) → Returns TimelineID
 ```
 
 ### 7.5 决策树使用
@@ -1124,7 +1292,7 @@ Play Timeline (InAsset: SkillAsset, InContext: Context) → Returns TimelineID
        │
        ↓
 3. UBXTLManager::Tick (每帧)
-   └─ UpdateTimeline(DeltaTime) → 遍历 TimelineRTDatas
+   └─ UpdateTimeline(DeltaTime) → ID 快照遍历 TimelineRTDatas（Task/BP 回调可能同步 StopTimeline 移除条目）
        │
        ↓
 4. InternalUpdateTimeline(RTData, DeltaTime)
@@ -1213,6 +1381,12 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 1. 游戏代码: BuffComp->AddBuff(Asset, Instigator, Layer, Level)  或  UBXBuffFunctionLibrary::AddBuff
        │
        ↓
+1.5 网络分叉 (UBXBuffComponent::AddBuff)
+   ├─ 服务器权威端: 直接走 2，成功后 MulticastAddBuff 广播
+   ├─ 自主端: ServerRequestAddBuff(Asset->ID, ...) → 服务器走 2 (注册表解析+钳制校验后)
+   └─ 模拟端: 返回 INDEX_NONE (由广播/快照驱动)
+       │
+       ↓
 2. UBXBuffManager::AddBuff(Asset, Owner, Context)
    ├─ 共存策略判断 (Coexist/Replace)
    │   ├─ BC_Coexist: 查找 (Owner, Asset, Instigator) 唯一实例 → 存在则 ChangeBuffLayer + RefreshBuffLifetime
@@ -1236,6 +1410,99 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
                    ├─ 离开区间: StopBuffTask
                    ├─ 进入区间: ExecuteBuffTask
                    └─ 仍在区间: RebuildBuffTaskEffect → Processor->RebuildEffectTask (需求11)
+```
+
+### 8.6 技能网络同步与客户端预测流程
+
+```
+【自主端 (AutonomousProxy)】
+1. SkillComp->PlaySkillWithInputData(Asset, Inputs, ...)
+   ├─ 补充释放位置/朝向到 InputDatas (条目数组形态, 逐条移动无深拷贝)
+   ├─ 构造 FBXSkillSyncHeader (SkillAssetID + ClientTimestamp 服务器世界时间域)
+   ├─ 本地冷却检查 (防连点) → StartPrediction:
+   │     SkillID = BXMakeSyncID(GetUniqueID(), Client)
+   │     InternalPlaySkill(..., InSkillID, Client) + PredictState=Predicting
+   ├─ 立即记录"假冷却" (PendingCooldownAssetIDs 标记)
+   └─ ServerPlaySkill(Header, Payload)                      [Server, Reliable]
+       │
+       ↓
+【服务器 (Authority)】
+2. SkillComp::HandleServerPlaySkill (组件内编排服务器校验链)
+   ├─ GetSkillAssetByID(SkillAssetID) 注册表解析资产 (UBXTLManager)  (失败→否认)
+   ├─ SkillID 校验: 发起端=Client 且服务器上不存在           (防伪造/防ID碰撞覆盖)
+   ├─ 冷却校验 (组件私有状态 IsCooldownReady)                 (失败→否认+回传权威冷却剩余)
+   ├─ ServerValidateRelease (UBXSkillManager):
+   │     时间戳双向校验 (|RequestAge| ≤ SkillRequestMaxAgeMs, 防重放/伪造)
+   │     释放条件校验 (ReleaseConditions × ConditionManager)
+   ├─ 校验通过: InternalPlaySkill(指定 SkillID, UBXSkillManager) + RecordCooldown
+   ├─ ClientPredictResult(SkillID, true, ServerTimestamp, 权威冷却剩余)  [Client, Reliable]
+   ├─ ServerAccelerate: 按上行延迟(ServerTimestamp-ClientTimestamp)加速弥补
+   │     加速时长 = 延迟/ServerAccelerateRate, 钳制 ≤ 技能总时长50%
+   └─ MulticastPlaySkill(Header, Payload)                    [NetMulticast, Reliable]
+       │
+       ↓
+【自主端收到预测结果】
+3. ClientPredictResult
+   ├─ 成功: ConfirmPrediction (PredictState→Confirmed, 广播 BXEvent_Skill_PredictSuccess)
+   │        假冷却转正 (本地时间+服务器剩余时长)
+   └─ 失败: RollbackPrediction → InternalRollbackPredictedSkill
+            StopSkillTasks(FR_PredictionFailure) + bEarlyFinish
+            广播 BXEvent_Skill_PredictFailed; 冷却按服务器返回结算
+            (预测超时未收到结果: CheckPredictTimeout 自动回滚; 运行数据清理时
+             InternalOnSkillFinished 释放假冷却允许重试, 迟到的结果无登记直接跳过)
+
+【其他客户端 (SimulatedProxy) 收到广播】
+4. MulticastPlaySkill → 已有实例跳过 → HandleClientPlaySkill
+   └─ InternalPlaySkill(广播的 SkillID) + ClientAccelerate (按广播传播延迟加速弥补)
+
+【Late Join / 新复制对象】
+5. RunningSkillStates (COND_InitialOnly) 初始同步
+   └─ OnRep 差分 → 新增条目 RebuildSkillFromProjection (反投影恢复运行数据直接续跑)
+                   → 消失条目 StopSkillIfNotPredicting (乱序兜底)
+
+【技能中断】
+6. MulticastStopSkill (服务器主动Stop/Actor死亡) → 各端 StopSkill + 广播 BXEvent_Skill_Finished
+
+【碰撞结果上报 (bServerCollisionCheck=false)】
+7. 拥有连接的客户端 CollisionCheck 命中
+   └─ ServerReportCollisionResults(SkillID, TaskFullIndex, DataTag, HitResults)  [Server, Unreliable]
+       → 服务器 ReceiveCollisionResults:
+         ├─ 匹配碰撞 Task → 清除 bAwaitingClientCollision/ServerExtraLifeTimer
+         ├─ 生成服务器侧作用域, 双键写入 DynamicDatas (与客户端 WriteContextData 一致)
+         ├─ 触发 BXTEvent_Success → 反应分支 Task 在服务器侧启动 (客户端结果驱动服务器侧流程)
+         └─ 广播 BXEvent.Collision.Reported
+```
+
+### 8.7 BUFF 网络同步流程
+
+```
+【自主端】
+1. BuffComp->AddBuff(Asset, Instigator, Layer, Level)
+   └─ ServerRequestAddBuff(Asset->ID, Instigator, Layer, Level)   [Server, Reliable]
+       │
+       ↓
+【服务器】
+2. BuffComp::ServerRequestAddBuff_Implementation
+   ├─ GetTimelineAssetByID(BuffAssetID) 注册表解析 (UBXTLManager, 防客户端伪造对象引用)
+   ├─ ServerValidateAddBuff: InitLayer→[1,MaxLayer], InitLevel→[1,MaxLevel] 钳制
+   ├─ AddBuff (UBXBuffManager, 服务器生成 BuffID; 内部经组件 AddBuffReplicatedState 登记快照)
+   └─ MulticastAddBuff(BuffID, Asset, ...)                      [NetMulticast, Reliable]
+       │
+       ↓
+【所有客户端】
+3. MulticastAddBuff → AddBuffWithID(服务器下发的 BuffID) 本地重建
+   └─ 层/级变化: RunningBuffStates 快照持续同步 (无条件复制,层级变化唯一同步通道)
+
+【Late Join / 新复制对象】
+4. RunningBuffStates (无条件复制) OnRep 差分
+   ├─ 新增条目: RebuildBuffFromState → GetTimelineAssetByID 解析资产
+   │             + AddBuffWithID 重建 + 按服务器到期时间戳回填剩余时长
+   ├─ 变化条目: ApplyBuffStateChange (层/级/到期对齐)
+   └─ 消失条目: RemoveBuffIfLocalExists (兜底移除)
+
+【移除】
+5. 服务器 RemoveBuffWithReason → MulticastRemoveBuff(BuffID, Reason)  [Reliable]
+   (本地事件 Reason 与服务器一致) + RemoveBuffReplicatedState (快照删除)
 ```
 
 ---
@@ -1300,15 +1567,15 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 
 #### 9.2.2 网络同步完善
 
-**现状**：Task 通过 `NetTypes` Bitmask 区分端，`FBXRootMotionSource_Uppercut` 支持 `NetSerialize`。
+**现状**：技能/BUFF 同步框架已落地（客户端预测/假冷却/服务器校验/回滚/加速弥补/Reliable 广播/Late Join 快照重建，见 [4.14](#414-skill--net-网络同步系统客户端预测与服务器权威)），Task 通过 `NetTypes` Bitmask 区分端，`FBXRootMotionSource_Uppercut` 支持 `NetSerialize`。
 
-**建议**：
-- **预测与回滚**：`EBXTLFinishReason::FR_PredictionFailure` 已预留，但缺少完整的预测/回滚实现。建议：
-  - 权威端推送 Section 跳转事件
-  - 自主端预测执行，收到权威端纠正时触发 `FR_PredictionFailure` 回滚
-  - 模拟端仅播放动画与特效，不执行碰撞判定
-- **时间轴状态同步**：考虑将 `FBXTLRunTimeData` 的关键字段（当前 Section、RunTime）纳入网络同步，避免各端漂移。
-- **Task 执行结果同步**：碰撞命中结果应权威端判定后广播，避免各端重复判定导致不一致。
+**待完善**（按优先级）：
+- **PIE 网络测试收尾**：跑通 8 个同步用例；关键判据为 Late Join 重建日志 `RunTime ≈ 服务器已播时长`、无 "Entry vanished" 日志（该日志指示 RPC 与属性复制乱序竞态）。
+- **Listen Server 碰撞归属**：`bServerCollisionCheck=false` 时服务器自身视角的碰撞检测依赖 AutonomousProxy 客户端上报，Listen Server 本地客户端（NM_ListenServer 且 Authority）当前被 `IsServerWithoutCollisionCheck` 判为"服务器无碰撞检测"，其本地视角碰撞由谁执行待测试确认。
+- **层级同步时延**：层级变化仅经 `RunningBuffStates` 无条件复制同步（原 `MulticastBuffLayerChanged` RPC 已删除，空实现且与快照通道冗余），属性复制频率低于 RPC，瞬时层级变化感知略慢，视测试反馈决定是否需要恢复 Reliable 推送通道。
+- **测试期日志清理**：`BXMGR_Skill` / `BXMGR_Buff` / `BX_TP` 的 Log 级日志测试稳定后降为 Verbose 或删除，保留 Warning 诊断。
+- **Section 跳转事件同步**：权威端的 ForceJumpSection / 连段跳转目前随快照投影同步，可考虑推送显式跳转事件减少重建偏差。
+- **根运动同步收口**：RootMotion 任务在预测/回滚/加速场景下的位置对账（PredictFailure 回滚时位移是否需要修正）待验证。
 
 #### 9.2.3 调试与可视化增强
 
@@ -1364,25 +1631,27 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 
 | 系统 | 核心文件 |
 |---|---|
-| 模块入口 | [BattleX.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BattleX.h) / [BattleX.cpp](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BattleX.cpp) |
-| 基础设施 | [BXManager.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BXManager.h) / [BXSubSystem.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BXSubSystem.h) / [BXSettings.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BXSettings.h) |
-| Tag 词汇表 | [BXGameplayTags.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BXGameplayTags.h) |
-| 工具函数 | [BXFunctionLibrary.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/BXFunctionLibrary.h) |
-| 时间轴核心 | [BXTLAsset.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXTLAsset.h) / [BXTLManager.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXTLManager.h) / [BXTLComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXTLComponent.h) / [BXTLStructs.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Timeline/BXTLStructs.h) |
-| 任务系统 | [BXTask.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTask.h) / [BXTProcessor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTProcessor.h) |
-| 具体任务 | [BXTAnimation.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTAnimation.h) / [BXTCollision.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Task/BXTCollision.h) / [BXTFlowControl.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTFlowControl.h) |
-| 状态系统 | [BXBehaviorComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/State/BXBehaviorComponent.h) / [BXBehaviorAgent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/State/BehaviorAgent/BXBehaviorAgent.h) / [BXStateMachine.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/State/StateMachine/BXStateMachine.h) |
-| 决策树 | [BXDecisionTreeTemplate.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/DecisionTree/BXDecisionTreeTemplate.h) / [BXDecisionTreeActuator.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/DecisionTree/BXDecisionTreeActuator.h) |
-| 装备系统 | [BXGear.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Gear/BXGear.h) / [BXGearComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Gear/BXGearComponent.h) / [BXMeleeWeapon.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Gear/BXMeleeWeapon.h) |
-| 移动系统 | [BXCharacterMovementComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Movement/BXCharacterMovementComponent.h) / [BXRootMotionSource.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Movement/BXRootMotionSource.h) |
-| 碰撞系统 | [BXCollision.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXCollision.h) / [BXShapeComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXShapeComponent.h) / [BXHitReactionComponent.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Collision/BXHitReactionComponent.h) |
-| 事件系统 | [BXEventManager.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Event/BXEventManager.h) / [BXEventStructs.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleX/Event/BXEventStructs.h) |
+| 模块入口 | [BattleX.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BattleX.h) / [BattleX.cpp](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BattleX.cpp) |
+| 基础设施 | [BXManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BXManager.h) / [BXSubSystem.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BXSubSystem.h) / [BXSettings.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BXSettings.h) |
+| Tag 词汇表 | [BXGameplayTags.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BXGameplayTags.h) |
+| 工具函数 | [BXFunctionLibrary.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/BXFunctionLibrary.h) |
+| 时间轴核心 | [BXTLAsset.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Timeline/BXTLAsset.h) / [BXTLManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Timeline/BXTLManager.h) / [BXTLComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Timeline/BXTLComponent.h) / [BXTLStructs.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Timeline/BXTLStructs.h) |
+| 技能系统 | [BXSkillAsset.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Skill/BXSkillAsset.h) / [BXSkillManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Skill/BXSkillManager.h) / [BXSkillComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Skill/BXSkillComponent.h) / [BXSkillStructs.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Skill/BXSkillStructs.h) / [BXSkillEnums.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Skill/BXSkillEnums.h) |
+| 网络同步 | [BXNetEnums.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Net/BXNetEnums.h) / [BXNetStructs.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Net/BXNetStructs.h) / [BXSkillReplicated.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Net/BXSkillReplicated.h) / [BXTLReplicated.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Timeline/BXTLReplicated.h) / [BXBuffReplicated.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffReplicated.h) |
+| 任务系统 | [BXTask.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTask.h) / [BXTProcessor.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTProcessor.h) |
+| 具体任务 | [BXTAnimation.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTAnimation.h) / [BXTCollision.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTCollision.h) / [BXTFlowControl.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTFlowControl.h) |
+| 状态系统 | [BXBehaviorComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/State/BXBehaviorComponent.h) / [BXBehaviorAgent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/State/BehaviorAgent/BXBehaviorAgent.h) / [BXStateMachine.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/State/StateMachine/BXStateMachine.h) |
+| 决策树 | [BXDecisionTreeTemplate.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/DecisionTree/BXDecisionTreeTemplate.h) / [BXDecisionTreeActuator.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/DecisionTree/BXDecisionTreeActuator.h) |
+| 装备系统 | [BXGear.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Gear/BXGear.h) / [BXGearComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Gear/BXGearComponent.h) / [BXMeleeWeapon.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Gear/BXMeleeWeapon.h) |
+| 移动系统 | [BXCharacterMovementComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Movement/BXCharacterMovementComponent.h) / [BXRootMotionSource.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Movement/BXRootMotionSource.h) |
+| 碰撞系统 | [BXCollision.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Collision/BXCollision.h) / [BXShapeComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Collision/BXShapeComponent.h) / [BXHitReactionComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Collision/BXHitReactionComponent.h) |
+| 事件系统 | [BXEventManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Event/BXEventManager.h) / [BXEventStructs.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Event/BXEventStructs.h) |
 | 条件系统 | [BXCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXCondition.h) / [BXConditionEnums.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionEnums.h) / [BXConditionManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Condition/BXConditionManager.h) / [BXTaskCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Task/BXTaskCondition.h) / [BXDecisionTreeCondition.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/DecisionTree/BXDecisionTreeCondition.h) |
 | BUFF 系统 | [BXBuffAsset.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffAsset.h) / [BXBuffManager.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffManager.h) / [BXBuffComponent.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffComponent.h) / [BXBuffStructs.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffStructs.h) / [BXBuffEnums.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffEnums.h) / [BXBuffFunctionLibrary.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleX/Buff/BXBuffFunctionLibrary.h) |
-| 编辑器入口 | [BattleXEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/BattleXEditor.h) |
-| 时间轴编辑器 | [BXTLEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineEditor/BXTLEditor.h) / [BXTLEditorDelegates.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/BXTLEditorDelegates.h) / [BXTLPreviewProxy.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Preview/BXTLPreviewProxy.h) |
-| 决策树编辑器 | [BXDTEditor.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/DecisionTreeEditor/BXDTEditor.h) |
-| 时间轴控件 | [STimeline.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineBase/STimeline.h) / [TimelineController.h](file:///c:/Users/xiewe/.trae-cn/worktrees/BattleX/feat-code-wiki-action-game-skill-system-OiNOVn/Source/BattleXEditor/TimelineBase/TimelineController.h) |
+| 编辑器入口 | [BattleXEditor.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/BattleXEditor.h) |
+| 时间轴编辑器 | [BXTLEditor.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/BXTLEditor.h) / [BXTLEditorDelegates.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/BXTLEditorDelegates.h) / [BXTLPreviewProxy.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Preview/BXTLPreviewProxy.h) |
+| 决策树编辑器 | [BXDTEditor.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/DecisionTreeEditor/BXDTEditor.h) |
+| 时间轴控件 | [STimeline.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineBase/STimeline.h) / [TimelineController.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineBase/TimelineController.h) |
 | Graph 节点 | [SBXTLGraphNode.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Graph/SBXTLGraphNode.h) / [SBXBuffGraphNode.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Graph/SBXBuffGraphNode.h) / [BXTLGraphNode.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Graph/BXTLGraphNode.h) |
 | 时间轴 Task 节点 | [SBXTLTaskTrackNode.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Timeline/SBXTLTaskTrackNode.h) / [SBXTLTaskTrack.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/TimelineEditor/Timeline/SBXTLTaskTrack.h) |
 | 自定义属性布局 | [BXFunctionSelectorCustomization.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/CustomLayout/BXFunctionSelectorCustomization.h) / [BXBoneSelectorCustomization.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/CustomLayout/BXBoneSelectorCustomization.h) / [SBXBonePicker.h](file:///f:/BXTest/Plugins/BattleX/Source/BattleXEditor/CustomLayout/SBXBonePicker.h) |
@@ -1410,6 +1679,9 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 | `EBXBuffLayerLifeMode` | BXBuffEnums.h | Shared / Independent（层级生命周期模式） |
 | `EBXBuffCoexistPolicy` | BXBuffEnums.h | Coexist / Replace（BUFF 共存策略） |
 | `EBXBuffRemoveReason` | BXBuffEnums.h | Manual / Expired / OverStack / OwnerLost（BUFF 移除原因） |
+| `EBXSyncInitiator` | BXNetEnums.h | Client / Server（同步发起端，编码在同步 ID 高 3 位） |
+| `EBXPredictState` | BXSkillEnums.h | None / Predicting / Confirmed / RollingBack（技能预测状态） |
+| `EBXSkillLockType` | BXSkillEnums.h | None / Target / Location / Direction（技能锁定类型） |
 
 ---
 

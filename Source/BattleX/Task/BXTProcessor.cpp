@@ -192,6 +192,8 @@ bool UBXTProcessor::AddPendingTask(UPARAM(ref) FBXTLRunTimeData& InOutRTData, UP
 	}
 
 	// 需要广播，则添加到广播列表
+	// [网络多播预留]当前仅收集不消费(全工程无读取方),条目随Section重置清空;
+	// 后续网络多播功能接入时从此队列读取并经同步通道分发,接入前请勿移除本机制
 	if (EventPointer->bMulticast)
 	{
 		InOutRTSData.BroadcastTasks.Add(FBXTLBroadcastTaskInfo(InOutRTSData.Index * 1000 + InOutRTTData.Index, InEventTag));
@@ -339,6 +341,12 @@ void UBXTProcessor::GetTargetActorList(const FBXTLRunTimeData& InRTData, const F
 	OutActors.Reset();
 	for (TArray<USceneComponent*>::TIterator It(Components); It; ++It)
 	{
+		// 组件列表可含null(碰撞结果命中无组件Actor/T_LockTargets的部件失效),解引用前判空
+		if (!(*It))
+		{
+			continue;
+		}
+
 		OutActors.AddUnique((*It)->GetOwner());
 	}
 }
@@ -373,11 +381,12 @@ bool UBXTProcessor::AnalyzeTransformCreater(const FBXTLRunTimeData& InRTData, co
 	{
 		if (InCreater.XAxisType == EBXTCoordinateType::C_Target)
 		{
-			if (IsValid(InTarget))
+			// 目标无效时拒绝(原实现条件写反:有效时失败返回,无效时空指针解引用)
+			if (!IsValid(InTarget))
 			{
 				return false;
 			}
-		
+
 			XAxisComponent = InTarget->GetRootComponent();
 			XAxisTransform = XAxisComponent->GetComponentTransform();
 		}

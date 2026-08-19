@@ -21,7 +21,8 @@ public:
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int64 Priority = 0;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	// 运行时唯一ID,不应在细节面板被编辑(与Priority的Transient一致)
+	UPROPERTY(Transient, BlueprintReadWrite)
 	int64 Permission = 0;
 	
 };

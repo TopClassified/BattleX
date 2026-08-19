@@ -26,7 +26,8 @@ void UBXTIntervalCollision::PostEditChangeProperty(struct FPropertyChangedEvent&
 {
 	if (LifeType == EBXTLifeType::L_Duration || LifeType == EBXTLifeType::L_DurationTimeline)
 	{
-		Count = FMath::Floor(Duration / Interval);
+		// Interval的ClampMin仅约束UI输入,代码/蓝图直设可为0,除零结果转int32溢出
+		Count = FMath::Floor(Duration / FMath::Max(Interval, 0.001f));
 	}
 	else
 	{

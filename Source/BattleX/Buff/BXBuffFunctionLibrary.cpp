@@ -16,9 +16,12 @@ int64 UBXBuffFunctionLibrary::AddBuff(UObject* WorldContextObject, UBXBuffAsset*
 
 	FBXBuffPlayContext Context;
 	Context.Instigator = InInstigator;
-	Context.Triggerer = InInstigator;
-	Context.InitLayer = InLayer;
-	Context.InitLevel = InLevel;
+	// Triggerer语义为触发者=持有者(组件路径一致,原误传InInstigator且其可为null导致Task读Triggerer空引用)
+	Context.Triggerer = InOwner;
+
+	// 与组件Authority路径一致钳制(负数InitLayer会令LayerRunTimes.Init以负数长度调用,未定义行为/崩溃)
+	Context.InitLayer = FMath::Clamp(InLayer, 1, IsValid(InAsset) ? InAsset->MaxLayer : 1);
+	Context.InitLevel = FMath::Clamp(InLevel, 1, IsValid(InAsset) ? InAsset->MaxLevel : 1);
 
 	return Mgr->AddBuff(InAsset, InOwner, Context);
 }

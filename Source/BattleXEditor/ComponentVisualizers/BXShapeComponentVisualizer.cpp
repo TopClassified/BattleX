@@ -45,13 +45,18 @@ void FBXShapeComponentVisualizer::DrawVisualization(const UActorComponent* Compo
 		return;
 	}
 
-	USceneComponent* AttachParent = Owner->GetRootComponent();
 	for (TMap<FGameplayTag, FBXShapeInformation>::TConstIterator It(ShapeComponent->ShapeInformations); It; ++It)
 	{
-		AttachParent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, It->Value.AttachParent, nullptr, false);
+		USceneComponent* AttachParent = UBXFunctionLibrary::GetSceneComponentByNameAndClass(Owner, It->Value.AttachParent, nullptr, false);
 		if (!AttachParent)
 		{
 			AttachParent = Owner->GetRootComponent();
+		}
+
+		// 根组件也可能为空(Actor未Attach/组件剥离),回退后仍需判空(与运行时BXShapeComponent同路径防御对齐)
+		if (!AttachParent)
+		{
+			continue;
 		}
 
 		FTransform WTransform = It->Value.Relation * AttachParent->GetSocketTransform(It->Value.Socket.BoneName);

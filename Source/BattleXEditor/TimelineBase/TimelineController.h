@@ -51,7 +51,7 @@ public:
 	virtual FFrameNumber GetScrubPosition() const;
 
 	/** Set the current scrub position */
-	virtual void SetScrubPosition(FFrameTime NewScrubPostion) const;
+	virtual void SetScrubPosition(FFrameTime NewScrubPosition) const;
 
 	/** Get the sequence length of the object */
 	virtual float GetPlayLength() const;
@@ -97,7 +97,7 @@ protected:
 	FAnimatedRange WorkingRange;
 
 	/** Recursion guard for selection */
-	bool bIsSelecting;
+	bool bIsSelecting = false;
 
 #pragma endregion Parameter
 

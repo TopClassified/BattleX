@@ -89,6 +89,7 @@ void UBXBuffManager::Tick(float DeltaTime)
 		TickBuffIDs.Add(Pair.Key);
 	}
 
+	// 更新窗口:期间Task回调中的AddBuff入挂起区(直接Add触发TMap扩容rehash会令遍历中的InOutData引用悬空)
 	bUpdatingBuff = true;
 
 	for (int64 BuffID : TickBuffIDs)
@@ -100,9 +101,12 @@ void UBXBuffManager::Tick(float DeltaTime)
 		}
 	}
 
+	CleanBuffTrash();
+
 	bUpdatingBuff = false;
 
-	CleanBuffTrash();
+	// 合并挂起的新增BUFF(合并点在全部遍历外,此处TMap扩容安全;staging条目下帧起参与更新,与同步路径下帧可见一致)
+	MergePendingAddBuffs();
 }
 
 void UBXBuffManager::InternalUpdateBuff(FBXBuffRuntimeData& InOutData, float InDeltaTime)
@@ -169,7 +173,22 @@ void UBXBuffManager::InternalUpdateBuff(FBXBuffRuntimeData& InOutData, float InD
 
 				InternalRefreshBuffTasksByLayer(InOutData, OldLayer, InOutData.CurrentLayer);
 
-				BroadcastBuffEvent(InOutData, BXGameplayTags::BXEvent_Buff_LayerChanged, FBXEventBuffChanged());
+				// 服务器刷新复制快照(层级变化仅经复制通道同步,与ChangeBuffLayer对称,否则客户端层数/到期时刻持续陈旧)
+				if (UBXBuffComponent* BuffComponent = GetOwnerBuffComponent(InOutData.TLRunTimeData.Owner))
+				{
+					BuffComponent->UpdateBuffReplicatedState(InOutData.BuffID);
+				}
+
+				FBXEventBuffChanged Param;
+				Param.OldLayer = OldLayer;
+				Param.NewLayer = InOutData.CurrentLayer;
+				BroadcastBuffEvent(InOutData, BXGameplayTags::BXEvent_Buff_LayerChanged, Param);
+
+				// 回调中BP可能同步移除BUFF(清空LayerRunTimes)或改层,每轮复查索引防越界
+				if (!BuffRTDatas.Contains(InOutData.BuffID) || i > InOutData.LayerRunTimes.Num())
+				{
+					return;
+				}
 			}
 		}
 
@@ -208,6 +227,12 @@ void UBXBuffManager::CleanBuffTrash()
 					OwnerBuffMap.Remove(Owner);
 				}
 			}
+
+			// 通知组件清理本地登记(OwnedBuffIDs),否则自然到期/耗尽的BUFF ID永久残留
+			if (UBXBuffComponent* BuffComponent = Owner->FindComponentByClass<UBXBuffComponent>())
+			{
+				BuffComponent->InternalOnBuffFinished(TrashID);
+			}
 		}
 	}
 }
@@ -225,12 +250,19 @@ int64 UBXBuffManager::AddBuff(UBXBuffAsset* InAsset, AActor* InOwner, FBXBuffPla
 		return INDEX_NONE;
 	}
 
+	// 入口统一钳制(本函数为BlueprintCallable,BP直调可绕过组件/函数库路径的ServerValidateAddBuff,
+	// 负数InitLayer会令LayerRunTimes.Init以负数长度调用触发TArray check崩溃)
+	InContext.InitLayer = FMath::Clamp(InContext.InitLayer, 1, InAsset->MaxLayer);
+	InContext.InitLevel = FMath::Clamp(InContext.InitLevel, 1, InAsset->MaxLevel);
+
 	// 共存策略处理
 	if (InAsset->CoexistPolicy == EBXBuffCoexistPolicy::BC_Coexist)
 	{
 		if (FBXBuffRuntimeData* Existing = FindExistingBuff(InOwner, InAsset, InContext.Instigator))
 		{
+			// 层级按增量叠加,等级按差值对齐(与Replace分支行为对称)
 			ChangeBuffLayer(Existing->BuffID, InContext.InitLayer);
+			ChangeBuffLevel(Existing->BuffID, InContext.InitLevel - Existing->CurrentLevel);
 
 			if (InAsset->bRefreshLifetimeOnAdd)
 			{
@@ -256,24 +288,17 @@ int64 UBXBuffManager::AddBuff(UBXBuffAsset* InAsset, AActor* InOwner, FBXBuffPla
 
 	// 创建新运行时数据
 	int64 NewID = UBXFunctionLibrary::GetUniqueID();
-	FBXBuffRuntimeData& Data = BuffRTDatas.Add(NewID);
 
-	Data.BuffAsset = InAsset;
-	Data.BuffID = NewID;
-	Data.TLRunTimeData.ID = NewID;
-	Data.TLRunTimeData.Timeline = InAsset;
-	Data.TLRunTimeData.Owner = InOwner;
+	// 构建并激活(更新窗口内自动入挂起区)
+	InternalBuildNewBuff(InAsset, InOwner, InContext, NewID);
 
-	InternalAddBuff(Data, InContext);
-
-	OwnerBuffMap.FindOrAdd(InOwner).Add(NewID);
-
-	// 服务器维护复制快照(新连接/新相关客户端重建用)
+	// 服务器维护复制快照(新连接/新相关客户端重建用,须在InternalAddBuff填充层级后登记)
 	if (UBXBuffComponent* BuffComponent = GetOwnerBuffComponent(InOwner))
 	{
 		BuffComponent->AddBuffReplicatedState(NewID);
 	}
 
+	UE_LOG(BXMGR_Buff, Log, TEXT("UBXBuffManager::AddBuff: BuffID=%lld Asset=%s Layer=%d Level=%d."), NewID, *InAsset->GetName(), InContext.InitLayer, InContext.InitLevel);
 	return NewID;
 }
 
@@ -284,42 +309,36 @@ int64 UBXBuffManager::AddBuffWithID(UBXBuffAsset* InAsset, AActor* InOwner, cons
 		return INDEX_NONE;
 	}
 
-	// 如果ID已存在,直接返回
-	if (BuffRTDatas.Find(InBuffID))
+	// 如果ID已存在(含挂起区),直接返回
+	if (GetBuffRuntimeDataByID(InBuffID))
 	{
 		return InBuffID;
 	}
 
-	// 创建新运行时数据
-	FBXBuffRuntimeData& Data = BuffRTDatas.Add(InBuffID);
-
-	Data.BuffAsset = InAsset;
-	Data.BuffID = InBuffID;
-	Data.TLRunTimeData.ID = InBuffID;
-	Data.TLRunTimeData.Timeline = InAsset;
-	Data.TLRunTimeData.Owner = InOwner;
-
-	InternalAddBuff(Data, InContext);
-
-	OwnerBuffMap.FindOrAdd(InOwner).Add(InBuffID);
+	// 构建并激活(更新窗口内自动入挂起区)
+	InternalBuildNewBuff(InAsset, InOwner, InContext, InBuffID);
 
 	return InBuffID;
 }
 
-bool UBXBuffManager::ServerValidateAddBuff(UBXBuffAsset* InAsset, AActor* InOwner, const FBXBuffPlayContext& InContext)
+bool UBXBuffManager::ServerValidateAddBuff(UBXBuffAsset* InAsset, AActor* InOwner, const FBXBuffPlayContext& InContext, FBXBuffPlayContext& OutContext)
 {
 	if (!InAsset || !InOwner)
 	{
 		return false;
 	}
 
-	// TODO: 根据项目需求补充具体校验逻辑(资产合法性、层数上限、Owner存活等)
+	// 钳制初始层级/等级到资产范围(不信任客户端传入值,越界InitLayer会撑爆LayerRunTimes数组)
+	OutContext = InContext;
+	OutContext.InitLayer = FMath::Clamp(InContext.InitLayer, 1, InAsset->MaxLayer);
+	OutContext.InitLevel = FMath::Clamp(InContext.InitLevel, 1, InAsset->MaxLevel);
 	return true;
 }
 
 void UBXBuffManager::RemoveBuff(int64 InID, int32 InLayerDelta)
 {
-	FBXBuffRuntimeData* Data = BuffRTDatas.Find(InID);
+	// 双查(挂起区条目同样可被移除:标记bEarlyFinish后合并时跳过入表)
+	FBXBuffRuntimeData* Data = GetBuffRuntimeDataByID(InID);
 	if (!Data || Data->bEarlyFinish)
 	{
 		return;
@@ -337,6 +356,7 @@ void UBXBuffManager::RemoveBuff(int64 InID, int32 InLayerDelta)
 			}
 		}
 
+		const int64 BuffID = InID;
 		int32 OldLayer = Data->CurrentLayer;
 		Data->CurrentLayer = Data->LayerRunTimes.Num();
 
@@ -347,6 +367,21 @@ void UBXBuffManager::RemoveBuff(int64 InID, int32 InLayerDelta)
 		else
 		{
 			InternalRefreshBuffTasksByLayer(*Data, OldLayer, Data->CurrentLayer);
+
+			// 手动按层移除与到期/ChangeBuffLayer路径对称:刷新复制快照并广播层级变化事件,否则客户端层数脱节且监听者无法感知
+			// (回调后重查走双查:目标条目可能在挂起区)
+			if (FBXBuffRuntimeData* RefoundData = GetBuffRuntimeDataByID(BuffID))
+			{
+				if (UBXBuffComponent* BuffComponent = GetOwnerBuffComponent(RefoundData->TLRunTimeData.Owner))
+				{
+					BuffComponent->UpdateBuffReplicatedState(BuffID);
+				}
+
+				FBXEventBuffChanged Param;
+				Param.OldLayer = OldLayer;
+				Param.NewLayer = RefoundData->CurrentLayer;
+				BroadcastBuffEvent(*RefoundData, BXGameplayTags::BXEvent_Buff_LayerChanged, Param);
+			}
 		}
 	}
 	else
@@ -357,7 +392,8 @@ void UBXBuffManager::RemoveBuff(int64 InID, int32 InLayerDelta)
 
 void UBXBuffManager::RemoveBuffWithReason(int64 InID, EBXBuffRemoveReason InReason)
 {
-	FBXBuffRuntimeData* Data = BuffRTDatas.Find(InID);
+	// 双查(同RemoveBuff)
+	FBXBuffRuntimeData* Data = GetBuffRuntimeDataByID(InID);
 	if (!Data || Data->bEarlyFinish)
 	{
 		return;
@@ -368,7 +404,8 @@ void UBXBuffManager::RemoveBuffWithReason(int64 InID, EBXBuffRemoveReason InReas
 
 void UBXBuffManager::ChangeBuffLayer(int64 InID, int32 InLayerDelta)
 {
-	FBXBuffRuntimeData* Data = BuffRTDatas.Find(InID);
+	// 双查(挂起区条目可被同帧改层)
+	FBXBuffRuntimeData* Data = GetBuffRuntimeDataByID(InID);
 	if (!Data || Data->bEarlyFinish)
 	{
 		return;
@@ -428,7 +465,8 @@ void UBXBuffManager::ChangeBuffLayer(int64 InID, int32 InLayerDelta)
 
 void UBXBuffManager::ChangeBuffLevel(int64 InID, int32 InLevelDelta)
 {
-	FBXBuffRuntimeData* Data = BuffRTDatas.Find(InID);
+	// 双查(同ChangeBuffLayer)
+	FBXBuffRuntimeData* Data = GetBuffRuntimeDataByID(InID);
 	if (!Data || Data->bEarlyFinish)
 	{
 		return;
@@ -464,7 +502,8 @@ void UBXBuffManager::ChangeBuffLevel(int64 InID, int32 InLevelDelta)
 
 void UBXBuffManager::RefreshBuffLifetime(int64 InID)
 {
-	FBXBuffRuntimeData* Data = BuffRTDatas.Find(InID);
+	// 双查(同ChangeBuffLayer)
+	FBXBuffRuntimeData* Data = GetBuffRuntimeDataByID(InID);
 	if (!Data || Data->bEarlyFinish)
 	{
 		return;
@@ -488,16 +527,22 @@ void UBXBuffManager::RefreshBuffLifetime(int64 InID)
 
 bool UBXBuffManager::HasBuff(AActor* InOwner, UBXBuffAsset* InAsset) const
 {
-	const TArray<int64>* IDs = OwnerBuffMap.Find(InOwner);
-	if (!IDs)
+	if (const TArray<int64>* IDs = OwnerBuffMap.Find(InOwner))
 	{
-		return false;
+		for (int64 ID : *IDs)
+		{
+			const FBXBuffRuntimeData* Data = BuffRTDatas.Find(ID);
+			if (Data && !Data->bEarlyFinish && Data->BuffAsset == InAsset)
+			{
+				return true;
+			}
+		}
 	}
 
-	for (int64 ID : *IDs)
+	// 挂起区扫描(更新窗口内新增的BUFF未登记OwnerBuffMap,漏扫会令同帧HasBuff误报false)
+	for (const TUniquePtr<FBXBuffRuntimeData>& Pending : PendingAddBuffs)
 	{
-		const FBXBuffRuntimeData* Data = BuffRTDatas.Find(ID);
-		if (Data && !Data->bEarlyFinish && Data->BuffAsset == InAsset)
+		if (Pending.IsValid() && !Pending->bEarlyFinish && Pending->BuffAsset == InAsset && Pending->TLRunTimeData.Owner == InOwner)
 		{
 			return true;
 		}
@@ -508,16 +553,22 @@ bool UBXBuffManager::HasBuff(AActor* InOwner, UBXBuffAsset* InAsset) const
 
 bool UBXBuffManager::HasBuffByTag(AActor* InOwner, FGameplayTag InTag) const
 {
-	const TArray<int64>* IDs = OwnerBuffMap.Find(InOwner);
-	if (!IDs)
+	if (const TArray<int64>* IDs = OwnerBuffMap.Find(InOwner))
 	{
-		return false;
+		for (int64 ID : *IDs)
+		{
+			const FBXBuffRuntimeData* Data = BuffRTDatas.Find(ID);
+			if (Data && !Data->bEarlyFinish && Data->BuffAsset && Data->BuffAsset->BuffTags.HasTag(InTag))
+			{
+				return true;
+			}
+		}
 	}
 
-	for (int64 ID : *IDs)
+	// 挂起区扫描(同HasBuff)
+	for (const TUniquePtr<FBXBuffRuntimeData>& Pending : PendingAddBuffs)
 	{
-		const FBXBuffRuntimeData* Data = BuffRTDatas.Find(ID);
-		if (Data && !Data->bEarlyFinish && Data->BuffAsset && Data->BuffAsset->BuffTags.HasTag(InTag))
+		if (Pending.IsValid() && !Pending->bEarlyFinish && Pending->BuffAsset && Pending->BuffAsset->BuffTags.HasTag(InTag) && Pending->TLRunTimeData.Owner == InOwner)
 		{
 			return true;
 		}
@@ -528,7 +579,21 @@ bool UBXBuffManager::HasBuffByTag(AActor* InOwner, FGameplayTag InTag) const
 
 FBXBuffRuntimeData* UBXBuffManager::GetBuffRuntimeDataByID(int64 InID)
 {
-	return BuffRTDatas.Find(InID);
+	if (FBXBuffRuntimeData* Data = BuffRTDatas.Find(InID))
+	{
+		return Data;
+	}
+
+	// 挂起区双查(更新窗口内新增的BUFF尚未合并入主容器,漏查会令同帧查询/共存判定/快照填充失效)
+	for (const TUniquePtr<FBXBuffRuntimeData>& Pending : PendingAddBuffs)
+	{
+		if (Pending.IsValid() && Pending->BuffID == InID)
+		{
+			return Pending.Get();
+		}
+	}
+
+	return nullptr;
 }
 
 void UBXBuffManager::BroadcastBuffEvent(const FBXBuffRuntimeData& InData, const FGameplayTag& InEventTag, const FBXEventBuffChanged& InParam)
@@ -557,18 +622,24 @@ void UBXBuffManager::BroadcastBuffEvent(const FBXBuffRuntimeData& InData, const 
 
 FBXBuffRuntimeData* UBXBuffManager::FindExistingBuff(AActor* InOwner, UBXBuffAsset* InAsset, AActor* InInstigator)
 {
-	const TArray<int64>* IDs = OwnerBuffMap.Find(InOwner);
-	if (!IDs)
+	if (const TArray<int64>* IDs = OwnerBuffMap.Find(InOwner))
 	{
-		return nullptr;
+		for (int64 ID : *IDs)
+		{
+			FBXBuffRuntimeData* Data = BuffRTDatas.Find(ID);
+			if (Data && !Data->bEarlyFinish && Data->BuffAsset == InAsset && Data->TLRunTimeData.Instigator == InInstigator)
+			{
+				return Data;
+			}
+		}
 	}
 
-	for (int64 ID : *IDs)
+	// 挂起区扫描(共存判定必须覆盖同帧新建的BUFF,否则重复施加会绕过共存叠加产生双实例)
+	for (const TUniquePtr<FBXBuffRuntimeData>& Pending : PendingAddBuffs)
 	{
-		FBXBuffRuntimeData* Data = BuffRTDatas.Find(ID);
-		if (Data && !Data->bEarlyFinish && Data->BuffAsset == InAsset && Data->TLRunTimeData.Instigator == InInstigator)
+		if (Pending.IsValid() && !Pending->bEarlyFinish && Pending->BuffAsset == InAsset && Pending->TLRunTimeData.Owner == InOwner && Pending->TLRunTimeData.Instigator == InInstigator)
 		{
-			return Data;
+			return Pending.Get();
 		}
 	}
 
@@ -577,42 +648,69 @@ FBXBuffRuntimeData* UBXBuffManager::FindExistingBuff(AActor* InOwner, UBXBuffAss
 
 FBXBuffRuntimeData* UBXBuffManager::FindBestBuffToReplace(AActor* InOwner, UBXBuffAsset* InAsset)
 {
-	const TArray<int64>* IDs = OwnerBuffMap.Find(InOwner);
-	if (!IDs)
-	{
-		return nullptr;
-	}
-
 	FBXBuffRuntimeData* Best = nullptr;
 
-	for (int64 ID : *IDs)
+	if (const TArray<int64>* IDs = OwnerBuffMap.Find(InOwner))
 	{
-		FBXBuffRuntimeData* Data = BuffRTDatas.Find(ID);
-		if (!Data || Data->bEarlyFinish || Data->BuffAsset != InAsset)
+		for (int64 ID : *IDs)
+		{
+			FBXBuffRuntimeData* Data = BuffRTDatas.Find(ID);
+			if (!Data || Data->bEarlyFinish || Data->BuffAsset != InAsset)
+			{
+				continue;
+			}
+
+			if (!Best)
+			{
+				Best = Data;
+				continue;
+			}
+
+			// 取等级最高
+			if (Data->CurrentLevel > Best->CurrentLevel)
+			{
+				Best = Data;
+			}
+			else if (Data->CurrentLevel == Best->CurrentLevel)
+			{
+				// 等级相同取剩余时长最长
+				float DataRemain = Data->BuffAsset->BuffDuration - Data->RunTime;
+				float BestRemain = Best->BuffAsset->BuffDuration - Best->RunTime;
+
+				if (DataRemain > BestRemain)
+				{
+					Best = Data;
+				}
+			}
+		}
+	}
+
+	// 挂起区扫描(替换判定须与共存判定同样覆盖同帧新建条目,候选纳入同一套比较)
+	for (const TUniquePtr<FBXBuffRuntimeData>& Pending : PendingAddBuffs)
+	{
+		if (!Pending.IsValid() || Pending->bEarlyFinish || Pending->BuffAsset != InAsset || Pending->TLRunTimeData.Owner != InOwner)
 		{
 			continue;
 		}
 
 		if (!Best)
 		{
-			Best = Data;
+			Best = Pending.Get();
 			continue;
 		}
 
-		// 取等级最高
-		if (Data->CurrentLevel > Best->CurrentLevel)
+		if (Pending->CurrentLevel > Best->CurrentLevel)
 		{
-			Best = Data;
+			Best = Pending.Get();
 		}
-		else if (Data->CurrentLevel == Best->CurrentLevel)
+		else if (Pending->CurrentLevel == Best->CurrentLevel)
 		{
-			// 等级相同取剩余时长最长
-			float DataRemain = Data->BuffAsset->BuffDuration - Data->RunTime;
+			float PendingRemain = Pending->BuffAsset->BuffDuration - Pending->RunTime;
 			float BestRemain = Best->BuffAsset->BuffDuration - Best->RunTime;
 
-			if (DataRemain > BestRemain)
+			if (PendingRemain > BestRemain)
 			{
-				Best = Data;
+				Best = Pending.Get();
 			}
 		}
 	}
@@ -646,8 +744,74 @@ void UBXBuffManager::InternalAddBuff(FBXBuffRuntimeData& InOutData, const FBXBuf
 	BroadcastBuffEvent(InOutData, BXGameplayTags::BXEvent_Buff_Added, FBXEventBuffChanged());
 }
 
+FBXBuffRuntimeData* UBXBuffManager::InternalBuildNewBuff(UBXBuffAsset* InAsset, AActor* InOwner, const FBXBuffPlayContext& InContext, int64 InBuffID)
+{
+	// 先在堆上完整构建(含Task启动与Added广播):回调链中递归AddBuff时本对象地址稳定,
+	// 且递归条目同样按时机入挂起区或主容器,均无TMap扩容风险
+	TUniquePtr<FBXBuffRuntimeData> NewData = MakeUnique<FBXBuffRuntimeData>();
+	NewData->BuffAsset = InAsset;
+	NewData->BuffID = InBuffID;
+	NewData->TLRunTimeData.ID = InBuffID;
+	NewData->TLRunTimeData.Timeline = InAsset;
+	NewData->TLRunTimeData.Owner = InOwner;
+
+	InternalAddBuff(*NewData, InContext);
+
+	if (bUpdatingBuff)
+	{
+		// 更新窗口内:入挂起区Tick末合并(直接Add会触发TMap扩容rehash,使更新管线遍历中的数据引用悬空)
+		PendingAddBuffs.Add(MoveTemp(NewData));
+	}
+	else
+	{
+		OwnerBuffMap.FindOrAdd(InOwner).Add(InBuffID);
+		BuffRTDatas.Add(InBuffID, MoveTemp(*NewData));
+	}
+
+	return GetBuffRuntimeDataByID(InBuffID);
+}
+
+void UBXBuffManager::MergePendingAddBuffs()
+{
+	for (TUniquePtr<FBXBuffRuntimeData>& Pending : PendingAddBuffs)
+	{
+		if (!Pending.IsValid())
+		{
+			continue;
+		}
+
+		// 更新中被移除的条目:不并入主容器,仅清理组件本地登记(与CleanBuffTrash对bEarlyFinish条目的处理对称;
+		// Removed广播与MulticastRemoveBuff已在InternalRemoveBuff执行过,此处禁止重复)
+		if (Pending->bEarlyFinish)
+		{
+			if (AActor* Owner = Pending->TLRunTimeData.Owner)
+			{
+				if (UBXBuffComponent* BuffComponent = Owner->FindComponentByClass<UBXBuffComponent>())
+				{
+					BuffComponent->InternalOnBuffFinished(Pending->BuffID);
+				}
+			}
+
+			continue;
+		}
+
+		// 纯数据搬移:OwnerBuffMap登记延迟至此(更新窗口内对其Add新键同样有rehash风险),合并点在全部遍历外扩容安全
+		OwnerBuffMap.FindOrAdd(Pending->TLRunTimeData.Owner).Add(Pending->BuffID);
+		BuffRTDatas.Add(Pending->BuffID, MoveTemp(*Pending));
+	}
+
+	PendingAddBuffs.Reset();
+}
+
 void UBXBuffManager::InternalRemoveBuff(FBXBuffRuntimeData& InOutData, EBXBuffRemoveReason InReason)
 {
+	// 幂等守卫:到期路径的FinishTimelineSection会触发Task End回调,BP可在回调中先行RemoveBuff同ID
+	// (此时已完整移除含广播),无守卫会二次执行导致Removed事件与MulticastRemoveBuff重复
+	if (InOutData.bEarlyFinish)
+	{
+		return;
+	}
+
 	// 停止所有Task
 	StopBuffTasks(InOutData);
 
@@ -665,9 +829,14 @@ void UBXBuffManager::InternalRemoveBuff(FBXBuffRuntimeData& InOutData, EBXBuffRe
 	{
 		if (UBXBuffComponent* BuffComponent = Owner->FindComponentByClass<UBXBuffComponent>())
 		{
+			UE_LOG(BXMGR_Buff, Log, TEXT("UBXBuffManager::InternalRemoveBuff: BuffID=%lld Reason=%d, broadcasting."), InOutData.BuffID, (int32)InReason);
 			BuffComponent->MulticastRemoveBuff(InOutData.BuffID, static_cast<uint8>(InReason));
 			BuffComponent->RemoveBuffReplicatedState(InOutData.BuffID);
 		}
+	}
+	else
+	{
+		UE_LOG(BXMGR_Buff, Log, TEXT("UBXBuffManager::InternalRemoveBuff: BuffID=%lld Reason=%d (local client instance)."), InOutData.BuffID, (int32)InReason);
 	}
 }
 
@@ -780,10 +949,14 @@ void UBXBuffManager::StopBuffTask(FBXBuffRuntimeData& InOutData, UBXTask* InTask
 		{
 			if (UBXTProcessor* Processor = TLMgr->GetTLTProcessorByTLTClass(InTask->GetClass()))
 			{
+				// EndTask内部已按地址从RunningTasks移除该条目,外层禁止再RemoveCurrent(否则误删左移进来的相邻条目/末尾元素越界)
 				Processor->EndTask(TLData, SectionRT, TaskRT, EBXTLFinishReason::FR_Interrupt);
 			}
+			else
+			{
+				It.RemoveCurrent();
+			}
 
-			It.RemoveCurrent();
 			break;
 		}
 	}

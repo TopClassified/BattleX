@@ -28,7 +28,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Buff")
 	int64 AddBuff(UBXBuffAsset* InAsset, AActor* InInstigator = nullptr, int32 InLayer = 1, int32 InLevel = 1);
 
-	// 移除BUFF
+	// 移除BUFF(InLayerDelta<=0整体移除;>0时独立层级模式下移除指定层数,层数耗尽自动整体移除)
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Buff")
 	void RemoveBuff(int64 InBuffID, int32 InLayerDelta = 0);
 
@@ -58,9 +58,9 @@ public:
 
 #pragma region RPC RequestAddBuff
 public:
-	// 请求添加BUFF
+	// 请求添加BUFF(传资产ID,服务器经注册表解析,防客户端伪造对象引用)
 	UFUNCTION(Server, Reliable, WithValidation)
-	void ServerRequestAddBuff(UBXBuffAsset* InAsset, AActor* InInstigator, int32 InLayer, int32 InLevel);
+	void ServerRequestAddBuff(int32 InBuffAssetID, AActor* InInstigator, int32 InLayer, int32 InLevel);
 
 #pragma endregion RPC RequestAddBuff
 
@@ -78,9 +78,9 @@ public:
 
 #pragma region RPC MulticastAddBuff
 public:
-	// 广播添加BUFF
+	// 广播添加BUFF(传资产ID,接收端经注册表解析;资产对象引用非Actor/Component无法经RPC序列化)
 	UFUNCTION(NetMulticast, Reliable)
-	void MulticastAddBuff(int64 InBuffID, UBXBuffAsset* InAsset, AActor* InOwner, AActor* InInstigator, int32 InLayer, int32 InLevel);
+	void MulticastAddBuff(int64 InBuffID, int32 InBuffAssetID, AActor* InOwner, AActor* InInstigator, int32 InLayer, int32 InLevel);
 
 #pragma endregion RPC MulticastAddBuff
 
@@ -96,16 +96,6 @@ public:
 
 
 
-#pragma region RPC MulticastBuffLayer
-public:
-	// 广播层数变化
-	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastBuffLayerChanged(int64 InBuffID, int32 InNewLayer);
-
-#pragma endregion RPC MulticastBuffLayer
-
-
-
 #pragma region Internal
 public:
 	// 根据复制状态重建进行中的BUFF(新复制到本地的对象初始化用)
@@ -116,6 +106,9 @@ public:
 
 	// 移除本地存在的BUFF(快照条目消失的乱序兜底)
 	void RemoveBuffIfLocalExists(int64 InBuffID);
+
+	// BUFF实例结束通知(Manager清理运行数据时调用):移除OwnedBuffIDs登记,否则自然到期的BUFF ID永久残留
+	void InternalOnBuffFinished(int64 InBuffID);
 
 	// 服务器维护快照条目:BUFF添加后加入
 	void AddBuffReplicatedState(int64 InBuffID);

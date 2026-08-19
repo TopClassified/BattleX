@@ -101,6 +101,12 @@ void UBXTPPlayAnimation::Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTDat
 	FGameplayTag PMovingTag = FGameplayTag::RequestGameplayTag(TEXT("BXBehavior.ProactiveMoving"));
 	for (TArray<USkeletalMeshComponent*>::TIterator It(TPC.TComponents); It; ++It)
 	{
+		// Start中组件无效时会Add(nullptr)占位保持索引对齐,解引用前必须判空
+		if (!IsValid(*It))
+		{
+			continue;
+		}
+
 		UAnimInstance* AnimIns = (*It)->GetAnimInstance();
 		if (!IsValid(AnimIns) || !TPC.Parameters.IsValidIndex(It.GetIndex()))
 		{
@@ -139,20 +145,29 @@ void UBXTPPlayAnimation::End(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTData& 
 	
 	for (TArray<USkeletalMeshComponent*>::TIterator It(TPC.TComponents); It; ++It)
 	{
+		// Start中组件无效时会Add(nullptr)占位保持索引对齐,解引用前必须判空
+		if (!IsValid(*It))
+		{
+			continue;
+		}
+
 		UBXAnimInstance* AnimIns = Cast<UBXAnimInstance>((*It)->GetAnimInstance());
 		if (!IsValid(AnimIns) || !TPC.Parameters.IsValidIndex(It.GetIndex()))
 		{
 			continue;
 		}
-		
+
 		// 停止蒙太奇播放
 		if (FAnimMontageInstance* MIns = AnimIns->GetMontageInstanceForID(TPC.Parameters[It.GetIndex()].MontageInstanceID))
 		{
 			AnimIns->Montage_Stop(BlendOut, MIns->Montage);
 		}
 
-		// 归还动画播放权限
-		AnimIns->RevokePlayAnimationPermission(Task->PlayAnimBehaviorTag, TPC.Parameters[It.GetIndex()].Permission);
+		// 归还动画播放权限(Task可能已失效,与上方BlendOut防御对齐)
+		if (IsValid(Task))
+		{
+			AnimIns->RevokePlayAnimationPermission(Task->PlayAnimBehaviorTag, TPC.Parameters[It.GetIndex()].Permission);
+		}
 	}
 }
 
@@ -169,6 +184,12 @@ void UBXTPPlayAnimation::ChangeTickRate(FBXTLTaskRTData& InOutRTTData, float InR
 
 	for (TArray<USkeletalMeshComponent*>::TIterator It(TPC.TComponents); It; ++It)
 	{
+		// Start中组件无效时会Add(nullptr)占位保持索引对齐,解引用前必须判空
+		if (!IsValid(*It))
+		{
+			continue;
+		}
+
 		UAnimInstance* AnimIns = (*It)->GetAnimInstance();
 		if (!IsValid(AnimIns) || !TPC.Parameters.IsValidIndex(It.GetIndex()))
 		{

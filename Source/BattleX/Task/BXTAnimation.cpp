@@ -18,7 +18,8 @@ void UBXTPlayAnimation::PostEditChangeProperty(struct FPropertyChangedEvent& Pro
 
 	if (AssetType == EBXTAnimationAssetType::AAT_Montage)
 	{
-		Duration = IsValid(Montage) ? (Montage->GetPlayLength() / PlayRate) : 1.0f;
+		// PlayRate无下限约束,0时除零得inf被烘焙进资产,任务永不结束
+		Duration = IsValid(Montage) ? (Montage->GetPlayLength() / FMath::Max(PlayRate, 0.01f)) : 1.0f;
 	}
 
 	Super::PostEditChangeProperty(PropertyChangedEvent);

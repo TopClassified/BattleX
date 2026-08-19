@@ -114,6 +114,7 @@ void UBXSkillManager::Tick(float DeltaTime)
 		TickSkillIDs.Add(Pair.Key);
 	}
 
+	// 更新窗口:期间Task回调中的PlaySkill入挂起区(直接Add触发TMap扩容rehash会令遍历中的InOutData引用悬空)
 	bUpdatingSkill = true;
 
 	for (int64 SkillID : TickSkillIDs)
@@ -125,11 +126,14 @@ void UBXSkillManager::Tick(float DeltaTime)
 		}
 	}
 
-	bUpdatingSkill = false;
-
 	CleanSkillTrash();
 
 	CheckPredictTimeout();
+
+	bUpdatingSkill = false;
+
+	// 合并挂起的新增技能(合并点在全部遍历外,此处TMap扩容安全;staging条目下帧起参与更新,与同步路径下帧可见一致)
+	MergePendingAddSkills();
 }
 
 void UBXSkillManager::InternalUpdateSkill(FBXSkillRuntimeData& InOutData, float InDeltaTime)
@@ -191,9 +195,16 @@ void UBXSkillManager::CleanSkillTrash()
 		if (IsValid(TrashData.TLRunTimeData.Owner))
 		{
 			OwnerSkillMap.FindOrAdd(TrashData.TLRunTimeData.Owner).Remove(SkillID);
+
+			// 通知组件清理本地登记(OwnedSkillIDs/预测假冷却),否则自然结束的技能ID永久残留
+			if (UBXSkillComponent* SkillComponent = TrashData.TLRunTimeData.Owner->FindComponentByClass<UBXSkillComponent>())
+			{
+				SkillComponent->InternalOnSkillFinished(SkillID);
+			}
 		}
 
 		// 广播技能结束事件(自然结束/中断/回滚统一收束点,参数含结束原因)
+		UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillManager::CleanSkillTrash: Skill finished. SkillID=%lld Reason=%d."), SkillID, (int32)TrashData.FinishReason);
 		if (UBXEventManager* EventMgr = UBXEventManager::Get(this))
 		{
 			FBXTLEventParameter Param(SkillID, TrashData.FinishReason);
@@ -201,6 +212,38 @@ void UBXSkillManager::CleanSkillTrash()
 			EventMgr->BroadcastGlobalEvent<FBXTLEventParameter>(BXGameplayTags::BXEvent_Skill_Finished, Param);
 		}
 	}
+}
+
+void UBXSkillManager::MergePendingAddSkills()
+{
+	for (TUniquePtr<FBXSkillRuntimeData>& Pending : PendingAddSkills)
+	{
+		if (!Pending.IsValid())
+		{
+			continue;
+		}
+
+		// 更新中被停止的条目:不并入主容器,仅清理组件本地登记(与CleanSkillTrash对bEarlyFinish条目的处理对称;
+		// Finished广播与MulticastStopSkill已在StopSkill/回滚路径执行过,此处禁止重复)
+		if (Pending->bEarlyFinish)
+		{
+			if (AActor* Owner = Pending->TLRunTimeData.Owner)
+			{
+				if (UBXSkillComponent* SkillComponent = Owner->FindComponentByClass<UBXSkillComponent>())
+				{
+					SkillComponent->InternalOnSkillFinished(Pending->SkillID);
+				}
+			}
+
+			continue;
+		}
+
+		// 纯数据搬移:OwnerSkillMap登记延迟至此(更新窗口内对其Add新键同样有rehash风险),合并点在全部遍历外扩容安全
+		OwnerSkillMap.FindOrAdd(Pending->TLRunTimeData.Owner).Add(Pending->SkillID);
+		SkillRTDatas.Add(Pending->SkillID, MoveTemp(*Pending));
+	}
+
+	PendingAddSkills.Reset();
 }
 
 void UBXSkillManager::CheckPredictTimeout()
@@ -262,7 +305,8 @@ int64 UBXSkillManager::PlaySkill(UBXSkillAsset* InAsset, AActor* InOwner, const 
 
 void UBXSkillManager::StopSkill(int64 InSkillID, EBXTLFinishReason InReason)
 {
-	FBXSkillRuntimeData* Data = SkillRTDatas.Find(InSkillID);
+	// 双查(挂起区条目可被同帧停止:标记bEarlyFinish后合并时跳过入表)
+	FBXSkillRuntimeData* Data = GetSkillRuntimeDataByID(InSkillID);
 	if (!Data || Data->bEarlyFinish)
 	{
 		return;
@@ -281,6 +325,7 @@ void UBXSkillManager::StopSkill(int64 InSkillID, EBXTLFinishReason InReason)
 		{
 			if (UBXSkillComponent* SkillComponent = Owner->FindComponentByClass<UBXSkillComponent>())
 			{
+				UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillManager::StopSkill: Broadcasting interrupt. SkillID=%lld."), InSkillID);
 				SkillComponent->MulticastStopSkill(InSkillID, static_cast<uint8>(InReason));
 			}
 		}
@@ -289,7 +334,21 @@ void UBXSkillManager::StopSkill(int64 InSkillID, EBXTLFinishReason InReason)
 
 FBXSkillRuntimeData* UBXSkillManager::GetSkillRuntimeDataByID(int64 InID)
 {
-	return SkillRTDatas.Find(InID);
+	if (FBXSkillRuntimeData* Data = SkillRTDatas.Find(InID))
+	{
+		return Data;
+	}
+
+	// 挂起区双查(更新窗口内新增的技能尚未合并入主容器,漏查会令同帧查询/去重守卫/预测状态写入失效)
+	for (const TUniquePtr<FBXSkillRuntimeData>& Pending : PendingAddSkills)
+	{
+		if (Pending.IsValid() && Pending->SkillID == InID)
+		{
+			return Pending.Get();
+		}
+	}
+
+	return nullptr;
 }
 
 int64 UBXSkillManager::RebuildSkillFromProjection(const FBXSkillReplicatedState& InState, AActor* InOwner)
@@ -299,8 +358,8 @@ int64 UBXSkillManager::RebuildSkillFromProjection(const FBXSkillReplicatedState&
 		return INDEX_NONE;
 	}
 
-	// 幂等:已存在(Multicast先到/本地预测)直接返回
-	if (SkillRTDatas.Find(InState.SkillID))
+	// 幂等:已存在(Multicast先到/本地预测,含挂起区)直接返回
+	if (GetSkillRuntimeDataByID(InState.SkillID))
 	{
 		return InState.SkillID;
 	}
@@ -333,6 +392,7 @@ int64 UBXSkillManager::RebuildSkillFromProjection(const FBXSkillReplicatedState&
 
 	// 反投影恢复运行数据(含Task指针按Index恢复),跳过StartTimelineSections直接续跑
 	BXFromTLRunTimeProjection(InState.TLRunTimeData, SkillAsset, Data.TLRunTimeData);
+	UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillManager::RebuildSkillFromProjection: Rebuilt. SkillID=%lld Asset=%s RunTime=%.2fs Sections=%d."), InState.SkillID, *SkillAsset->GetName(), Data.TLRunTimeData.RunTime, Data.TLRunTimeData.RunningSections.Num());
 
 	// 记录Owner反向索引
 	OwnerSkillMap.FindOrAdd(InOwner).Add(InState.SkillID);
@@ -363,27 +423,29 @@ int64 UBXSkillManager::InternalPlaySkill(UBXSkillAsset* InAsset, AActor* InOwner
 	}
 
 	// ID去重守卫:重复ID会静默覆盖正在运行的技能(旧实例Task不走End,外部资源泄漏)
-	if (SkillRTDatas.Find(InSkillID))
+	// 双查:挂起区条目同样占用该ID
+	if (GetSkillRuntimeDataByID(InSkillID))
 	{
 		UE_LOG(BXMGR_Skill, Warning, TEXT("UBXSkillManager::InternalPlaySkill: duplicate SkillID=%lld rejected."), InSkillID);
 		return INDEX_NONE;
 	}
 
-	// 创建技能运行时数据
-	FBXSkillRuntimeData& Data = SkillRTDatas.Add(InSkillID);
+	// 先在堆上完整构建(含Task启动):回调链中递归PlaySkill(连招链)时本对象地址稳定,
+	// 且递归条目同样按时机入挂起区或主容器,均无TMap扩容风险
+	TUniquePtr<FBXSkillRuntimeData> NewData = MakeUnique<FBXSkillRuntimeData>();
 
-	Data.SkillAsset = InAsset;
-	Data.SkillID = InSkillID;
-	Data.Initiator = InInitiator;
-	Data.ClientTimestamp = InPayload.ClientTimestamp;
+	NewData->SkillAsset = InAsset;
+	NewData->SkillID = InSkillID;
+	NewData->Initiator = InInitiator;
+	NewData->ClientTimestamp = InPayload.ClientTimestamp;
 
 	// 填充Timeline运行时数据
-	Data.TLRunTimeData.Timeline = InAsset;
-	Data.TLRunTimeData.TimelineID = InAsset->ID;
-	Data.TLRunTimeData.ID = InSkillID;
-	Data.TLRunTimeData.Owner = InOwner;
-	Data.TLRunTimeData.Instigator = InPayload.Instigator;
-	Data.TLRunTimeData.Triggerer = InPayload.Triggerer;
+	NewData->TLRunTimeData.Timeline = InAsset;
+	NewData->TLRunTimeData.TimelineID = InAsset->ID;
+	NewData->TLRunTimeData.ID = InSkillID;
+	NewData->TLRunTimeData.Owner = InOwner;
+	NewData->TLRunTimeData.Instigator = InPayload.Instigator;
+	NewData->TLRunTimeData.Triggerer = InPayload.Triggerer;
 
 	// 所有InputDatas移动写入DynamicDatas(消除FInstancedStruct深拷贝)
 	// LockParts为TLRunTimeData专用字段(Task消费方读InRTData.LockParts),解包后不进DynamicDatas
@@ -393,19 +455,28 @@ int64 UBXSkillManager::InternalPlaySkill(UBXSkillAsset* InAsset, AActor* InOwner
 		{
 			if (const FBXSkillLockParts* LockParts = Entry.Value.GetPtr<FBXSkillLockParts>())
 			{
-				Data.TLRunTimeData.LockParts = LockParts->Parts;
+				NewData->TLRunTimeData.LockParts = LockParts->Parts;
 			}
 			continue;
 		}
 
-		Data.TLRunTimeData.DynamicDatas.Add(FBXTLDynamicDataSearchKey(-1, Entry.Tag), MoveTemp(Entry.Value));
+		NewData->TLRunTimeData.DynamicDatas.Add(FBXTLDynamicDataSearchKey(-1, Entry.Tag), MoveTemp(Entry.Value));
 	}
 
 	// 启动Task(初始化RunningSections并触发首帧KeyFrame)
-	StartSkillTasks(Data);
+	StartSkillTasks(*NewData);
 
-	// 记录Owner反向索引
-	OwnerSkillMap.FindOrAdd(InOwner).Add(InSkillID);
+	if (bUpdatingSkill)
+	{
+		// 更新窗口内:入挂起区Tick末合并(直接Add会触发TMap扩容rehash,使更新管线遍历中的数据引用悬空)
+		PendingAddSkills.Add(MoveTemp(NewData));
+	}
+	else
+	{
+		// 记录Owner反向索引(挂起区条目延迟到合并时登记)
+		OwnerSkillMap.FindOrAdd(InOwner).Add(InSkillID);
+		SkillRTDatas.Add(InSkillID, MoveTemp(*NewData));
+	}
 
 	// 广播技能释放事件
 	if (UBXEventManager* EventMgr = UBXEventManager::Get(this))
@@ -439,7 +510,8 @@ int64 UBXSkillManager::StartPrediction(UBXSkillAsset* InAsset, AActor* InOwner, 
 		return INDEX_NONE;
 	}
 
-	FBXSkillRuntimeData* Data = SkillRTDatas.Find(Result);
+	// 双查:预测技能可能处于挂起区(客户端Task回调中的连招链),漏查会令PredictState未设置导致预测超时机制失效
+	FBXSkillRuntimeData* Data = GetSkillRuntimeDataByID(Result);
 	if (Data)
 	{
 		Data->PredictState = EBXPredictState::Predicting;
@@ -456,7 +528,7 @@ int64 UBXSkillManager::StartPrediction(UBXSkillAsset* InAsset, AActor* InOwner, 
 
 void UBXSkillManager::ConfirmPrediction(int64 InSkillID, int64 InServerTimestamp)
 {
-	FBXSkillRuntimeData* Data = SkillRTDatas.Find(InSkillID);
+	FBXSkillRuntimeData* Data = GetSkillRuntimeDataByID(InSkillID);
 	if (!Data)
 	{
 		UE_LOG(BXMGR_Skill, Warning, TEXT("UBXSkillManager::ConfirmPrediction: SkillID=%lld not found."), InSkillID);
@@ -482,7 +554,8 @@ void UBXSkillManager::ConfirmPrediction(int64 InSkillID, int64 InServerTimestamp
 
 void UBXSkillManager::RollbackPrediction(int64 InSkillID)
 {
-	FBXSkillRuntimeData* Data = SkillRTDatas.Find(InSkillID);
+	// 双查(挂起区条目可能在本帧内被否认回滚)
+	FBXSkillRuntimeData* Data = GetSkillRuntimeDataByID(InSkillID);
 	if (!Data)
 	{
 		return;
@@ -499,6 +572,7 @@ void UBXSkillManager::RollbackPrediction(int64 InSkillID)
 void UBXSkillManager::InternalRollbackPredictedSkill(FBXSkillRuntimeData& InOutData)
 {
 	InOutData.PredictState = EBXPredictState::RollingBack;
+	UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillManager::InternalRollbackPredictedSkill: Rolling back. SkillID=%lld."), InOutData.SkillID);
 
 	// 停止所有Task,使用预测失败原因
 	StopSkillTasks(InOutData, EBXTLFinishReason::FR_PredictionFailure);
@@ -554,6 +628,7 @@ void UBXSkillManager::ServerAccelerate(FBXSkillRuntimeData& InOutData)
 
 	InOutData.AccelerateRemainTime = AccelerateDuration;
 	InOutData.AccelerateRate = Settings->ServerAccelerateRate;
+	UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillManager::ServerAccelerate: SkillID=%lld Delay=%.0fms Rate=%.1f Duration=%.2fs."), InOutData.SkillID, DeltaSeconds * 1000.0f, Settings->ServerAccelerateRate, AccelerateDuration);
 }
 
 void UBXSkillManager::ClientAccelerate(FBXSkillRuntimeData& InOutData, int64 InBroadcastTimestamp)
@@ -592,16 +667,23 @@ void UBXSkillManager::ClientAccelerate(FBXSkillRuntimeData& InOutData, int64 InB
 
 	InOutData.AccelerateRemainTime = AccelerateDuration;
 	InOutData.AccelerateRate = Settings->ClientAccelerateRate;
+	UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillManager::ClientAccelerate: SkillID=%lld Delay=%.0fms Rate=%.1f Duration=%.2fs."), InOutData.SkillID, DeltaSeconds * 1000.0f, Settings->ClientAccelerateRate, AccelerateDuration);
 }
 
 float UBXSkillManager::ClampAccelerateDuration(const FBXSkillRuntimeData& InData, float InDuration)
 {
 	// 钳制加速时长上限为技能总时长的50%,避免长时间偏差导致技能长期倍速
+	// 含无限循环片段(LoopTime<=0)的技能总时长无界,不参与钳制(否则退化为准入即拒,加速补偿完全失效)
 	if (InData.SkillAsset && InData.SkillAsset->Sections.Num() > 0)
 	{
 		float TotalDuration = 0.0f;
 		for (const FBXTLSection& Section : InData.SkillAsset->Sections)
 		{
+			if (Section.LoopTime <= 0)
+			{
+				return InDuration;
+			}
+
 			TotalDuration += Section.Duration * Section.LoopTime;
 		}
 
@@ -720,25 +802,23 @@ void UBXSkillManager::ReceiveCollisionResults(int64 InSkillID, int32 InTaskFullI
 		return;
 	}
 
-	FBXSkillRuntimeData* Data = SkillRTDatas.Find(InSkillID);
+	// 双查(目标技能可能处于挂起区)
+	FBXSkillRuntimeData* Data = GetSkillRuntimeDataByID(InSkillID);
 	if (!Data)
 	{
+		UE_LOG(BXMGR_Skill, Warning, TEXT("UBXSkillManager::ReceiveCollisionResults: SkillID=%lld not found (ended or never existed)."), InSkillID);
 		return;
 	}
 
-	// 将碰撞结果写入DynamicDatas(按上报的TaskFullIndex+DataTag定位,与客户端本地写入的键一致)
-	Data->TLRunTimeData.DynamicDatas.Add(FBXTLDynamicDataSearchKey(InTaskFullIndex, InDataTag), FInstancedStruct::Make(InResults));
+	UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillManager::ReceiveCollisionResults: Received. SkillID=%lld TaskFullIndex=%d Hits=%d."), InSkillID, InTaskFullIndex, InResults.Results.Num());
 
-	// 找到FullIndex匹配的碰撞Task,清除等待标记
+	// 找到FullIndex匹配的碰撞Task:清除等待标记,以服务器侧作用域双键写入碰撞数据并触发Success事件
+	// (与客户端CollisionCheck行为一致:反应分支Task在服务器侧启动,事件作用域读取键可达,实现由客户端结果驱动服务器侧流程)
 	UBXTLAsset* Asset = Data->TLRunTimeData.Timeline;
-	if (!Asset)
-	{
-		return;
-	}
-
+	bool bTaskFound = false;
 	for (FBXTLSectionRTData& SectionRT : Data->TLRunTimeData.RunningSections)
 	{
-		if (!Asset->Sections.IsValidIndex(SectionRT.Index))
+		if (!Asset || !Asset->Sections.IsValidIndex(SectionRT.Index))
 		{
 			continue;
 		}
@@ -759,7 +839,22 @@ void UBXSkillManager::ReceiveCollisionResults(int64 InSkillID, int32 InTaskFullI
 
 			TaskRT.bAwaitingClientCollision = false;
 			TaskRT.ServerExtraLifeTimer = 0.0f;
+
+			// 首个匹配实例生成作用域,双键写入(无作用域键+作用域键)并触发Success
+			if (!bTaskFound)
+			{
+				bTaskFound = true;
+				int64 Scope = UBXTProcessor::GenerateContextScope(Data->TLRunTimeData, TaskRT);
+				UBXTProcessor::WriteContextData<FBXTHitResults>(Data->TLRunTimeData, InTaskFullIndex, InDataTag, Scope, InResults);
+				UBXTProcessor::AddPendingTask(Data->TLRunTimeData, SectionRT, TaskRT, Scope, BXGameplayTags::BXTEvent_Success);
+			}
 		}
+	}
+
+	// 未找到匹配Task(Task已结束):仍写入无作用域键,供后续时间片段按索引读取兜底
+	if (!bTaskFound)
+	{
+		Data->TLRunTimeData.DynamicDatas.Add(FBXTLDynamicDataSearchKey(InTaskFullIndex, InDataTag), FInstancedStruct::Make(InResults));
 	}
 
 	// 广播碰撞结果上报事件

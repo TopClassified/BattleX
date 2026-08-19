@@ -191,21 +191,24 @@ void FBXDTEditor::InitEditor(const EToolkitMode::Type Mode, const TSharedPtr<ITo
 
 	RegenerateMenusAndToolbars();
 
-	// 初始化时刷新一遍节点/边的文字内容
-	for (int32 i = 0; i < DecisionTreeTemplate->EdGraph->Nodes.Num(); ++i)
+	// 初始化时刷新一遍节点/边的文字内容(模板/图表可能为null,原实现在IsValid检查块之外解引用)
+	if (DecisionTreeTemplate.IsValid() && DecisionTreeTemplate->EdGraph)
 	{
-		if (UBXDTEditorGraphNode* CurNode = Cast<UBXDTEditorGraphNode>(DecisionTreeTemplate->EdGraph->Nodes[i]))
+		for (int32 i = 0; i < DecisionTreeTemplate->EdGraph->Nodes.Num(); ++i)
 		{
-			if (CurNode->GraphNode)
+			if (UBXDTEditorGraphNode* CurNode = Cast<UBXDTEditorGraphNode>(DecisionTreeTemplate->EdGraph->Nodes[i]))
 			{
-				CurNode->GraphNode->RefreshNodeTitle();
+				if (CurNode->GraphNode)
+				{
+					CurNode->GraphNode->RefreshNodeTitle();
+				}
 			}
-		}
-		else if (UBXDTEditorGraphEdge* CurEdge = Cast<UBXDTEditorGraphEdge>(DecisionTreeTemplate->EdGraph->Nodes[i]))
-		{
-			if (CurEdge->GraphEdge)
+			else if (UBXDTEditorGraphEdge* CurEdge = Cast<UBXDTEditorGraphEdge>(DecisionTreeTemplate->EdGraph->Nodes[i]))
 			{
-				CurEdge->GraphEdge->RefreshEdgeTitle();
+				if (CurEdge->GraphEdge)
+				{
+					CurEdge->GraphEdge->RefreshEdgeTitle();
+				}
 			}
 		}
 	}

@@ -82,7 +82,8 @@ TSharedRef<FBXTLTaskTrackNodeDragDropOp> FBXTLTaskTrackNodeDragDropOp::New
 )
 {
 	TSharedRef<FBXTLTaskTrackNodeDragDropOp> Operation = MakeShareable(new FBXTLTaskTrackNodeDragDropOp(CurrentDragXPosition));
-	Operation->ViewPlayLength = MAX_FLT;
+	// 使用调用方传入的视口时长(原实现写死MAX_FLT,节点可被拖出Section时长之外且StartTime无上限)
+	Operation->ViewPlayLength = InViewPlayLength;
 	Operation->RefreshPanelEvent = RefreshPanelEvent;
 	Operation->NodeGroupPosition = SelectionScreenPosition;
 	Operation->NodeGroupSize = SelectionSize;
@@ -146,6 +147,18 @@ void FBXTLTaskTrackNodeDragDropOp::OnDrop(bool bDropWasHandled, const FPointerEv
 
 		RefreshPanelEvent.ExecuteIfBound();
 	}
+	else
+	{
+		// ESC取消拖拽路径(bDropWasHandled=true):仍须结束事务并复位节点拖拽状态,
+		// 否则BeginTransaction永不End(事务泄漏)且DragType残留导致节点BeingDragged恒真
+		for (int32 CurrentNode = 0; CurrentNode < SelectedNodes.Num(); ++CurrentNode)
+		{
+			if (TSharedPtr<SBXTLTaskTrackNode> Node = SelectedNodes[CurrentNode])
+			{
+				Node->DragCancelled();
+			}
+		}
+	}
 
 	FDragDropOperation::OnDrop(bDropWasHandled, MouseEvent);
 }
@@ -208,7 +221,8 @@ FText FBXTLTaskTrackNodeDragDropOp::GetHoverText() const
 {
 	FText HoverText = LOCTEXT("Invalid", "Invalid");
 
-	if (SelectedNodes[0].IsValid())
+	// 空数组先判Num再取[0](原实现先取[0]后判有效,空数组越界崩溃)
+	if (SelectedNodes.Num() > 0 && SelectedNodes[0].IsValid())
 	{
 		HoverText = FText::FromString(SelectedNodes[0]->GetTaskNodeData().GetTaskName());
 	}
@@ -250,7 +264,8 @@ TSharedRef<FBXTLExtraTrackNodeDragDropOp> FBXTLExtraTrackNodeDragDropOp::New
 )
 {
 	TSharedRef<FBXTLExtraTrackNodeDragDropOp> Operation = MakeShareable(new FBXTLExtraTrackNodeDragDropOp(CurrentDragXPosition));
-	Operation->ViewPlayLength = MAX_FLT;
+	// 使用调用方传入的视口时长(原实现写死MAX_FLT,节点可被拖出Section时长之外且StartTime无上限)
+	Operation->ViewPlayLength = InViewPlayLength;
 	Operation->RefreshPanelEvent = RefreshPanelEvent;
 	Operation->NodeGroupPosition = SelectionScreenPosition;
 	Operation->NodeGroupSize = SelectionSize;
@@ -314,6 +329,17 @@ void FBXTLExtraTrackNodeDragDropOp::OnDrop(bool bDropWasHandled, const FPointerE
 
 		RefreshPanelEvent.ExecuteIfBound();
 	}
+	else
+	{
+		// ESC取消拖拽路径(bDropWasHandled=true):仍须结束事务并复位节点拖拽状态
+		for (int32 CurrentNode = 0; CurrentNode < SelectedNodes.Num(); ++CurrentNode)
+		{
+			if (TSharedPtr<SBXTLExtraTrackNode> Node = SelectedNodes[CurrentNode])
+			{
+				Node->DragCancelled();
+			}
+		}
+	}
 
 	FDragDropOperation::OnDrop(bDropWasHandled, MouseEvent);
 }
@@ -376,7 +402,8 @@ FText FBXTLExtraTrackNodeDragDropOp::GetHoverText() const
 {
 	FText HoverText = LOCTEXT("Invalid", "Invalid");
 
-	if (SelectedNodes[0].IsValid())
+	// 空数组先判Num再取[0](原实现先取[0]后判有效,空数组越界崩溃)
+	if (SelectedNodes.Num() > 0 && SelectedNodes[0].IsValid())
 	{
 		HoverText = SelectedNodes[0]->GetNodeName();
 	}

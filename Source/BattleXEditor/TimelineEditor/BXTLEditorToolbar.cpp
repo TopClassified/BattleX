@@ -114,10 +114,13 @@ void FBXTLEditorToolbar::FillTimelineModeToolbar(FToolBarBuilder& ToolbarBuilder
 			FOnGetContent::CreateRaw(this, &FBXTLEditorToolbar::GenerateProcessDataMenu),
 			LOCTEXT("ProcessData", "ProcessData"),
 			LOCTEXT("ProcessData", "ProcessData"),
-			FSlateIcon(FBXTLEditorStyle::GetStyleSetName(), TEXT("BXTLEditor.ProcessData"))
+			FSlateIcon(FBXTLEditorStyle::GetStyleSetName(), TEXT("BXTLEditor.DataProcess"))
 		);
 
+		// 全局ToolMenus菜单条目跨编辑器实例存活:RemoveSection防多编辑器重复累积条目,
+		// CreateSP弱引用绑定防编辑器关闭后raw指针悬空(原CreateRaw绑定裸指针,关闭后点击即use-after-free)
 		UToolMenu* ProcessDataMenu = UToolMenus::Get()->ExtendMenu("BXTLEditor.BXTLEditorToolBar.ProcessData");
+		ProcessDataMenu->RemoveSection("ProcessData");
 		FToolMenuSection& Section = ProcessDataMenu->AddSection("ProcessData", LOCTEXT("BXTLEditor.ProcessData", "ProcessData"));
 		Section.AddMenuEntry
 		(
@@ -125,7 +128,7 @@ void FBXTLEditorToolbar::FillTimelineModeToolbar(FToolBarBuilder& ToolbarBuilder
 			LOCTEXT("Refresh All Timeline", "Refresh All Timeline"),
 			LOCTEXT("Refresh All Timeline", "Refresh All Timeline"),
 			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateRaw(CachedEditor.Pin().Get(), &FBXTLEditor::RefreshTimelineAssetProperty), FCanExecuteAction())
+			FUIAction(FExecuteAction::CreateSP(CachedEditor.Pin().ToSharedRef(), &FBXTLEditor::RefreshTimelineAssetProperty), FCanExecuteAction())
 		);
 	}
 	ToolbarBuilder.EndSection();

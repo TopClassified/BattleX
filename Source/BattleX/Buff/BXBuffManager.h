@@ -64,8 +64,14 @@ protected:
 	// 清理已结束的BUFF
 	void CleanBuffTrash();
 
-	// 是否正在更新BUFF
+	// 合并更新期间挂起的新增BUFF入主容器(Tick末调用,纯数据搬移不触发回调)
+	void MergePendingAddBuffs();
+
+	// 是否正在更新BUFF(更新窗口内Task回调中的AddBuff入挂起区,避免TMap扩容rehash使遍历中数据引用悬空)
 	bool bUpdatingBuff = false;
+
+	// 更新期间挂起的新增BUFF(TUniquePtr保证对象地址稳定,回调链中持引用安全;Tick末合并入BuffRTDatas后清空)
+	TArray<TUniquePtr<FBXBuffRuntimeData>> PendingAddBuffs;
 
 #pragma endregion Tick
 
@@ -80,10 +86,10 @@ public:
 	// 施加BUFF(支持外部传入指定ID,用于同步)
 	int64 AddBuffWithID(UBXBuffAsset* InAsset, AActor* InOwner, const FBXBuffPlayContext& InContext, int64 InBuffID);
 
-	// 服务器端校验添加BUFF
-	bool ServerValidateAddBuff(UBXBuffAsset* InAsset, AActor* InOwner, const FBXBuffPlayContext& InContext);
+	// 服务器端校验添加BUFF(OutContext返回层级/等级钳制到资产范围后的上下文)
+	bool ServerValidateAddBuff(UBXBuffAsset* InAsset, AActor* InOwner, const FBXBuffPlayContext& InContext, FBXBuffPlayContext& OutContext);
 
-	// 移除BUFF
+	// 移除BUFF(InLayerDelta<=0整体移除;>0时独立层级模式下移除指定层数,层数耗尽自动整体移除)
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Buff")
 	void RemoveBuff(int64 InID, int32 InLayerDelta = 0);
 
@@ -125,6 +131,9 @@ protected:
 
 	// 内部添加BUFF
 	void InternalAddBuff(FBXBuffRuntimeData& InOutData, const FBXBuffPlayContext& InContext);
+
+	// 构建并激活新BUFF(填充运行数据/启动Task/广播Added),按更新时机决定入主容器或挂起区
+	FBXBuffRuntimeData* InternalBuildNewBuff(UBXBuffAsset* InAsset, AActor* InOwner, const FBXBuffPlayContext& InContext, int64 InBuffID);
 
 	// 内部移除BUFF
 	void InternalRemoveBuff(FBXBuffRuntimeData& InOutData, EBXBuffRemoveReason InReason);

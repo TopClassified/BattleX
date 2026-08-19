@@ -828,9 +828,6 @@ TArray<FHitResult> UBXCollisionLibrary::SectorCheck(const FBXCParameter& Paramet
 	// 检测Box宽度的一半
 	float SweepBoxSizeY = SectorParameter.Y * FMath::Sin(FMath::DegreesToRadians(DeltaDegree / 2.0f));
 
-	// 缓存碰撞盒中心(扇形所在圆的圆心)
-	FVector CollisionBoxCenter = BoxWorldTransform.GetLocation() - ForwardVec * BoxExtend.X;
-
 	// 使用BOX进行粗略检查
 	FCollisionShape Box = FCollisionShape::MakeBox(BoxExtend);
 	TArray<FOverlapResult> OverlapResults;

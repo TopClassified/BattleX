@@ -12,7 +12,7 @@
 
 
 #pragma region Important
-FSimpleEditorViewportClient::FSimpleEditorViewportClient(FEditorModeTools* InModeTools, FPreviewScene* InPreviewScene, const TWeakPtr<SEditorViewport>& InEditorViewportWidget) : FEditorViewportClient(InModeTools, InPreviewScene, InEditorViewportWidget), FadeAmount(0.f), bEnableFading(false), ModelTools(InModeTools)
+FSimpleEditorViewportClient::FSimpleEditorViewportClient(FEditorModeTools* InModeTools, FPreviewScene* InPreviewScene, const TWeakPtr<SEditorViewport>& InEditorViewportWidget) : FEditorViewportClient(InModeTools, InPreviewScene, InEditorViewportWidget), FadeAmount(0.f), bEnableFading(false)
 {
 	DrawHelper.PerspectiveGridSize = HALF_WORLD_MAX1;
 	DrawHelper.AxesLineThickness = 0.0f;

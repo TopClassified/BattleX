@@ -31,13 +31,13 @@ public:
 
 #pragma region Parameter
 public:
-	int32 GetSectionID();
+	int32 GetSectionID() const;
 	
 	// 获取当前游标的位置
 	FFrameNumber GetScrubPosition() const override;
 
 	// 设置游标位置
-	void SetScrubPosition(FFrameTime NewScrubPostion) const override;
+	void SetScrubPosition(FFrameTime NewScrubPosition) const override;
 
 	// 获取总时长
 	float GetPlayLength() const override;

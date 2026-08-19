@@ -2,17 +2,19 @@
 #include "BXSubSystem.h"
 
 
-
 uint32 FBXHelperRunnable::Run()
 {
 	double LastTime = FPlatformTime::Seconds();
-	
-	while (!bShouldStop)  
+
+	while (!bShouldStop)
 	{
+		// 休眠避免忙等烧核(1ms粒度对>=0.1s级的注册间隔足够)
+		FPlatformProcess::Sleep(0.001f);
+
 		double CurrentTime = FPlatformTime::Seconds();
 		double DeltaTime = CurrentTime - LastTime;
 		LastTime = CurrentTime;
-		
+
 		for (TArray<FHTRegisteredFunction>::TIterator It(HTRegisteredFunctions); It; ++It)
 		{
 			if (It->Object.IsValid() && It->Function.IsValid())
@@ -21,7 +23,11 @@ uint32 FBXHelperRunnable::Run()
 				if (It->RemainTime <= 0.0f)
 				{
 					It->RemainTime = It->Interval;
-					It->Object->ProcessEvent(It->Function.Get(), nullptr);
+
+					// [游戏线程投递]辅助线程仅产生到期事件:UObject/蓝图反射体系非线程安全,
+					// ProcessEvent禁止在本线程调用,由Manager::Tick(游戏线程)消费执行
+					FHTExpiredCall* ExpiredCall = new FHTExpiredCall(It->Object, It->Function);
+					HTExpiredFunctions.Push(ExpiredCall);
 				}
 			}
 			else
@@ -30,22 +36,26 @@ uint32 FBXHelperRunnable::Run()
 			}
 		}
 
+		// 消费注册请求(裸指针所有权:游戏线程new入队 → 本线程Pop接管,使用后delete)
 		int32 Count = 0;
-		while(Count < 20 && !HTPendingRegisteredFunctions.IsEmpty())
+		while (Count < 20 && !HTPendingRegisteredFunctions.IsEmpty())
 		{
 			if (FHTRegisteredFunction* Pointer = HTPendingRegisteredFunctions.Pop())
 			{
 				if (!HTRegisteredFunctions.Contains(*Pointer))
 				{
 					HTRegisteredFunctions.Add(*Pointer);
-				}	
+				}
+
+				delete Pointer;
 			}
-			
+
 			Count += 1;
 		}
 
+		// 消费注销请求(同上所有权约定)
 		Count = 0;
-		while(Count < 20 && !HTPendingUnregisteredFunctions.IsEmpty())
+		while (Count < 20 && !HTPendingUnregisteredFunctions.IsEmpty())
 		{
 			if (FHTRegisteredFunction* Pointer = HTPendingUnregisteredFunctions.Pop())
 			{
@@ -63,12 +73,14 @@ uint32 FBXHelperRunnable::Run()
 				{
 					HTRegisteredFunctions.RemoveSwap(*Pointer);
 				}
+
+				delete Pointer;
 			}
 
 			Count += 1;
 		}
 	}
-	
+
 	return 0;
 }
 
@@ -76,8 +88,6 @@ void FBXHelperRunnable::Stop()
 {
 	bShouldStop = true;
 }
-
-
 
 
 
@@ -117,7 +127,7 @@ UBXMiscManager* UBXMiscManager::Get(UObject* InWorldContext)
 
 	return Result;
 }
-	
+
 void UBXMiscManager::Initialize()
 {
 	// 创建辅助线程
@@ -127,7 +137,7 @@ void UBXMiscManager::Initialize()
 
 void UBXMiscManager::Deinitialize()
 {
-	// 结束辅助线程
+	// 结束辅助线程(Kill含Stop+Wait,确保线程退出后再清理其数据)
 	if (HelperThread.IsValid())
 	{
 		HelperThread->Kill();
@@ -135,9 +145,64 @@ void UBXMiscManager::Deinitialize()
 	}
 	if (HelperRunnable.IsValid())
 	{
-		HelperRunnable->Stop();
+		// 清理到期队列残留(所有权归游戏线程,停机时统一释放防泄漏)
+		while (!HelperRunnable->HTExpiredFunctions.IsEmpty())
+		{
+			if (FHTExpiredCall* ExpiredCall = HelperRunnable->HTExpiredFunctions.Pop())
+			{
+				delete ExpiredCall;
+			}
+		}
+
 		HelperRunnable = nullptr;
 	}
+}
+
+void UBXMiscManager::Tick(float DeltaTime)
+{
+	if (!HelperRunnable.IsValid())
+	{
+		return;
+	}
+
+	// 游戏线程消费到期队列并执行(单帧限额防极端积压卡帧)
+	int32 Count = 0;
+	while (Count < 64 && !HelperRunnable->HTExpiredFunctions.IsEmpty())
+	{
+		if (FHTExpiredCall* ExpiredCall = HelperRunnable->HTExpiredFunctions.Pop())
+		{
+			UObject* Object = ExpiredCall->Object.Get();
+			UFunction* Function = ExpiredCall->Function.Get();
+			if (IsValid(Object) && IsValid(Function))
+			{
+				Object->ProcessEvent(Function, nullptr);
+			}
+
+			delete ExpiredCall;
+		}
+
+		Count += 1;
+	}
+}
+
+UWorld* UBXMiscManager::GetTickableGameObjectWorld() const
+{
+	if (!GetOuter())
+	{
+		return nullptr;
+	}
+
+	return GetOuter()->GetWorld();
+}
+
+ETickableTickType UBXMiscManager::GetTickableTickType() const
+{
+	return IsTemplate() ? ETickableTickType::Never : ETickableTickType::Always;
+}
+
+bool UBXMiscManager::IsAllowedToTick() const
+{
+	return IsValid(this) && !IsUnreachable();
 }
 
 #pragma endregion Important
@@ -147,28 +212,25 @@ void UBXMiscManager::Deinitialize()
 #pragma region HelperThread
 void UBXMiscManager::RegisterHTFunction(UObject* InObject, FName InFunctionName, float InInterval)
 {
-	if (!HelperRunnable.IsValid())
+	if (!HelperRunnable.IsValid() || !IsValid(InObject))
 	{
 		return;
 	}
-	
+
 	UFunction* Function = InObject->FindFunction(InFunctionName);
 	if (!IsValid(Function))
 	{
 		return;
 	}
 
-	TSharedPtr<FHTRegisteredFunction> Task = MakeShared<FHTRegisteredFunction>();
-	Task->Object = InObject;
-	Task->Function = Function;
-	Task->Interval = InInterval;
-	
-	HelperRunnable->HTPendingRegisteredFunctions.Push(Task.Get());
+	// 裸指针所有权转移给队列,辅助线程Pop后接管并delete(原实现推局部TSharedPtr的裸指针,函数返回即悬垂)
+	FHTRegisteredFunction* Task = new FHTRegisteredFunction(InObject, Function, InInterval);
+	HelperRunnable->HTPendingRegisteredFunctions.Push(Task);
 }
 
 void UBXMiscManager::UnregisterHTFunction(UObject* InObject, FName InFunctionName)
 {
-	if (!HelperRunnable.IsValid())
+	if (!HelperRunnable.IsValid() || !IsValid(InObject))
 	{
 		return;
 	}
@@ -179,25 +241,19 @@ void UBXMiscManager::UnregisterHTFunction(UObject* InObject, FName InFunctionNam
 		return;
 	}
 
-	TSharedPtr<FHTRegisteredFunction> Task = MakeShared<FHTRegisteredFunction>();
-	Task->Object = InObject;
-	Task->Function = Function;
-	
-	HelperRunnable->HTPendingUnregisteredFunctions.Push(Task.Get());
+	FHTRegisteredFunction* Task = new FHTRegisteredFunction(InObject, Function);
+	HelperRunnable->HTPendingUnregisteredFunctions.Push(Task);
 }
 
 void UBXMiscManager::UnregisterHTFunctionByUObject(UObject* InObject)
 {
-	if (!HelperRunnable.IsValid())
+	if (!HelperRunnable.IsValid() || !IsValid(InObject))
 	{
 		return;
 	}
-	
-	TSharedPtr<FHTRegisteredFunction> Task = MakeShared<FHTRegisteredFunction>();
-	Task->Object = InObject;
-	Task->Function = nullptr;
-	
-	HelperRunnable->HTPendingUnregisteredFunctions.Push(Task.Get());
+
+	FHTRegisteredFunction* Task = new FHTRegisteredFunction(InObject, nullptr);
+	HelperRunnable->HTPendingUnregisteredFunctions.Push(Task);
 }
-	
+
 #pragma endregion HelperThread

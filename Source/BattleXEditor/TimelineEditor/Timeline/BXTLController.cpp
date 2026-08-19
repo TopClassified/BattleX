@@ -165,7 +165,11 @@ void FBXTLController::OnAssetPropertyChange(FName PropertyName)
 
 void FBXTLController::PostClearTrackSelection()
 {
-	CachedEditor.Pin()->SetTaskSelection(TArray<UBXTask*>{});
+	// 编辑器关闭时序内基类ClearTrackSelection可触发本回调,弱引用失效时跳过
+	if (CachedEditor.IsValid())
+	{
+		CachedEditor.Pin()->SetTaskSelection(TArray<UBXTask*>{});
+	}
 }
 
 #pragma endregion Important
@@ -173,7 +177,7 @@ void FBXTLController::PostClearTrackSelection()
 
 
 #pragma region Parameter
-int32 FBXTLController::GetSectionID()
+int32 FBXTLController::GetSectionID() const
 {
 	return SectionIndex;
 }
@@ -239,6 +243,12 @@ double FBXTLController::GetFrameRate() const
 
 UBXTLAsset* FBXTLController::GetAsset() const
 {
+	// Initialize前调用或代理失效时返回空(原实现直接解引用)
+	if (!CachedPreviewProxy.IsValid())
+	{
+		return nullptr;
+	}
+
 	return CachedPreviewProxy->GetPreviewAsset();
 }
 
@@ -266,17 +276,23 @@ FString FBXTLController::PasteHead = TEXT("BEGIN Copy UTask!\n");
 
 void FBXTLController::ClearTaskSelection()
 {
-	CachedEditor.Pin()->SetTaskSelection(TArray<UBXTask*>{});
+	if (CachedEditor.IsValid())
+	{
+		CachedEditor.Pin()->SetTaskSelection(TArray<UBXTask*>{});
+	}
 }
 
 void FBXTLController::ChangeTaskSelection(const TArray<UBXTask*>& Tasks)
 {
-	CachedEditor.Pin()->SetTaskSelection(Tasks, !bPressCtrl);
+	if (CachedEditor.IsValid())
+	{
+		CachedEditor.Pin()->SetTaskSelection(Tasks, !bPressCtrl);
+	}
 }
 
 void FBXTLController::ChangeTaskPosition(UBXTask* SrcTask, UBXTask* DestTask)
 {
-	if (CachedEditor.Pin()->IsRunning())
+	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -374,7 +390,7 @@ FBXTLTaskGroup* FBXTLController::GetTaskGroup(UBXTask* TheTask) const
 
 void FBXTLController::ChangeTaskGroup(UBXTask* SrcTask, FBXTLTaskGroup& DestGroupData)
 {
-	if (CachedEditor.Pin()->IsRunning())
+	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -419,7 +435,7 @@ void FBXTLController::ChangeTaskGroup(UBXTask* SrcTask, FBXTLTaskGroup& DestGrou
 
 void FBXTLController::AddNewTaskGroup(const FText& Name)
 {
-	if (CachedEditor.Pin()->IsRunning())
+	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -436,7 +452,7 @@ void FBXTLController::AddNewTaskGroup(const FText& Name)
 
 void FBXTLController::DeleteTaskGroup(FBXTLTaskGroup& InGroup)
 {
-	if (CachedEditor.Pin()->IsRunning())
+	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -466,7 +482,7 @@ void FBXTLController::DeleteTaskGroup(FBXTLTaskGroup& InGroup)
 
 UBXTask* FBXTLController::AddNewTask(FBXTLTaskGroup& InGroup, UClass* InTaskClass, float StartTime)
 {
-	if (CachedEditor.Pin()->IsRunning())
+	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning())
 	{
 		return nullptr;
 	}
@@ -526,7 +542,7 @@ void FBXTLController::CreateTaskGraphNode(UBXTask* TheTask)
 
 void FBXTLController::DeleteTask(UBXTask* TheTask)
 {
-	if (CachedEditor.Pin()->IsRunning())
+	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -553,7 +569,7 @@ void FBXTLController::DeleteTask(UBXTask* TheTask)
 
 void FBXTLController::DeleteSelectedTasks()
 {
-	if (CachedEditor.Pin()->IsRunning())
+	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -615,12 +631,18 @@ int32 FBXTLController::FindGroupID(FBXTLTaskGroup& InGroup)
 
 TArray<UBXTask*> FBXTLController::GetSelectedTasks()
 {
+	// 编辑器失效时返回空(原实现Pin后直接解引用)
+	if (!CachedEditor.IsValid())
+	{
+		return TArray<UBXTask*>();
+	}
+
 	return CachedEditor.Pin()->GetTaskSelection();
 }
 
 void FBXTLController::CopySelectedTasks()
 {
-	if (CachedEditor.Pin()->IsRunning())
+	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -697,7 +719,7 @@ void FBXTLController::PasteSelectedTasks(FString InPasteMsg, int32 InGroupID)
 	}
 	InPasteMsg = InPasteMsg.Replace(*FBXTLController::PasteHead, TEXT(""));
 
-	if (CachedEditor.Pin()->IsRunning())
+	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -743,20 +765,26 @@ void FBXTLController::PasteSelectedTasks(FString InPasteMsg, int32 InGroupID)
 		// 获取新建TaskGroup的地址
 		FBXTLTaskGroup& Group = Section.Groups[InGroupID];
 
-		// 复制所选的Tasks
+		// 复制所选的Tasks(AddNewTask可能失败返回null,判空防止空指针崩溃)
 		TArray<UBXTask*> NewTasks;
 		for (UBXTask* OldTask : OldTasks)
 		{
 			UBXTask* NewTask = AddNewTask(Group, OldTask->GetClass(), 0.0f);
-			NewTask->CopyDataFromOther(OldTask);
-			NewTasks.Add(NewTask);
+			if (NewTask)
+			{
+				NewTask->CopyDataFromOther(OldTask);
+				NewTasks.Add(NewTask);
+			}
 		}
 
 		// 更新Task之间的关系
 		FBXTLEditorUtilities::RestoreTasksRelation(NewTasks, OldTasks);
 
 		// 对更新了LogicPin关系的节点，要生成LogicGraph的对应节点
-		CachedEditor.Pin()->GenerateGraphNodes(NewTasks);
+		if (CachedEditor.IsValid())
+		{
+			CachedEditor.Pin()->GenerateGraphNodes(NewTasks);
+		}
 
 		RefreshTracks();
 
@@ -784,6 +812,10 @@ void FBXTLController::ExportSelectedTaskTemplate()
 		.CreateTitleBar(true);
 	
 	//创建弹窗内容
+	// 弹窗为独立顶层窗口,控制器可先于弹窗销毁:lambda禁止捕获裸this(悬垂写),
+	// 且销毁目标应为弹窗自身引用(原读成员TemplateNameWindow,二次打开时旧弹窗会误关新弹窗)
+	TWeakPtr<FTimelineController> WeakController = AsShared();
+	TSharedRef<SWindow> WindowRef = TemplateNameWindow.ToSharedRef();
 	TSharedPtr<SWidget> content = SNew(SVerticalBox)
 		+ SVerticalBox::Slot()
 		.AutoHeight()
@@ -797,9 +829,18 @@ void FBXTLController::ExportSelectedTaskTemplate()
 				.Padding(0.0f, 12.0f, 0.0f, 12.0f)
 				.AutoHeight()
 				[
-					SNew(SEditableText)	
+					SNew(SEditableText)
 					.HintText(LOCTEXT("TaskTemplateNameInputHint", "请输入TaskTemplate名称"))
-					.OnTextChanged_Lambda([this](const FText& InText) { TemplateName = InText;})
+					.OnTextChanged_Lambda([WeakController](const FText& InText)
+					{
+						if (TSharedPtr<FTimelineController> Pinned = WeakController.Pin())
+						{
+							if (FBXTLController* Controller = StaticCastSharedPtr<FBXTLController>(Pinned).Get())
+							{
+								Controller->TemplateName = InText;
+							}
+						}
+					})
 					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 20))
 				]
 
@@ -811,19 +852,22 @@ void FBXTLController::ExportSelectedTaskTemplate()
 					.Text(LOCTEXT("TaskTemplateNameConfirm", "确认"))
 					.OnClicked_Lambda
 					(
-						[this]()
+						[WeakController, WindowRef]()
 						{
-							if (TemplateName.IsEmpty())
+							TSharedPtr<FTimelineController> Pinned = WeakController.Pin();
+							FBXTLController* Controller = Pinned ? StaticCastSharedPtr<FBXTLController>(Pinned).Get() : nullptr;
+
+							if (Controller && Controller->TemplateName.IsEmpty())
 							{
 								FText DialogText = LOCTEXT("空Task模板错误", "请勿设置TaskTemplate名称为空...");
 								FMessageDialog::Open(EAppMsgType::Ok, DialogText);
 							}
-							else
+							else if (Controller)
 							{
-								InternalExportSelectedTaskTemplate();
+								Controller->InternalExportSelectedTaskTemplate();
 							}
 
-							TemplateNameWindow.ToSharedRef().Get().RequestDestroyWindow();
+							WindowRef->RequestDestroyWindow();
 
 							return FReply::Handled();
 						}
@@ -875,8 +919,18 @@ void FBXTLController::InternalExportSelectedTaskTemplate()
 	// 新建TaskGroup
 	FBXTLTaskGroupInformation Group = FBXTLTaskGroupInformation(FName(TemplateName.ToString()));
 
-	// 复制所选的Tasks
+	// 先过滤出有效Task(RestoreTasksRelation要求两数组等长索引对齐,含null条目会导致整体跳过关系修复,模板内依赖全部丢失)
+	TArray<UBXTask*> ValidTasks;
 	for (UBXTask* Task : Tasks)
+	{
+		if (Task)
+		{
+			ValidTasks.Add(Task);
+		}
+	}
+
+	// 复制所选的Tasks
+	for (UBXTask* Task : ValidTasks)
 	{
 		UBXTask* NewTask = NewObject<UBXTask>(Template, Task->GetClass());
 		NewTask->CopyDataFromOther(Task);
@@ -884,7 +938,7 @@ void FBXTLController::InternalExportSelectedTaskTemplate()
 	}
 
 	// 更新Task之间的关系
-	FBXTLEditorUtilities::RestoreTasksRelation(Group.TaskList, Tasks);
+	FBXTLEditorUtilities::RestoreTasksRelation(Group.TaskList, ValidTasks);
 
 	// 添加至TaskTemplate
 	Template->Groups.Add(Group);
@@ -906,7 +960,7 @@ void FBXTLController::InternalExportSelectedTaskTemplate()
 
 void FBXTLController::ImportTaskTemplate(FName InTemplateName, int32 InGroupID)
 {
-	if (CachedEditor.Pin()->IsRunning())
+	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning())
 	{
 		return;
 	}
@@ -940,27 +994,48 @@ void FBXTLController::ImportTaskTemplate(FName InTemplateName, int32 InGroupID)
 	{
 		if (Group.Name == FName(InTemplateName.ToString()))
 		{
+			// 空组保护(无组时Num()-1=-1,Groups[-1]越界崩溃)
+			if (Section.Groups.Num() <= 0)
+			{
+				return;
+			}
+
 			if (!Section.Groups.IsValidIndex(InGroupID))
 			{
 				InGroupID = Section.Groups.Num() - 1;
 			}
 
-			FBXTLTaskGroup& TaskGoup = Section.Groups[InGroupID];
+			FBXTLTaskGroup& TaskGroup = Section.Groups[InGroupID];
 
-			// 复制所选的Tasks
-			TArray<UBXTask*> CoppiedTasks;
+			// 复制所选的Tasks(模板资产重载/GC后弱指针可能失效,判空防止空指针崩溃;
+			// 有效源Task同步收集到OriginTasks,RestoreTasksRelation要求两数组等长索引对齐,
+			// 原实现跳过失效项后长度不等会导致整体跳过关系修复,导入的Task间依赖全部丢失)
+			TArray<UBXTask*> CopiedTasks;
+			TArray<UBXTask*> OriginTasks;
 			for (TWeakObjectPtr<UBXTask> OriginTask : Group.TaskList)
 			{
-				UBXTask* NewTask = AddNewTask(TaskGoup, OriginTask->GetClass(), 0.0f);
-				NewTask->CopyDataFromOther(OriginTask.Get());
-				CoppiedTasks.Add(NewTask);
+				if (!OriginTask.IsValid())
+				{
+					continue;
+				}
+
+				UBXTask* NewTask = AddNewTask(TaskGroup, OriginTask->GetClass(), 0.0f);
+				if (NewTask)
+				{
+					NewTask->CopyDataFromOther(OriginTask.Get());
+					CopiedTasks.Add(NewTask);
+					OriginTasks.Add(OriginTask.Get());
+				}
 			}
 
 			// 更新Task之间的关系
-			FBXTLEditorUtilities::RestoreTasksRelation(CoppiedTasks, Group.TaskList);
+			FBXTLEditorUtilities::RestoreTasksRelation(CopiedTasks, OriginTasks);
 
 			// 对更新了LogicPin关系的节点，要生成LogicGraph的对应节点
-			CachedEditor.Pin()->GenerateGraphNodes(CoppiedTasks);
+			if (CachedEditor.IsValid())
+			{
+				CachedEditor.Pin()->GenerateGraphNodes(CopiedTasks);
+			}
 
 			RefreshTracks();
 

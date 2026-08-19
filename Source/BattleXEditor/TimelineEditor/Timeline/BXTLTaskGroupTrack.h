@@ -24,8 +24,12 @@ public:
 protected:
 	int32 GetGroupIndex() const;
 
+	// 按索引解析当前组数据(Undo/属性面板修改Groups会使数组重排,裸指针悬垂,失效时返回nullptr)
+	FBXTLTaskGroup* GetGroupData() const;
+
 private:
-	FBXTLTaskGroup* GroupData = nullptr;
+	// 组在Section.Groups内的索引(原裸指针在数组重排后悬垂,绘制/改名路径读写已释放内存)
+	int32 GroupID = INDEX_NONE;
 
 #pragma endregion Important
 

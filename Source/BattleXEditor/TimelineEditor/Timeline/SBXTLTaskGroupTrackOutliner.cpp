@@ -9,16 +9,17 @@
 #include "BXTLController.h"
 #include "SBXTLTaskTrackOutliner.h"
 
-#include "BXTask.h" 
+#include "BXTask.h"
+#include "BXTLAsset.h"
 
 
 
 #define LOCTEXT_NAMESPACE "SBXTLTaskGroupTrackOutliner"
 
-void SBXTLTaskGroupTrackOutliner::Construct(const FArguments& InArgs, const TSharedPtr<FTimelineController>& InTimelineController, FBXTLTaskGroup& InGroupData)
+void SBXTLTaskGroupTrackOutliner::Construct(const FArguments& InArgs, const TSharedPtr<FTimelineController>& InTimelineController, int32 InGroupID)
 {
 	TimelineController = InTimelineController;
-	GroupData = &InGroupData;
+	GroupID = InGroupID;
 
 	TSharedPtr<SWidget> MainWidget = InArgs._MainWidget;
 
@@ -41,7 +42,17 @@ FReply SBXTLTaskGroupTrackOutliner::OnDrop(const FGeometry& MyGeometry, const FD
 
 		if (FBXTLController* TC = static_cast<FBXTLController*>(TimelineController.Pin().Get()))
 		{
-			TC->ChangeTaskGroup(FrameDragDropOp->CachedTask.Get(), *GroupData);
+			// 按索引解析目标组(数组重排后裸指针悬垂,越界时放弃本次拖放)
+			UBXTLAsset* Asset = TC->GetAsset();
+			const int32 SectionID = TC->GetSectionID();
+			if (Asset && Asset->Sections.IsValidIndex(SectionID))
+			{
+				TArray<FBXTLTaskGroup>& Groups = Asset->Sections[SectionID].Groups;
+				if (Groups.IsValidIndex(GroupID))
+				{
+					TC->ChangeTaskGroup(FrameDragDropOp->CachedTask.Get(), Groups[GroupID]);
+				}
+			}
 		}
 
 		bWasDropHandled = true;

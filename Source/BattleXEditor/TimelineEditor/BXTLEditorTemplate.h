@@ -18,7 +18,7 @@ struct FBXTLTaskGroupInformation
 
 public:
 	FBXTLTaskGroupInformation() : Name(NAME_None) {}
-	FBXTLTaskGroupInformation(FName GrroupName) : Name(GrroupName) {}
+	FBXTLTaskGroupInformation(FName GroupName) : Name(GroupName) {}
 
 public:
 	UPROPERTY(EditAnywhere)

@@ -50,7 +50,10 @@ FBXTLEditorViewportClient::FBXTLEditorViewportClient
 	EngineShowFlags.SetSeparateTranslucency(true);
 	EngineShowFlags.SetCompositeEditorPrimitives(true);
 	EngineShowFlags.SetParticles(true);
-	if (UAssetViewerSettings::Get()->Profiles[GetMutableDefault<UEditorPerProjectUserSettings>()->AssetViewerProfileIndex].bPostProcessingEnabled)
+	// Profiles可能为空或索引越界(用户设置损坏时),越界检查防止崩溃
+	const TArray<FPreviewSceneProfile>& ViewerProfiles = UAssetViewerSettings::Get()->Profiles;
+	const int32 ProfileIndex = GetMutableDefault<UEditorPerProjectUserSettings>()->AssetViewerProfileIndex;
+	if (ViewerProfiles.IsValidIndex(ProfileIndex) && ViewerProfiles[ProfileIndex].bPostProcessingEnabled)
 	{
 		EngineShowFlags.EnableAdvancedFeatures();
 	}
@@ -108,7 +111,8 @@ void FBXTLEditorViewportClient::TickWorld(float DeltaSeconds)
 		CachedEditor.Pin()->Tick(DeltaSeconds);
 	}
 
-	if (PreviewScene->GetWorld())
+	// PreviewScene可能未就绪(视口先于场景创建时Tick被触发)
+	if (PreviewScene && PreviewScene->GetWorld())
 	{
 		PreviewScene->GetWorld()->Tick(LEVELTICK_All, DeltaSeconds);
 	}
@@ -130,13 +134,17 @@ void FBXTLEditorViewportClient::HandlerPreviewScenePostTick()
 {
 	if (ViewportCameraMode == BXTLViewportCameraMode::RealGame)
 	{
+		// 预览世界可能无玩家相机管理器(未Possess/控制器未就绪),判空防止崩溃
 		APlayerCameraManager* CameraManager = UGameplayStatics::GetPlayerCameraManager(GetWorld(), 0);
-		SetViewLocation(CameraManager->GetCameraLocation());
-		SetViewRotation(CameraManager->GetCameraRotation());
+		if (CameraManager)
+		{
+			SetViewLocation(CameraManager->GetCameraLocation());
+			SetViewRotation(CameraManager->GetCameraRotation());
 
-		ViewFOV = CameraManager->GetFOVAngle();
+			ViewFOV = CameraManager->GetFOVAngle();
 
-		Invalidate();
+			Invalidate();
+		}
 	}
 }
 

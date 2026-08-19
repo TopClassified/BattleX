@@ -74,8 +74,14 @@ protected:
 	// 检查预测超时
 	void CheckPredictTimeout();
 
-	// 是否正在更新技能
+	// 合并更新期间挂起的新增技能入主容器(Tick末调用,纯数据搬移不触发回调)
+	void MergePendingAddSkills();
+
+	// 是否正在更新技能(更新窗口内Task回调中的PlaySkill入挂起区,避免TMap扩容rehash使遍历中数据引用悬空)
 	bool bUpdatingSkill = false;
+
+	// 更新期间挂起的新增技能(TUniquePtr保证对象地址稳定,回调链中持引用安全;Tick末合并入SkillRTDatas后清空)
+	TArray<TUniquePtr<FBXSkillRuntimeData>> PendingAddSkills;
 
 #pragma endregion Tick
 

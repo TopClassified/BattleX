@@ -339,20 +339,22 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 			FBXCPolylineFrameLink& FrameLink = TPC.CachedPolylineFrameLinks.FindOrAdd(ShapeComponent).FindOrAdd(It->Key);
 
 			// 调用Library曲线扫描接口
-			switch (SInfo->ShapeType)
-			{
-			case EBXShapeType::ST_Sphere:
-				TempHitResults = UBXCollisionLibrary::SphereSweepAlongCurve(Parameter.Requester, Task->ObjectTypes, SInfo->ShapeSize.X, Task->EngineFilter, HitBoxTransforms, Task->PolylineConfig, FrameLink);
-				break;
-			case EBXShapeType::ST_Capsule:
-				TempHitResults = UBXCollisionLibrary::CapsuleSweepAlongCurve(Parameter.Requester, Task->ObjectTypes, FVector2D(SInfo->ShapeSize.X), Task->EngineFilter, HitBoxTransforms, Task->PolylineConfig, FrameLink);
-				break;
-			case EBXShapeType::ST_Box:
-				TempHitResults = UBXCollisionLibrary::BoxSweepAlongCurve(Parameter.Requester, Task->ObjectTypes, SInfo->ShapeSize, Task->EngineFilter, HitBoxTransforms, Task->PolylineConfig, FrameLink);
-				break;
-			default:
-				break;
-			}
+		switch (SInfo->ShapeType)
+		{
+		case EBXShapeType::ST_Sphere:
+			TempHitResults = UBXCollisionLibrary::SphereSweepAlongCurve(Parameter.Requester, Task->ObjectTypes, SInfo->ShapeSize.X, Task->EngineFilter, HitBoxTransforms, Task->PolylineConfig, FrameLink);
+			break;
+		case EBXShapeType::ST_Capsule:
+			TempHitResults = UBXCollisionLibrary::CapsuleSweepAlongCurve(Parameter.Requester, Task->ObjectTypes, FVector2D(SInfo->ShapeSize.X), Task->EngineFilter, HitBoxTransforms, Task->PolylineConfig, FrameLink);
+			break;
+		case EBXShapeType::ST_Box:
+			TempHitResults = UBXCollisionLibrary::BoxSweepAlongCurve(Parameter.Requester, Task->ObjectTypes, SInfo->ShapeSize, Task->EngineFilter, HitBoxTransforms, Task->PolylineConfig, FrameLink);
+			break;
+		default:
+			// 未知形状跳过(原实现残留上一碰撞盒的扫描结果,Combine会把上一形状结果重复合并)
+			TempHitResults.Reset();
+			continue;
+		}
 			UBXCollisionLibrary::CombineCollisionResults(TempHitResults, HitResults);
 		}
 	}
@@ -380,6 +382,7 @@ void UBXTPTrackHitBox::CollisionCheck(FBXTLRunTimeData& InOutRTData, FBXTLSectio
 		{
 			if (UBXSkillComponent* SkillComponent = InOutRTData.Owner->FindComponentByClass<UBXSkillComponent>())
 			{
+				UE_LOG(BX_TP, Log, TEXT("UBXTPTrackHitBox::CollisionCheck: Client reporting collision. TimelineID=%lld TaskFullIndex=%d Hits=%d."), InOutRTData.ID, FullIndex, FinalResults.Results.Num());
 				SkillComponent->ServerReportCollisionResults(InOutRTData.ID, FullIndex, BXGameplayTags::BXTData_ColResults1, FinalResults);
 			}
 		}

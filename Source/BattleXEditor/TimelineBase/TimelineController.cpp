@@ -81,7 +81,7 @@ FFrameNumber FTimelineController::GetScrubPosition() const
 	return FFrameNumber();
 }
 
-void FTimelineController::SetScrubPosition(FFrameTime NewScrubPostion) const
+void FTimelineController::SetScrubPosition(FFrameTime NewScrubPosition) const
 {
 
 }
@@ -100,7 +100,8 @@ int32 FTimelineController::GetTickResolution() const
 {
 	float Resolution = GetDefault<UPersonaOptions>()->TimelineScrubSnapValue * GetFrameRate();
 
-	return FMath::RoundToInt(Resolution);
+	// SnapValue默认0或极小值时取整为0,FFrameRate(0,1)会令时间轴全部坐标换算产生inf/0(scrub/缩放全失效)
+	return FMath::Max(FMath::RoundToInt(Resolution), 1);
 }
 
 void FTimelineController::HandleViewRangeChanged(TRange<double> InRange, EViewRangeInterpolation InInterpolation)
@@ -122,12 +123,16 @@ void FTimelineController::ClearTrackSelection()
 {
 	SelectedTracks.Empty();
 
+	// guard须覆盖PostClearTrackSelection(其内部可重入调用本函数):原实现guard在if块末尾即析构,重入保护完全失效
 	if (!bIsSelecting)
 	{
 		TGuardValue<bool> GuardValue(bIsSelecting, true);
+		PostClearTrackSelection();
 	}
-
-	PostClearTrackSelection();
+	else
+	{
+		PostClearTrackSelection();
+	}
 }
 
 void FTimelineController::SetTrackSelected(const TSharedRef<FTimelineTrack>& InTrack, bool bIsSelected)

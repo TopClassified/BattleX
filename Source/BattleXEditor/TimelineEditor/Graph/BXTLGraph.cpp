@@ -343,6 +343,7 @@ void UBXTLGraph::TryAutoConnectPin(UBXTLGraphNode* Node1, UBXTLGraphNode* Node2)
 	UEdGraphPin* Pin2 = nullptr;
 	
 	// 更新Task事件触发列表
+	// Pin名须先经GetPinNameFromTagName转短名(CreatePinByInformation创建事件/数据Pin时用的是去命名空间短名,原实现以完整Tag名查找恒为null,自动连线全部失效)
 	for (TMap<FGameplayTag, FBXTEvent>::TIterator It(Node1->CachedTask->Events); It; ++It)
 	{
 		TMap<TSoftObjectPtr<UBXTask>, float> Events = It->Value.Event;
@@ -350,7 +351,7 @@ void UBXTLGraph::TryAutoConnectPin(UBXTLGraphNode* Node1, UBXTLGraphNode* Node2)
 		{
 			if (EIt->Key.Get() == Node2->CachedTask)
 			{
-				Pin1 = Node1->GetPinByName(It->Key.GetTagName());
+				Pin1 = Node1->GetPinByName(Node1->GetPinNameFromTagName(It->Key.GetTagName()));
 				Pin2 = Node2->GetPinByName(FName("Exe"));
 
 				if (Pin1 && Pin2 && !Pin1->LinkedTo.Contains(Pin2))
@@ -367,7 +368,7 @@ void UBXTLGraph::TryAutoConnectPin(UBXTLGraphNode* Node1, UBXTLGraphNode* Node2)
 		if (It->DataTask.Get() == Node2->CachedTask)
 		{
 			Pin1 = Node1->GetPinByName(It->GetDisplayName());
-			Pin2 = Node2->GetPinByName(It->DataTag.GetTagName());
+			Pin2 = Node2->GetPinByName(Node2->GetPinNameFromTagName(It->DataTag.GetTagName()));
 
 			if (Pin1 && Pin2 && !Pin1->LinkedTo.Contains(Pin2))
 			{
@@ -382,7 +383,7 @@ void UBXTLGraph::TryAutoConnectPin(UBXTLGraphNode* Node1, UBXTLGraphNode* Node2)
 		if (It->DataTask.Get() == Node2->CachedTask)
 		{
 			Pin1 = Node1->GetPinByName(It->GetDisplayName());
-			Pin2 = Node2->GetPinByName(It->DataTag.GetTagName());
+			Pin2 = Node2->GetPinByName(Node2->GetPinNameFromTagName(It->DataTag.GetTagName()));
 
 			if (Pin1 && Pin2 && !Pin1->LinkedTo.Contains(Pin2))
 			{

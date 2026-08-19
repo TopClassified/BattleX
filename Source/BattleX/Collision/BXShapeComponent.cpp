@@ -36,6 +36,12 @@ bool UBXShapeComponent::GetShapeTransformByTag(const FGameplayTag& InTag, FTrans
 		AttachedComponent = Owner->GetRootComponent();
 	}
 
+	// 根组件也可能为空(Actor尚未Attach/组件剥离),回退后仍需判空
+	if (!AttachedComponent.IsValid())
+	{
+		return false;
+	}
+
 	// 计算碰撞盒世界位置
 	OutTransform = Information->Relation * AttachedComponent->GetSocketTransform(Information->Socket.BoneName);
 

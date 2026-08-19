@@ -311,11 +311,13 @@ void UBXGearComponent::UnequipAllGears(bool bForceDestroy)
 		{
 			if (*GearIt)
 			{
+				// 先缓存装备指针:ChangeEquipGear内部会把槽位写null,原实现销毁判定读的是写空后的槽位,bForceDestroy永不生效装备残留场景
+				ABXGear* Gear = *GearIt;
 				ChangeEquipGear(It->Key, GearIt.GetIndex(), nullptr, nullptr);
 
-				if (bForceDestroy && IsValid(*GearIt))
+				if (bForceDestroy && IsValid(Gear))
 				{
-					(*GearIt)->Destroy();
+					Gear->Destroy();
 				}
 			}
 		}

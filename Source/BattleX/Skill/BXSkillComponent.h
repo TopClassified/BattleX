@@ -127,6 +127,9 @@ public:
 	// 停止本地技能(预测中的实例除外;快照条目消失的乱序兜底)
 	void StopSkillIfNotPredicting(int64 InSkillID);
 
+	// 技能实例结束通知(Manager清理运行数据时调用):移除OwnedSkillIDs登记,预测超时未结算的假冷却一并释放
+	void InternalOnSkillFinished(int64 InSkillID);
+
 #pragma endregion Internal
 
 
@@ -182,6 +185,10 @@ protected:
 	// 假冷却中的资产ID集合(本地预测已开始计时,等待服务器确认转正或否认移除)
 	UPROPERTY(Transient)
 	TSet<int32> PendingCooldownAssetIDs;
+
+	// 预测中技能登记表:SkillID → SkillAssetID(假冷却结算依据,不依赖运行数据存活,预测超时回滚后迟到的结果仍可正确结算)
+	UPROPERTY(Transient)
+	TMap<int64, int32> PendingCooldownSkills;
 
 #pragma endregion Cooldown
 

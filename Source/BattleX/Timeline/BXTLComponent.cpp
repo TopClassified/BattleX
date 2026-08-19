@@ -23,11 +23,22 @@ void UBXTLComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (UBXTLManager* BXMgr = UBXTLManager::Get(GetOwner()))
 	{
-		for (int32 i = 0; i < TimelineRunTimeDataIDs.Num(); i++)
+		// 每次取末尾元素停止:StopTimeline会同步回调ReceiveTimelineWillFinish对数组RemoveSwap(元素左移),
+		// 索引遍历(正序跳过元素/倒序回调联动移除多条时越界)均不安全,末尾取值对任意移除模式健壮
+		while (TimelineRunTimeDataIDs.Num() > 0)
 		{
-			BXMgr->StopTimeline(TimelineRunTimeDataIDs[i], EBXTLFinishReason::FR_Interrupt);
+			const int64 StoppedTimelineID = TimelineRunTimeDataIDs.Last();
+			BXMgr->StopTimeline(StoppedTimelineID, EBXTLFinishReason::FR_Interrupt);
+
+			// StopTimeline找不到数据时不触发回调移除,手动弹出防止死循环
+			if (TimelineRunTimeDataIDs.Num() > 0 && TimelineRunTimeDataIDs.Last() == StoppedTimelineID)
+			{
+				TimelineRunTimeDataIDs.Pop();
+			}
 		}
 	}
+
+	TimelineRunTimeDataIDs.Empty();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -42,13 +53,18 @@ int64 UBXTLComponent::PlayTimeline(UBXTLAsset* InAsset, UPARAM(ref) FBXTLPlayCon
 	UBXTLManager* BXMgr = UBXTLManager::Get(GetOwner());
 	if (!IsValid(BXMgr))
 	{
-		UE_LOG(BXMGR_Timeline, Warning, TEXT("UBXTLComponent::PlayTimeline failed: BXTLManager is null, Owner=%s Asset=%s."), *GetOwner()->GetName(), InAsset ? *InAsset->GetName() : TEXT("null"));
+		// 组件无Owner时Get返回null走到此分支,GetOwner()为空,原日志直接解引用崩溃
+		UE_LOG(BXMGR_Timeline, Warning, TEXT("UBXTLComponent::PlayTimeline failed: BXTLManager is null, Owner=%s Asset=%s."), *GetNameSafe(GetOwner()), InAsset ? *InAsset->GetName() : TEXT("null"));
 		return 0;
 	}
 
 	int64 TimelineID = BXMgr->PlayTimeline(InAsset, GetOwner(), InContext);
 
-	TimelineRunTimeDataIDs.Add(TimelineID);
+	// 播放失败返回0(更新中拒绝/资产无效),禁止入列否则形成永久垃圾条目
+	if (TimelineID > 0)
+	{
+		TimelineRunTimeDataIDs.Add(TimelineID);
+	}
 
 	// 广播时间轴开始事件
 	if (UBXEventManager* BXEMgr = UBXEventManager::Get(GetOwner()))

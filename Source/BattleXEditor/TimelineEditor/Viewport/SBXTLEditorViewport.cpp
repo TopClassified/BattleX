@@ -22,8 +22,12 @@
 
 SBXTLEditorViewport::~SBXTLEditorViewport()
 {
-	UEditorEngine* Editor = (UEditorEngine*)GEngine;
-	Editor->OnPreviewFeatureLevelChanged().Remove(PreviewFeatureLevelChangedHandle);
+	// 引擎关闭时序下GEngine可能为空(基类析构正因此才有if(GEngine)保护),且基类会移除同一Handle,此处判空防崩溃
+	if (GEngine)
+	{
+		UEditorEngine* Editor = (UEditorEngine*)GEngine;
+		Editor->OnPreviewFeatureLevelChanged().Remove(PreviewFeatureLevelChangedHandle);
+	}
 }
 
 void SBXTLEditorViewport::Construct(const FArguments& InArgs, const FEditorViewportParameter& InParameter)

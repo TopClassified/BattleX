@@ -69,7 +69,7 @@ void UBXTLManager::Initialize()
 		}
 	}
 
-	// 受击所有的时间轴资源路径
+	// 收集所有的时间轴资源路径
 	CollectTimelineAssetPath();
 	
 	FWorldDelegates::OnWorldCleanup.AddUObject(this, &UBXTLManager::OnWorldCleanupStart);
@@ -379,18 +379,32 @@ void UBXTLManager::ChangeTimelineRunTimeDataTickRate(FBXTLRunTimeData& InOutData
 
 void UBXTLManager::UpdateTimeline(float InDeltaTime)
 {
-	for (TMap<int64, FBXTLRunTimeData>::TIterator It(TimelineRTDatas); It; ++It)
+	// 快照遍历:Task/BP回调可能同步StopTimeline移除条目(含当前条目),避免TMap迭代器失效与双重移除
+	TArray<int64> TimelineIDs;
+	TimelineIDs.Reserve(TimelineRTDatas.Num());
+	for (const TPair<int64, FBXTLRunTimeData>& Pair : TimelineRTDatas)
 	{
-		InternalUpdateTimeline(It->Value, InDeltaTime);
+		TimelineIDs.Add(Pair.Key);
+	}
+
+	for (int64 TimelineID : TimelineIDs)
+	{
+		FBXTLRunTimeData* RTData = TimelineRTDatas.Find(TimelineID);
+		if (!RTData)
+		{
+			continue;
+		}
+
+		InternalUpdateTimeline(*RTData, InDeltaTime);
 
 		// 检查是否要结束这个时间轴
-		bool bNeedFinish = It->Value.bEarlyFinish;
+		bool bNeedFinish = RTData->bEarlyFinish;
 		if (!bNeedFinish)
 		{
 			bNeedFinish = true;
-			for (int32 j = 0; j < It->Value.RunningSections.Num(); ++j)
+			for (int32 j = 0; j < RTData->RunningSections.Num(); ++j)
 			{
-				if (It->Value.RunningSections[j].Index >= 0)
+				if (RTData->RunningSections[j].Index >= 0)
 				{
 					bNeedFinish = false;
 					break;
@@ -400,19 +414,19 @@ void UBXTLManager::UpdateTimeline(float InDeltaTime)
 
 		if (bNeedFinish)
 		{
-			EBXTLFinishReason StopReason = It->Value.bEarlyFinish ? EBXTLFinishReason::FR_Interrupt : EBXTLFinishReason::FR_EndOfLife;
-			
+			EBXTLFinishReason StopReason = RTData->bEarlyFinish ? EBXTLFinishReason::FR_Interrupt : EBXTLFinishReason::FR_EndOfLife;
+
 			// 尝试直接调用拥有者的组件函数
-			if (IsValid(It->Value.Owner))
+			if (IsValid(RTData->Owner))
 			{
-				if (UBXTLComponent* BXTLC = It->Value.Owner->FindComponentByClass<UBXTLComponent>())
+				if (UBXTLComponent* BXTLC = RTData->Owner->FindComponentByClass<UBXTLComponent>())
 				{
-					BXTLC->ReceiveTimelineWillFinish(It->Value.ID, StopReason);
+					BXTLC->ReceiveTimelineWillFinish(RTData->ID, StopReason);
 				}
 			}
 
-			// 从容器中移除
-			It.RemoveCurrent();
+			// 从容器中移除(ReceiveTimelineWillFinish内可能已StopTimeline同ID,Remove对不存在的键为空操作)
+			TimelineRTDatas.Remove(TimelineID);
 		}
 	}
 
@@ -477,6 +491,9 @@ void UBXTLManager::StartTimelineSections(FBXTLRunTimeData& InOutData)
 	{
 		FBXTLSectionRTData& NewSectionData = InOutData.RunningSections.AddDefaulted_GetRef();
 		NewSectionData.Index = Asset->StartSectionIndexes[i];
+
+		// LoopCount为1基计数(跳转/循环分支均以1表示"第1次运行"),初始0会导致LoopTime=1的Section多跑一周期
+		NewSectionData.LoopCount = 1;
 	}
 
 	// 立刻更新一次,通过KeyFrame触发Task首帧执行
@@ -535,17 +552,21 @@ void UBXTLManager::FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSecti
 	ProcessTimelineSectionPendingTasks(InOutData, InOutSectionData);
 
 	// 结束正在运行的任务
-	for (TArray<FBXTLTaskRTData>::TIterator It(InOutSectionData.RunningTasks); It; ++It)
+	// EndTask内部会按地址从RunningTasks移除当前条目(数组左移),此处用索引循环且移除后不推进索引,否则会跳过相邻任务导致其End永久丢失
+	int32 TaskIndex = 0;
+	while (TaskIndex < InOutSectionData.RunningTasks.Num())
 	{
-		FBXTLTaskRTData& TaskData = *It;
+		FBXTLTaskRTData& TaskData = InOutSectionData.RunningTasks[TaskIndex];
 		if (!Section.TaskList.IsValidIndex(TaskData.Index))
 		{
+			++TaskIndex;
 			continue;
 		}
 
 		UBXTask* Task = Section.TaskList[TaskData.Index];
 		if (!Task)
 		{
+			++TaskIndex;
 			continue;
 		}
 
@@ -553,10 +574,11 @@ void UBXTLManager::FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSecti
 		UBXTProcessor* Processor = GetTLTProcessorByTLTClass(Task->GetClass());
 		if (!Processor)
 		{
+			++TaskIndex;
 			continue;
 		}
 
-		// 固定时长需要托管
+		// 固定时长需要托管(条目保留在RunningTasks,由末尾Reset统一清空)
 		if (Task->LifeType == EBXTLifeType::L_Duration)
 		{
 			FBXTLTaskHostingData& NewHosting = TimelineTaskHostingDatas.AddDefaulted_GetRef();
@@ -569,9 +591,11 @@ void UBXTLManager::FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSecti
 
 			Processor->ChangeTaskTickRate(TaskData, 1.0f);
 
+			++TaskIndex;
 			continue;
 		}
-		
+
+		// EndTask内部移除该条目,数组左移,索引不推进即可处理下一个
 		Processor->EndTask(InOutData, InOutSectionData, TaskData, InReason);
 	}
 
@@ -620,17 +644,20 @@ void UBXTLManager::ProcessTimelineSectionPendingTasks(FBXTLRunTimeData& InOutDat
 			// 标记为已执行
 			Information.LocalIndex = -1;
 
-			// 帧内触发的其他Task
-			int32 CurrentIndex = 0;
+			// 帧内触发的其他Task(从1起始:栈[0]是根Task自身且已在上方执行过,从0起始会把根Task再执行一遍,效果翻倍)
+			int32 CurrentIndex = 1;
 			while (CurrentIndex < InOutSectionData.TaskStackInFrame.Num())
 			{
 				FInt64Vector2& Stack = InOutSectionData.TaskStackInFrame[CurrentIndex];
 				ExecuteTimelineTask(InOutData, InOutSectionData, Stack.X, NetMode, LocalRole, 0.0f, Stack.Y);
-				
+
 				CurrentIndex += 1;
 			}
 		}
 	}
+
+	// 清空帧内执行队列:残留条目会让后续在更新管线外触发的AddPendingTask误入堆栈(永不执行且阻塞同索引任务入队)
+	InOutSectionData.TaskStackInFrame.Reset();
 
 	// 移除已完成的任务
 	if (GCTimer <= 0.0f)
@@ -784,14 +811,14 @@ void UBXTLManager::CloseSectionJump(bool InClose)
 
 void UBXTLManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InDeltaTime)
 {
-	// 标记为更新中
-	bUpdatingTimeline = true;
-
 	UBXTLAsset* Asset = InOutData.Timeline;
 	if (!Asset)
 	{
 		return;
 	}
+
+	// 标记为更新中(空资产提前返回,禁止在置标志后return否则PlayTimeline被永久拒绝)
+	bUpdatingTimeline = true;
 
 	// 调整更新时间
 	float FixedDeltaTime = InDeltaTime * InOutData.RunRate;
@@ -821,6 +848,8 @@ void UBXTLManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InD
 
 		// 时间片段静态数据
 		const FBXTLSection& Section = Asset->Sections[SectionData.Index];
+		// 缓存本帧起始索引(跳转/循环重开后Section引用与Index脱节,旧Section的首帧任务不应在跳转当帧触发)
+		const int32 CachedSectionIndex = SectionData.Index;
 
 		// 更新正在运行的Task
 		UpdateTimelineSectionTasks(InOutData, SectionData, FixedDeltaTime);
@@ -848,42 +877,54 @@ void UBXTLManager::InternalUpdateTimeline(FBXTLRunTimeData& InOutData, float InD
 			}
 		}
 		else
+	{
+		if ((SectionData.RunTime >= Section.Duration && !bHasAwaitingCollisionTask) || SectionData.bEarlyFinish || SectionData.ForceJumpSection >= 0)
 		{
-			if ((SectionData.RunTime >= Section.Duration && !bHasAwaitingCollisionTask) || SectionData.bEarlyFinish || SectionData.ForceJumpSection >= 0)
-			{
-				if (SectionData.bEarlyFinish || SectionData.ForceJumpSection >= 0)
-				{
-					FinishTimelineSection(InOutData, SectionData, EBXTLFinishReason::FR_Interrupt);
-				}
-				else
-				{
-					FinishTimelineSection(InOutData, SectionData, EBXTLFinishReason::FR_EndOfLife);
-				}
+			// 缓存跳转判定所需的原始状态(FinishTimelineSection内部的Reset会重置ForceJumpSection/LoopCount/bEarlyFinish,
+			// 重置后再读取判断会导致循环/链跳转/强制跳转全部失效——Section一律在首周期后死亡)
+			const int32 CachedForceJumpSection = SectionData.ForceJumpSection;
+			const int32 CachedLoopCount = SectionData.LoopCount;
+			const bool bCachedEarlyFinish = SectionData.bEarlyFinish;
 
-				// 跳转到强制执行片段
-				if (SectionData.ForceJumpSection < 0)
+			if (bCachedEarlyFinish || CachedForceJumpSection >= 0)
+			{
+				FinishTimelineSection(InOutData, SectionData, EBXTLFinishReason::FR_Interrupt);
+			}
+			else
+			{
+				FinishTimelineSection(InOutData, SectionData, EBXTLFinishReason::FR_EndOfLife);
+			}
+
+			// 跳转到强制执行片段(原实现条件写反:ForceJumpSection>=0才应跳转,却写成了<0)
+			if (CachedForceJumpSection >= 0)
+			{
+				SectionData.LoopCount = 1;
+				SectionData.Index = CachedForceJumpSection;
+			}
+			// 开始下一次循环 或 下一个时间片段
+			else
+			{
+				// LoopTime<=0为无限循环语义(资产注释声明,加速钳制ClampAccelerateDuration已按此假设处理)
+				if ((Section.LoopTime <= 0 || CachedLoopCount < Section.LoopTime) && !bCachedEarlyFinish)
+				{
+					SectionData.LoopCount = CachedLoopCount + 1;
+
+					// 循环分支须恢复Index:FinishTimelineSection内部的Reset已将Index置-1,
+					// 不恢复则Section立即被判为已结束并在下一帧移除,循环功能失效
+					SectionData.Index = CachedSectionIndex;
+				}
+				else if (Section.NextIndex >= 0)
 				{
 					SectionData.LoopCount = 1;
-					SectionData.Index = SectionData.ForceJumpSection;
+					SectionData.Index = Section.NextIndex;
 				}
-				// 开始下一次循环 或 下一个时间片段
-				else
-				{
-					if (SectionData.LoopCount < Section.LoopTime && !SectionData.bEarlyFinish)
-					{
-						SectionData.LoopCount += 1;
-					}
-					else if (Section.NextIndex >= 0)
-					{
-						SectionData.LoopCount = 1;
-						SectionData.Index = Section.NextIndex;
-					}	
-				}
-			}	
+			}
 		}
+	}
 
 		// 旧时间片段已经结束，且没有开启新的时间片段
-		if (SectionData.Index < 0)
+		// 本帧发生跳转时Section引用仍是旧片段,跳过当帧任务触发,下一帧按新Index取新Section
+		if (SectionData.Index < 0 || SectionData.Index != CachedSectionIndex)
 		{
 			continue;
 		}
@@ -927,26 +968,28 @@ void UBXTLManager::UpdateTimelineSectionTasks(FBXTLRunTimeData& InOutData, FBXTL
 	const FBXTLSection& Section = Asset->Sections[InOutSectionData.Index];
 	EBXTLFinishReason FinishReason;
 
-	for (TArray<FBXTLTaskRTData>::TIterator It(InOutSectionData.RunningTasks); It; ++It)
+	// EndTask内部会按地址从RunningTasks移除当前条目(数组左移),此处用索引循环且移除后不推进索引,否则同帧完成的相邻任务被跳过(延迟一帧结束)
+	int32 TaskIndex = 0;
+	while (TaskIndex < InOutSectionData.RunningTasks.Num())
 	{
-		FBXTLTaskRTData& TaskData = *It;
+		FBXTLTaskRTData& TaskData = InOutSectionData.RunningTasks[TaskIndex];
 		if (!Section.TaskList.IsValidIndex(TaskData.Index))
 		{
-			It.RemoveCurrent();
+			InOutSectionData.RunningTasks.RemoveAt(TaskIndex);
 			continue;
 		}
 
 		UBXTask* Task = Section.TaskList[TaskData.Index];
 		if (!Task)
 		{
-			It.RemoveCurrent();
+			InOutSectionData.RunningTasks.RemoveAt(TaskIndex);
 			continue;
 		}
 
 		UBXTProcessor* Processor = GetTLTProcessorByTLTClass(Task->GetClass());
 		if (!Processor)
 		{
-			It.RemoveCurrent();
+			InOutSectionData.RunningTasks.RemoveAt(TaskIndex);
 			continue;
 		}
 
@@ -963,14 +1006,20 @@ void UBXTLManager::UpdateTimelineSectionTasks(FBXTLRunTimeData& InOutData, FBXTL
 				TaskData.ServerExtraLifeTimer -= InDeltaTime;
 				if (TaskData.ServerExtraLifeTimer <= 0.0f)
 				{
+					// EndTask内部移除该条目,数组左移,索引不推进即可处理下一个
 					Processor->EndTask(InOutData, InOutSectionData, TaskData, FinishReason);
+					continue;
 				}
 			}
 			else
 			{
+				// EndTask内部移除该条目,数组左移,索引不推进即可处理下一个
 				Processor->EndTask(InOutData, InOutSectionData, TaskData, FinishReason);
+				continue;
 			}
 		}
+
+		++TaskIndex;
 	}
 }
 

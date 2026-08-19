@@ -102,8 +102,9 @@ void UBXBehaviorComponent::ChangeForbiddenBehavior(const FGameplayTag& InBehavio
 	{
 		if (FBXForbiddenBehaviorInformationList* FindResult = ForbiddenBehaviors.Find(InBehaviorTag))
 		{
+			// 移除所有同来源同原因的条目(同一(Sign,Reason)可被重复添加,单条Remove会残留脏条目导致行为仍被禁止)
 			FBXForbiddenBehaviorInformation FBI(InSign, InReason);
-			FindResult->List.Remove(FBI);
+			FindResult->List.RemoveAll([&FBI](const FBXForbiddenBehaviorInformation& Item) { return Item == FBI; });
 
 			if (FindResult->List.IsEmpty())
 			{
@@ -123,7 +124,8 @@ void UBXBehaviorComponent::ChangeForbiddenBehavior(const FGameplayTag& InBehavio
 
 bool UBXBehaviorComponent::CheckActiveBehavior(const FGameplayTag& InBehaviorTag)
 {
-	return ForbiddenBehaviors.Contains(InBehaviorTag);
+	// 原实现误查禁止表(行为被禁止时误报激活中,真正激活时误报未激活),正确语义是查询激活记录
+	return ActiveBehaviors.HasTag(InBehaviorTag);
 }
 
 bool UBXBehaviorComponent::StartBehavior(const FGameplayTag& InBehaviorTag)
@@ -157,13 +159,15 @@ bool UBXBehaviorComponent::StartBehaviorWithParameter(const FGameplayTag& InBeha
 			return bResult;
 		}
 
-		// 禁用其他行为
+		// 禁用其他行为(bForbidden=true为添加禁止,原实现误传false变成解除禁止,行为禁用体系整体颠倒)
+		TArray<FGameplayTag> ForbiddenTags;
 		if (FGameplayTagContainer* Container = ForbiddenBehaviorConfigs.Find(InBehaviorTag))
 		{
 			for (int32 i = 0; i < Container->Num(); ++i)
 			{
 				const FGameplayTag& Tag = Container->GetByIndex(i);
-				ChangeForbiddenBehavior(Tag, false, Agent->GetUniqueKey(), EBXForbiddenBehaviorReason::FB_OtherBehavior);
+				ChangeForbiddenBehavior(Tag, true, Agent->GetUniqueKey(), EBXForbiddenBehaviorReason::FB_OtherBehavior);
+				ForbiddenTags.Add(Tag);
 			}
 		}
 
@@ -181,14 +185,20 @@ bool UBXBehaviorComponent::StartBehaviorWithParameter(const FGameplayTag& InBeha
 		bResult = Agent->StartBehavior(InParameter);
 		if (bResult)
 		{
-			// 非瞬时行为，要记录状态
-			if (InBehaviorTag.MatchesTag(FGameplayTag::RequestGameplayTag(FName("BXBehavior"))))
+			// 非瞬时行为，要记录状态(原实现每次按名查未注册的根Tag,查找失败返回空Tag导致永不记录,Stop链路整体失效)
+			if (InBehaviorTag.MatchesTag(BXGameplayTags::BXBehavior_Root))
 			{
 				ActiveBehaviors.AddTag(InBehaviorTag);
 			}
 		}
 		else
 		{
+			// 启动失败回滚已添加的禁止条目(否则关联行为被无谓永久禁止)
+			for (const FGameplayTag& Tag : ForbiddenTags)
+			{
+				ChangeForbiddenBehavior(Tag, false, Agent->GetUniqueKey(), EBXForbiddenBehaviorReason::FB_OtherBehavior);
+			}
+
 			UE_LOG(BXCOMP_Behavior, Log, TEXT("Start Behavior(%s) Failed!"), *InBehaviorTag.GetTagName().ToString());
 		}
 	}
@@ -226,13 +236,13 @@ bool UBXBehaviorComponent::StopBehaviorWithParameter(const FGameplayTag& InBehav
 
 		if (bResult)
 		{
-			// 启用其他行为
+			// 启用其他行为(bForbidden=false为解除禁止,原实现误传true变成添加禁止,行为停止后关联行为被永久禁止)
 			if (FGameplayTagContainer* Container = ForbiddenBehaviorConfigs.Find(InBehaviorTag))
 			{
 				for (int32 i = 0; i < Container->Num(); ++i)
 				{
 					const FGameplayTag& Tag = Container->GetByIndex(i);
-					ChangeForbiddenBehavior(Tag, true, Agent->GetUniqueKey(), EBXForbiddenBehaviorReason::FB_OtherBehavior);
+					ChangeForbiddenBehavior(Tag, false, Agent->GetUniqueKey(), EBXForbiddenBehaviorReason::FB_OtherBehavior);
 				}
 			}
 

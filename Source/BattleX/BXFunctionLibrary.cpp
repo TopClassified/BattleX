@@ -19,7 +19,7 @@ int64 UBXFunctionLibrary::GetUniqueID()
 {
 	uint64 Result = FDateTime::UtcNow().GetTicks();
 
-	// 除以8192，相当于精确到毫秒（毫秒要除以10000）
+	// 右移13位即除以8192，精度约0.82毫秒(1毫秒=10000tick,此处略粗于毫秒以换取更多时间位)
 	Result >>= 13;
 	// 将高位的无效位移除，保留大概80年的份额
 	Result <<= 22;
@@ -266,13 +266,19 @@ void UBXFunctionLibrary::CopyData(void* DestAddress, void* SrcAddress, FProperty
 
 		FScriptMapHelper DestMapHelper(MapProp, DestAddress);
 		FScriptMapHelper SrcMapHelper(MapProp, SrcAddress);
-		int32 SrcMapNum = SrcMapHelper.Num();
 
 		FProperty* KeyProp = MapProp->KeyProp;
 		FProperty* ValueProp = MapProp->ValueProp;
 
-		for (int32 i = 0; i < SrcMapNum; ++i)
+		// GetKeyPtr/GetValuePtr接收的是内部数组槽位索引(含空槽/tombstone),须用GetMaxIndex+IsValidIndex遍历
+		// 原实现以元素数Num()为界,Map发生过Remove后前Num个槽位可能含空槽,空槽内存被当作Key/Value处理(垃圾指针解引用崩溃)
+		for (int32 i = 0; i < SrcMapHelper.GetMaxIndex(); ++i)
 		{
+			if (!SrcMapHelper.IsValidIndex(i))
+			{
+				continue;
+			}
+
 			void* CurSrcAddress = SrcMapHelper.GetKeyPtr(i);
 			void* CurDestAddress = DestMapHelper.GetKeyPtr(i);
 			if (FObjectProperty* CurObjProp = CastField<FObjectProperty>(KeyProp))
@@ -637,38 +643,39 @@ float UBXFunctionLibrary::SegmentToSegment(const FVector& InL1S, const FVector& 
 			}
 		}
 		else if (Classify.Y == 0)
-		{
-			Edge.X = 2;
-			End.X = SValue.X;
-			End.Y = Zero;
+	{
+		Edge.X = 2;
+		End.X = SValue.X;
+		End.Y = Zero;
 
-			if (Classify.Y < 0)
+		// 内层三态判定对象应为Classify.X(外层已保证Classify.Y==0,原实现误判Classify.Y产生死分支与恒真分支)
+		if (Classify.X < 0)
+		{
+			Edge.Y = 0;
+			End.Z = Zero;
+			End.W = F00 / B;
+			if (End.W < Zero || End.W > One)
 			{
-				Edge.Y = 0;
-				End.Z = Zero;
-				End.W = F00 / B;
-				if (End.Z < Zero || End.Z > One)
-				{
-					End.Z = Half;
-				}
-			}
-			else if (Classify.Y == 0)
-			{
-				Edge.Y = 3;
-				End.Z = SValue.Y;
-				End.W = One;
-			}
-			else
-			{
-				Edge.Y = 1;
-				End.Z = One;
-				End.W = F10 / B;
-				if (End.W < Zero || End.W > One)
-				{
-					End.W = Half;
-				}
+				End.W = Half;
 			}
 		}
+		else if (Classify.X == 0)
+		{
+			Edge.Y = 3;
+			End.Z = SValue.Y;
+			End.W = One;
+		}
+		else
+		{
+			Edge.Y = 1;
+			End.Z = One;
+			End.W = F10 / B;
+			if (End.W < Zero || End.W > One)
+			{
+				End.W = Half;
+			}
+		}
+	}
 		else
 		{
 			Edge.X = 1;
@@ -807,17 +814,17 @@ float UBXFunctionLibrary::SegmentToSegment(const FVector& InL1S, const FVector& 
 			Classify.X = 0;
 		}
 		if (SValue.Y <= Zero)
-		{
-			Classify.Y = -1;
-		}
-		else if (SValue.X >= One)
-		{
-			Classify.Y = 1;
-		}
-		else
-		{
-			Classify.Y = 0;
-		}
+	{
+		Classify.Y = -1;
+	}
+	else if (SValue.Y >= One)
+	{
+		Classify.Y = 1;
+	}
+	else
+	{
+		Classify.Y = 0;
+	}
 
 		if (Classify.X == -1 && Classify.Y == -1)
 		{
@@ -1231,7 +1238,8 @@ float UBXFunctionLibrary::SegmentToBox(const FVector& InL1S, const FVector& InL1
 		}
 		else
 		{
-			if (LDirection.Y > Zero)
+			// 外层已保证Y<=0,此分支应判定Z(原实现误写LDirection.Y恒false,DoQuery2D(0,2,1)永不可达)
+			if (LDirection.Z > Zero)
 			{
 				DoQuery2D(0, 2, 1, LS, LDirection, InExtent, ResultSquareDistance, ResultParameter);
 			}

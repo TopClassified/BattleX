@@ -268,17 +268,21 @@ const FPinConnectionResponse UBXDTEditorSchema::CanCreateConnection(const UEdGra
 	}
 	
 	// 检查环路
+	// Node为Cast结果可为null(Pin属主为边节点等),TreeType未配置时也为null,均须判空(原实现直接解引用崩溃)
 	UBXDecisionTreeType* TreeType = nullptr;
-	if (UBXDecisionTreeTemplate* TreeTemplate = Cast<UBXDecisionTreeTemplate>(Node->GetGraph()->GetOuter()))
+	if (Node && Node->GetGraph())
 	{
-		if (TreeTemplate->TreeType)
+		if (UBXDecisionTreeTemplate* TreeTemplate = Cast<UBXDecisionTreeTemplate>(Node->GetGraph()->GetOuter()))
 		{
-			TreeType = Cast<UBXDecisionTreeType>(TreeTemplate->TreeType.GetDefaultObject());
+			if (TreeTemplate->TreeType)
+			{
+				TreeType = Cast<UBXDecisionTreeType>(TreeTemplate->TreeType.GetDefaultObject());
+			}
 		}
 	}
-	if (!TreeType->bAllowCycle)
+	if (!TreeType || !TreeType->bAllowCycle)
 	{
-		// 检查是否出现环路
+		// TreeType缺失时按默认禁止环处理
 		FNodeCycleChecker CycleChecker;
 		if (!CycleChecker.CheckForLoop(A->GetOwningNode(), B->GetOwningNode()))
 		{

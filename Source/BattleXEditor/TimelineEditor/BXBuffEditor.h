@@ -25,6 +25,9 @@ public:
 	// 获取图表Schema类型
 	virtual UClass* GetGraphSchemaClass() const override;
 
+	// 关闭(注销BUFF节点工厂)
+	virtual void OnClose() override;
+
 #pragma endregion Important
 
 };

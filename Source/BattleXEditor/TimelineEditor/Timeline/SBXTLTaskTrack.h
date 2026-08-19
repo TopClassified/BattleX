@@ -157,7 +157,7 @@ private:
 
 	TAttribute<float> InputMax;
 
-	float CurrentDragXPosition;
+	float CurrentDragXPosition = 0.0f;
 
 	FGeometry CachedGeometry;
 

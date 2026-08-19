@@ -123,7 +123,10 @@ public:
 #if WITH_EDITOR
 public:
 	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
-	
+
+	// 资产整体复制(DuplicateObject路径,如内容浏览器Ctrl+D/SaveAs)后重分配编辑器UID:创建器与变换输入条目按旧→新映射重新配对,连线保持
+	virtual void PostDuplicate(EDuplicateMode::Type DuplicateMode) override;
+
 	virtual void AlignTimeProperty(float InAlign);
 
 	// 获取蓝图命名空间,未设置时返回空

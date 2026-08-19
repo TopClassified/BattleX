@@ -552,6 +552,13 @@ bool UBXConditionManager::InternalBuildTaskConditionParameter(UBXTaskCondition* 
 		// 快速路径：Native函数直接调用，写入调用方提供的内存
 		if (FBXNativeTaskParamBuilderFunc* NativeFunc = NativeTaskParamBuilderMap.Find(Class))
 		{
+			// Native写入按FBXTaskConditionParameter布局,调用方传入无关小结构会越界写(蓝图路径与fallback均有此校验)
+			if (!InOutParamType->IsChildOf(FBXTaskConditionParameter::StaticStruct()))
+			{
+				UE_LOG(BXMGR_Condition, Warning, TEXT("InternalBuildTaskConditionParameter: ParamType(%s) is not child of FBXTaskConditionParameter, cannot use NativeBuilder."), *InOutParamType->GetName());
+				return false;
+			}
+
 			(this->**NativeFunc)(InCondition, InRTData, InRTSData, InRTTData, reinterpret_cast<int64>(InOutParamAddress));
 			return true;
 		}

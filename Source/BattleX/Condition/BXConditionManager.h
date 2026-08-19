@@ -371,9 +371,14 @@ const int32* UBXConditionManager::SetDerivedInt(UClass* InConditionClass, const 
 	Entry.Value = InValue;
 	Entry.CachedTime = CurrentFrameTime;
 
+	// 超限清空后Entry引用悬空(原实现返回悬空引用即UB),清空后重新写入并返回新引用
 	if (DerivedCache_Int.Num() > MaxDerivedEntries)
 	{
 		DerivedCache_Int.Empty();
+		TBXDerivedEntry<int32>& NewEntry = DerivedCache_Int.FindOrAdd(Key);
+		NewEntry.Value = InValue;
+		NewEntry.CachedTime = CurrentFrameTime;
+		return &NewEntry.Value;
 	}
 
 	return &Entry.Value;
@@ -387,9 +392,14 @@ const float* UBXConditionManager::SetDerivedFloat(UClass* InConditionClass, cons
 	Entry.Value = InValue;
 	Entry.CachedTime = CurrentFrameTime;
 
+	// 超限清空后Entry引用悬空(原实现返回悬空引用即UB),清空后重新写入并返回新引用
 	if (DerivedCache_Float.Num() > MaxDerivedEntries)
 	{
 		DerivedCache_Float.Empty();
+		TBXDerivedEntry<float>& NewEntry = DerivedCache_Float.FindOrAdd(Key);
+		NewEntry.Value = InValue;
+		NewEntry.CachedTime = CurrentFrameTime;
+		return &NewEntry.Value;
 	}
 
 	return &Entry.Value;
@@ -403,9 +413,14 @@ const TResult* UBXConditionManager::SetDerivedStruct(UClass* InConditionClass, c
 	Entry.Value = Make<TResult>(InValue);
 	Entry.CachedTime = CurrentFrameTime;
 
+	// 超限清空后Entry引用悬空(原实现返回悬空引用即UB),清空后重新写入并返回新引用
 	if (DerivedCache_Struct.Num() > MaxDerivedEntries)
 	{
 		DerivedCache_Struct.Empty();
+		TBXDerivedEntry<FInstancedStruct>& NewEntry = DerivedCache_Struct.FindOrAdd(Key);
+		NewEntry.Value = Make<TResult>(InValue);
+		NewEntry.CachedTime = CurrentFrameTime;
+		return NewEntry.Value.GetPtr<TResult>();
 	}
 
 	return Entry.Value.GetPtr<TResult>();

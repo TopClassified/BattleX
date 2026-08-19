@@ -28,8 +28,8 @@ protected:
 	// 获取最佳节点
 	virtual UBXDecisionTreeNode* InternalGetBestNode(UObject* InWorldContext, UBXDecisionTreeTemplate* InTemplate, UScriptStruct* InParameterType, void* InParameterAddress);
 	
-	// 决策树遍历接口
-	virtual UBXDecisionTreeNode* TravelDecisionTree(UObject* InWorldContext, UBXDecisionTreeNode* StartNode, UScriptStruct* InParameterType, void* InParameterAddress);
+	// 决策树遍历接口(带访问集防环:允许环的树类型如CombatTree无访问集会无限递归)
+	virtual UBXDecisionTreeNode* TravelDecisionTree(UObject* InWorldContext, UBXDecisionTreeNode* StartNode, UScriptStruct* InParameterType, void* InParameterAddress, TSet<UBXDecisionTreeNode*>& InOutVisitedNodes);
 
 };
 

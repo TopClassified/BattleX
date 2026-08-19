@@ -244,6 +244,8 @@ void SBXTLExtraTrackNode::SetNodeStartTime(float InStartTime)
 
 	if (FVector2f* Find = Section.ExtraTime.Find(NodeType))
 	{
+		// 写值前快照(无Modify则拖拽后资产不置脏且不可撤销)
+		CachedAsset.Get()->Modify();
 		Find->X = InStartTime;
 	}
 }
@@ -259,6 +261,8 @@ void SBXTLExtraTrackNode::SetNodeDuration(float InDuration)
 
 	if (FVector2f* Find = Section.ExtraTime.Find(NodeType))
 	{
+		// 写值前快照(无Modify则拖拽后资产不置脏且不可撤销)
+		CachedAsset.Get()->Modify();
 		Find->Y = InDuration;
 	}
 }
@@ -326,9 +330,16 @@ FReply SBXTLExtraTrackNode::OnDragDetected(const FGeometry& MyGeometry, const FP
 	{
 		RefreshDragType(LastMouseDownPosition);
 
+		// Duration拖拽不创建DragDropOp(鼠标事件被Op接管后OnMouseMove的时长分支永不可达,
+		// 拖右缘本意调时长却整体移动节点;对照SBXTLTaskTrackNode同路径仅StartTime走Op)
+		if (DragType == EDragType::Duration)
+		{
+			return FReply::Handled();
+		}
+
 		if (DragType != EDragType::None)
 		{
-			DragIndex = GEditor->BeginTransaction(NSLOCTEXT("Node", "Drag Postion", "Drag State Node Postion"));
+			DragIndex = GEditor->BeginTransaction(NSLOCTEXT("Node", "Drag Position", "Drag State Node Position"));
 
 			return DragETNEvent.Execute(SharedThis(this), MouseEvent, FVector2D(MyGeometry.AbsolutePosition), false);
 		}
@@ -357,7 +368,8 @@ FReply SBXTLExtraTrackNode::OnMouseMove(const FGeometry& MyGeometry, const FPoin
 		float XPositionInTrack = MyGeometry.AbsolutePosition.X - CachedTrackGeometry.AbsolutePosition.X;
 		float NewDuration = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X) - GetNodeStartTime();
 
-		NodeDuration = NewDuration;
+		// 钳制下限防止拖出负时长节点
+		NodeDuration = FMath::Max(NewDuration, 0.0f);
 
 		return FReply::Handled();
 	}

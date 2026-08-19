@@ -287,9 +287,10 @@ public:
 		
 		if (FInstancedStruct* FindResult = RTDataPointer->DynamicDatas.Find(FBXTLDynamicDataSearchKey(*FullIndexPointer, *DataTagPointer, ParentScope)))
 		{
-			bResult = true;
+			// 仅类型匹配才算成功(命中但类型不符时蓝图输出未写入,返回true会让调用方拿到旧值/未初始化数据误当有效)
 			if (ValueProperty->Struct == FindResult->GetScriptStruct())
 			{
+				bResult = true;
 				ValueProperty->Struct->CopyScriptStruct(ValuePointer, FindResult->GetMemory());
 			}
 		}

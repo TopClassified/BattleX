@@ -67,9 +67,6 @@ protected:
 	FBXTLRunTimeData* GetTimelineRunTimeData();
 
 private:
-	// 开始播放的时间戳
-	int64 PlayTimeStamp = 0;
-
 	// 正在播放
 	bool bPlaying = false;
 

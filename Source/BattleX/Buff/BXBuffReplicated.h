@@ -1,7 +1,7 @@
 // BUFF运行状态复制快照。
 // UE属性复制时序、运行数据新鲜度问题与选型说明见 Net/BXSkillReplicated.h 文件头注释。
 // BUFF快照为无条件复制(非COND_InitialOnly):低频变化(增删/层级/时长刷新)承担
-// 初始重建 + 已重建客户端的层/级/到期持续同步,与Unreliable的MulticastBuffLayerChanged互为兜底。
+// 初始重建 + 已重建客户端的层/级/到期持续同步(层级变化唯一同步通道,增删由Reliable RPC主通道承担)。
 
 #pragma once
 

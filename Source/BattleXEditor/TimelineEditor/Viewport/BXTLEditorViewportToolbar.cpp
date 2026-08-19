@@ -19,7 +19,6 @@ void SBXTLEditorViewportToolBar::Construct(const FArguments& InArgs, TSharedPtr<
 {
 	CachedEditor = InEditor;
 	CachedViewport = InViewport;
-	TSharedPtr<FSimpleEditorViewportClient> SimpeEdViewportClient = StaticCastSharedPtr<FSimpleEditorViewportClient>(InViewport->GetViewportClient());
 	
 	TSharedRef<SHorizontalBox> ToolbarContainer = SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot()

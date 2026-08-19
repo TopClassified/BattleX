@@ -48,20 +48,27 @@ int64 UBXBuffComponent::AddBuff(UBXBuffAsset* InAsset, AActor* InInstigator, int
 		Context.InitLayer = InLayer;
 		Context.InitLevel = InLevel;
 
-		int64 BuffID = Mgr->AddBuff(InAsset, Owner, Context);
+		// 服务器本地调用同样钳制层级/等级到资产范围(与RPC路径一致,越界InitLayer会撑爆LayerRunTimes)
+		FBXBuffPlayContext ValidatedContext;
+		if (!Mgr->ServerValidateAddBuff(InAsset, Owner, Context, ValidatedContext))
+		{
+			return INDEX_NONE;
+		}
+
+		int64 BuffID = Mgr->AddBuff(InAsset, Owner, ValidatedContext);
 		if (BuffID != INDEX_NONE)
 		{
 			OwnedBuffIDs.Add(BuffID);
-			MulticastAddBuff(BuffID, InAsset, Owner, Context.Instigator, InLayer, InLevel);
+			MulticastAddBuff(BuffID, InAsset->ID, Owner, ValidatedContext.Instigator, ValidatedContext.InitLayer, ValidatedContext.InitLevel);
 		}
 
 		return BuffID;
 	}
 
-	// 客户端:请求服务器添加
+	// 客户端:请求服务器添加(传资产ID,服务器经注册表解析)
 	if (LocalRole == ENetRole::ROLE_AutonomousProxy)
 	{
-		ServerRequestAddBuff(InAsset, InInstigator, InLayer, InLevel);
+		ServerRequestAddBuff(InAsset->ID, InInstigator, InLayer, InLevel);
 		return INDEX_NONE;
 	}
 
@@ -172,16 +179,31 @@ void UBXBuffComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 
 #pragma region Sync
-bool UBXBuffComponent::ServerRequestAddBuff_Validate(UBXBuffAsset* InAsset, AActor* InInstigator, int32 InLayer, int32 InLevel)
+bool UBXBuffComponent::ServerRequestAddBuff_Validate(int32 InBuffAssetID, AActor* InInstigator, int32 InLayer, int32 InLevel)
 {
 	return true;
 }
 
-void UBXBuffComponent::ServerRequestAddBuff_Implementation(UBXBuffAsset* InAsset, AActor* InInstigator, int32 InLayer, int32 InLevel)
+void UBXBuffComponent::ServerRequestAddBuff_Implementation(int32 InBuffAssetID, AActor* InInstigator, int32 InLayer, int32 InLevel)
 {
 	UBXBuffManager* Mgr = UBXBuffManager::Get(this);
-	if (!Mgr || !InAsset || !GetOwner())
+	UBXTLManager* TLMgr = UBXTLManager::Get(this);
+	if (!Mgr || !TLMgr || !GetOwner())
 	{
+		return;
+	}
+
+	// 查找BUFF资产(注册表解析,防客户端伪造对象引用,与Late Join重建同源)
+	TSoftObjectPtr<UBXTLAsset> AssetPtr = TLMgr->GetTimelineAssetByID(InBuffAssetID);
+	UBXBuffAsset* BuffAsset = Cast<UBXBuffAsset>(AssetPtr.Get());
+	if (!BuffAsset)
+	{
+		BuffAsset = Cast<UBXBuffAsset>(AssetPtr.LoadSynchronous());
+	}
+
+	if (!BuffAsset)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UBXBuffComponent::ServerRequestAddBuff: BuffAsset not found. BuffAssetID=%d."), InBuffAssetID);
 		return;
 	}
 
@@ -191,16 +213,19 @@ void UBXBuffComponent::ServerRequestAddBuff_Implementation(UBXBuffAsset* InAsset
 	Context.InitLayer = InLayer;
 	Context.InitLevel = InLevel;
 
-	// 服务器校验
-	if (!Mgr->ServerValidateAddBuff(InAsset, GetOwner(), Context))
+	// 服务器校验(层级/等级钳制到资产范围)
+	FBXBuffPlayContext ValidatedContext;
+	if (!Mgr->ServerValidateAddBuff(BuffAsset, GetOwner(), Context, ValidatedContext))
 	{
 		return;
 	}
 
-	int64 BuffID = Mgr->AddBuff(InAsset, GetOwner(), Context);
+	int64 BuffID = Mgr->AddBuff(BuffAsset, GetOwner(), ValidatedContext);
 	if (BuffID != INDEX_NONE)
 	{
-		MulticastAddBuff(BuffID, InAsset, GetOwner(), Context.Instigator, InLayer, InLevel);
+		// 登记本地持有(与Authority路径对称,否则服务器持有列表缺RPC来源BUFF,Owner EndPlay不清理导致Task对已销毁Owner继续执行)
+		OwnedBuffIDs.Add(BuffID);
+		MulticastAddBuff(BuffID, BuffAsset->ID, GetOwner(), ValidatedContext.Instigator, ValidatedContext.InitLayer, ValidatedContext.InitLevel);
 	}
 }
 
@@ -217,23 +242,15 @@ void UBXBuffComponent::ServerRequestRemoveBuff_Implementation(int64 InBuffID, in
 		return;
 	}
 
+	// 整体移除与层数变化均由Manager统一处理:移除广播收束于InternalRemoveBuff,层数变化经复制快照同步
 	Mgr->RemoveBuff(InBuffID, InLayerDelta);
-
-	// 整体移除的广播由Manager.InternalRemoveBuff统一发送;层数变化仍需显式广播
-	if (InLayerDelta != 0)
-	{
-		FBXBuffRuntimeData* Data = Mgr->GetBuffRuntimeDataByID(InBuffID);
-		if (Data)
-		{
-			MulticastBuffLayerChanged(InBuffID, Data->CurrentLayer);
-		}
-	}
 }
 
-void UBXBuffComponent::MulticastAddBuff_Implementation(int64 InBuffID, UBXBuffAsset* InAsset, AActor* InOwner, AActor* InInstigator, int32 InLayer, int32 InLevel)
+void UBXBuffComponent::MulticastAddBuff_Implementation(int64 InBuffID, int32 InBuffAssetID, AActor* InOwner, AActor* InInstigator, int32 InLayer, int32 InLevel)
 {
 	UBXBuffManager* Mgr = UBXBuffManager::Get(this);
-	if (!Mgr || !InAsset || !InOwner)
+	UBXTLManager* TLMgr = UBXTLManager::Get(this);
+	if (!Mgr || !TLMgr || !InOwner)
 	{
 		return;
 	}
@@ -244,16 +261,31 @@ void UBXBuffComponent::MulticastAddBuff_Implementation(int64 InBuffID, UBXBuffAs
 		return;
 	}
 
+	// 查找BUFF资产(注册表解析,与ServerRequestAddBuff/RebuildBuffFromState同源)
+	TSoftObjectPtr<UBXTLAsset> AssetPtr = TLMgr->GetTimelineAssetByID(InBuffAssetID);
+	UBXBuffAsset* BuffAsset = Cast<UBXBuffAsset>(AssetPtr.Get());
+	if (!BuffAsset)
+	{
+		BuffAsset = Cast<UBXBuffAsset>(AssetPtr.LoadSynchronous());
+	}
+
+	if (!BuffAsset)
+	{
+		UE_LOG(BXMGR_Buff, Warning, TEXT("UBXBuffComponent::MulticastAddBuff: BuffAsset not found. BuffAssetID=%d."), InBuffAssetID);
+		return;
+	}
+
 	FBXBuffPlayContext Context;
 	Context.Instigator = InInstigator;
 	Context.Triggerer = InOwner;
 	Context.InitLayer = InLayer;
 	Context.InitLevel = InLevel;
 
-	int64 BuffID = Mgr->AddBuffWithID(InAsset, InOwner, Context, InBuffID);
+	int64 BuffID = Mgr->AddBuffWithID(BuffAsset, InOwner, Context, InBuffID);
 	if (BuffID != INDEX_NONE)
 	{
 		OwnedBuffIDs.Add(BuffID);
+		UE_LOG(BXMGR_Buff, Log, TEXT("UBXBuffComponent::MulticastAddBuff: Remote add. BuffID=%lld Asset=%s Layer=%d Level=%d."), BuffID, *BuffAsset->GetName(), InLayer, InLevel);
 	}
 }
 
@@ -273,13 +305,9 @@ void UBXBuffComponent::MulticastRemoveBuff_Implementation(int64 InBuffID, uint8 
 	}
 
 	// 携带服务器移除原因,保证本地BXEvent.Buff.Removed事件Reason一致
+	UE_LOG(BXMGR_Buff, Log, TEXT("UBXBuffComponent::MulticastRemoveBuff: Remote remove. BuffID=%lld Reason=%d."), InBuffID, (int32)InRemoveReason);
 	Mgr->RemoveBuffWithReason(InBuffID, static_cast<EBXBuffRemoveReason>(InRemoveReason));
 	OwnedBuffIDs.Remove(InBuffID);
-}
-
-void UBXBuffComponent::MulticastBuffLayerChanged_Implementation(int64 InBuffID, int32 InNewLayer)
-{
-	// 层数变化由服务器权威控制,客户端无需额外处理(已在MulticastAddBuff或服务器Tick中同步)
 }
 
 #pragma endregion Sync
@@ -369,6 +397,7 @@ void UBXBuffComponent::RebuildBuffFromState(const FBXBuffReplicatedState& InStat
 	}
 
 	OwnedBuffIDs.Add(BuffID);
+	UE_LOG(BXMGR_Buff, Log, TEXT("UBXBuffComponent::RebuildBuffFromState: Rebuilt. BuffID=%lld Asset=%s Layer=%d Level=%d."), BuffID, *BuffAsset->GetName(), InState.Layer, InState.Level);
 
 	// 计时对齐:按到期时间戳回填已流逝时长
 	FBXBuffRuntimeData* Data = Mgr->GetBuffRuntimeDataByID(BuffID);
@@ -420,6 +449,7 @@ void UBXBuffComponent::ApplyBuffStateChange(const FBXBuffReplicatedState& InStat
 	const int32 LayerDelta = InState.Layer - Data->CurrentLayer;
 	if (LayerDelta != 0)
 	{
+		UE_LOG(BXMGR_Buff, Log, TEXT("UBXBuffComponent::ApplyBuffStateChange: Layer changed. BuffID=%lld %d -> %d."), InState.BuffID, Data->CurrentLayer, InState.Layer);
 		Mgr->ChangeBuffLayer(InState.BuffID, LayerDelta);
 	}
 
@@ -427,6 +457,7 @@ void UBXBuffComponent::ApplyBuffStateChange(const FBXBuffReplicatedState& InStat
 	const int32 LevelDelta = InState.Level - Data->CurrentLevel;
 	if (LevelDelta != 0)
 	{
+		UE_LOG(BXMGR_Buff, Log, TEXT("UBXBuffComponent::ApplyBuffStateChange: Level changed. BuffID=%lld %d -> %d."), InState.BuffID, Data->CurrentLevel, InState.Level);
 		Mgr->ChangeBuffLevel(InState.BuffID, LevelDelta);
 	}
 
@@ -462,6 +493,11 @@ void UBXBuffComponent::RemoveBuffIfLocalExists(int64 InBuffID)
 	}
 
 	Mgr->RemoveBuffWithReason(InBuffID, EBXBuffRemoveReason::BRR_Manual);
+	OwnedBuffIDs.Remove(InBuffID);
+}
+
+void UBXBuffComponent::InternalOnBuffFinished(int64 InBuffID)
+{
 	OwnedBuffIDs.Remove(InBuffID);
 }
 
@@ -582,6 +618,7 @@ void UBXBuffComponent::OnRep_RunningBuffStates(TArray<FBXBuffReplicatedState> In
 
 		if (!bStillExists)
 		{
+			UE_LOG(BXMGR_Buff, Log, TEXT("UBXBuffComponent::OnRep_RunningBuffStates: Entry vanished, fallback remove. BuffID=%lld."), OldState.BuffID);
 			RemoveBuffIfLocalExists(OldState.BuffID);
 		}
 	}

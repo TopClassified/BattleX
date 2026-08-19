@@ -4,7 +4,10 @@
 
 UBXCombatTreeRootNode::UBXCombatTreeRootNode()
 {
+	// NodeTitle为基类WITH_EDITORONLY_DATA属性,cooked打包构建下访问会编译失败
+#if WITH_EDITORONLY_DATA
 	NodeTitle = FText::FromString(TEXT("Start"));
+#endif
 }
 
 #if WITH_EDITOR
@@ -61,7 +64,7 @@ void UBXCombatTreeNode::RefreshNodeTitle()
 
 	if (bCheckReleaseCondition)
 	{
-		Title += TEXT("Neec Check Release Condition !\n");
+		Title += TEXT("Need Check Release Condition !\n");
 	}
 	
 	Title += TEXT("Release ");

@@ -15,6 +15,7 @@
 #include "BXTLAssetTypeActions.h"
 #include "BXBuffAssetTypeActions.h"
 #include "BXTLAssetThumbnailRenderer.h"
+#include "TimelineEditor/BXTLEditorStyle.h"
 #include "BXDTAssetTypeActions.h"
 #include "BXDTAssetThumbnailRenderers.h"
 #include "ComponentVisualizers/BXShapeComponentVisualizer.h"
@@ -59,10 +60,16 @@ void FBattleXEditorModule::StartupModule()
 	FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 	PropertyModule.RegisterCustomPropertyTypeLayout(FBXBoneSelector::StaticStruct()->GetFName(), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FBXBoneSelectorCustomization::MakeInstance));
 	PropertyModule.RegisterCustomPropertyTypeLayout(FBXFunctionSelector::StaticStruct()->GetFName(), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FBXFunctionSelectorCustomization::MakeInstance));
+
+	// 初始化编辑器样式(原实现从未调用,StyleInstance恒为null,图标等样式整体失效)
+	FBXTLEditorStyle::Initialize();
 }
 
 void FBattleXEditorModule::ShutdownModule()
 {
+	// 注销编辑器样式
+	FBXTLEditorStyle::Shutdown();
+
 	if (GUnrealEd)
 	{
 		GUnrealEd->UnregisterComponentVisualizer(UBXShapeComponent::StaticClass()->GetFName());

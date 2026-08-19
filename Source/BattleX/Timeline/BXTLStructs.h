@@ -60,16 +60,16 @@ struct FBXTLPendingTaskInfo
 public:
 	FBXTLPendingTaskInfo() {}
 	FBXTLPendingTaskInfo(int32 InIndex, float InTime) : LocalIndex(InIndex), Time(InTime){}
-	FBXTLPendingTaskInfo(int32 InIndex, int32 InParentScope, float InTime) : LocalIndex(InIndex), ParentScope(InParentScope), Time(InTime){}
+	FBXTLPendingTaskInfo(int32 InIndex, int64 InParentScope, float InTime) : LocalIndex(InIndex), ParentScope(InParentScope), Time(InTime){}
 
 public:
 	// 任务局部索引
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int32 LocalIndex = -1;
 
-	// 父作用域
+	// 父作用域(作用域ID为61位唯一值,原int32存储会截断导致ScopeGraph查找失效,跨帧触发任务的作用域链断裂)
 	UPROPERTY(Transient, BlueprintReadWrite)
-	int32 ParentScope = 0;
+	int64 ParentScope = 0;
 	
 	// 触发时间
 	UPROPERTY(Transient, BlueprintReadWrite)
@@ -154,8 +154,11 @@ public:
 		Index = InOther.Index;
 		ParentScope = InOther.ParentScope;
 		RunTime = InOther.RunTime;
+		NextTick = InOther.NextTick;
 		bEarlyFinish = InOther.bEarlyFinish;
 		DynamicData = InOther.DynamicData;
+		ServerExtraLifeTimer = InOther.ServerExtraLifeTimer;
+		bAwaitingClientCollision = InOther.bAwaitingClientCollision;
 	}
 
 	FBXTLTaskRTData(FBXTLTaskRTData&& InOther)
@@ -164,8 +167,11 @@ public:
 		Index = InOther.Index;
 		ParentScope = InOther.ParentScope;
 		RunTime = InOther.RunTime;
+		NextTick = InOther.NextTick;
 		bEarlyFinish = InOther.bEarlyFinish;
-		DynamicData = InOther.DynamicData;
+		DynamicData = MoveTemp(InOther.DynamicData);
+		ServerExtraLifeTimer = InOther.ServerExtraLifeTimer;
+		bAwaitingClientCollision = InOther.bAwaitingClientCollision;
 	}
 
 	FBXTLTaskRTData& operator=(const FBXTLTaskRTData& InOther)
@@ -176,8 +182,11 @@ public:
 			Index = InOther.Index;
 			ParentScope = InOther.ParentScope;
 			RunTime = InOther.RunTime;
+			NextTick = InOther.NextTick;
 			bEarlyFinish = InOther.bEarlyFinish;
 			DynamicData = InOther.DynamicData;
+			ServerExtraLifeTimer = InOther.ServerExtraLifeTimer;
+			bAwaitingClientCollision = InOther.bAwaitingClientCollision;
 		}
 
 		return *this;
@@ -191,8 +200,11 @@ public:
 			Index = InOther.Index;
 			ParentScope = InOther.ParentScope;
 			RunTime = InOther.RunTime;
+			NextTick = InOther.NextTick;
 			bEarlyFinish = InOther.bEarlyFinish;
-			DynamicData = InOther.DynamicData;
+			DynamicData = MoveTemp(InOther.DynamicData);
+			ServerExtraLifeTimer = InOther.ServerExtraLifeTimer;
+			bAwaitingClientCollision = InOther.bAwaitingClientCollision;
 		}
 
 		return *this;
@@ -204,6 +216,7 @@ public:
 		Index = -1;
 		ParentScope = 0;
 		RunTime = 0.0f;
+		NextTick = 0.0f;
 		bEarlyFinish = true;
 		DynamicData.Reset();
 		ServerExtraLifeTimer = 0.0f;
@@ -431,6 +444,7 @@ public:
 	TArray<FBXTLPendingTaskInfo> PendingTasks;
 
 	// 需要广播的Task数据 时间轴索引*1000+Task索引 触发时间点
+	// [网络多播预留]当前仅由AddPendingTask收集不消费,为后续网络多播功能预留,接入前请勿移除
 	UPROPERTY(Transient, BlueprintReadWrite)
 	TArray<FBXTLBroadcastTaskInfo> BroadcastTasks;
 
@@ -508,6 +522,8 @@ public:
 			Owner = InOther.Owner;
 			Instigator = InOther.Instigator;
 			Triggerer = InOther.Triggerer;
+			// 先清空再拷贝(Append不删除目标已有元素,对非空目标赋值会残留并累加旧锁定列表)
+			LockParts.Reset();
 			LockParts.Append(InOther.LockParts);
 			RunTime = InOther.RunTime;
 			RunRate = InOther.RunRate;
@@ -517,7 +533,7 @@ public:
 
 			DynamicDatas.Reset();
 			DynamicDatas.Append(InOther.DynamicDatas);
-			
+
 			ScopeGraph.Reset();
 			ScopeGraph.Append(InOther.ScopeGraph);
 		}
@@ -535,6 +551,8 @@ public:
 			Owner = InOther.Owner;
 			Instigator = InOther.Instigator;
 			Triggerer = InOther.Triggerer;
+			// 先清空再拷贝(同拷贝赋值,Append残留旧元素)
+			LockParts.Reset();
 			LockParts.Append(InOther.LockParts);
 			InOther.LockParts.Reset();
 			RunTime = InOther.RunTime;
@@ -662,7 +680,10 @@ public:
 		{
 			Instigator = InOther.Instigator;
 			Triggerer = InOther.Triggerer;
+			// 先清空再拷贝(Append语义为合并,对非空目标赋值会残留旧元素形成并集而非替换)
+			LockParts.Reset();
 			LockParts.Append(InOther.LockParts);
+			InputDatas.Reset();
 			InputDatas.Append(InOther.InputDatas);
 		}
 
@@ -675,8 +696,11 @@ public:
 		{
 			Instigator = InOther.Instigator;
 			Triggerer = InOther.Triggerer;
+			// 先清空再拷贝(同拷贝赋值)
+			LockParts.Reset();
 			LockParts.Append(InOther.LockParts);
 			InOther.LockParts.Reset();
+			InputDatas.Reset();
 			InputDatas.Append(InOther.InputDatas);
 			InOther.InputDatas.Reset();
 		}

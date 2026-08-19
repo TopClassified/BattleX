@@ -44,6 +44,8 @@ public:
 		if (this != &InOther)
 		{
 			bMulticast = InOther.bMulticast;
+			// 先清空再拷贝(Append不删除目标已有键,对已有内容的对象赋值会残留旧映射条目)
+			Event.Reset();
 			Event.Append(InOther.Event);
 		}
 
@@ -109,7 +111,7 @@ public:
 		DisplayName = InOther.DisplayName;
 		StructType = InOther.StructType;
 	#endif
-		
+
 		DataTask = InOther.DataTask;
 		DataTag = InOther.DataTag;
 	}
@@ -119,8 +121,11 @@ public:
 	#if WITH_EDITORONLY_DATA
 		DisplayName = InOther.DisplayName;
 		StructType = InOther.StructType;
+		// 搬迁保留身份:移动构造服务于TArray扩容等同一对象换址场景,UID丢失会被GetUniqueID惰性分配为新值,
+		// 导致RefreshTransformCreaters的Creater-UID匹配断裂,用户已配置的DataTask/DataTag被删除重建丢失
+		UniqueID = InOther.UniqueID;
 	#endif
-		
+
 		DataTask = InOther.DataTask;
 		DataTag = InOther.DataTag;
 	}
@@ -133,7 +138,7 @@ public:
 			DisplayName = InOther.DisplayName;
 			StructType = InOther.StructType;
 		#endif
-			
+
 			DataTask = InOther.DataTask;
 			DataTag = InOther.DataTag;
 		}
@@ -148,8 +153,10 @@ public:
 		#if WITH_EDITORONLY_DATA
 			DisplayName = InOther.DisplayName;
 			StructType = InOther.StructType;
+			// 搬迁保留身份(同移动构造)
+			UniqueID = InOther.UniqueID;
 		#endif
-			
+
 			DataTask = InOther.DataTask;
 			DataTag = InOther.DataTag;
 		}
@@ -195,6 +202,12 @@ public:
 		{
 			UniqueID = InID;
 		}
+	}
+
+	// 重置UID(资产整体复制经序列化原样携带旧UID,置0后由GetUniqueID惰性分配全新值)
+	void ResetUniqueID()
+	{
+		UniqueID = 0;
 	}
 	
 	int64 GetUniqueID()
@@ -245,6 +258,11 @@ public:
 	{
 		DataTag = InOther.DataTag;
 		StructType = InOther.StructType;
+
+	#if WITH_EDITORONLY_DATA
+		// 搬迁保留身份:数组扩容走移动构造,UID丢失会被GetUniqueID惰性分配为新值,令BuildPinRelatedSignature漂移误触发Pin刷新广播
+		UniqueID = InOther.UniqueID;
+	#endif
 	}
 
 	FBXTOutputInfo& operator=(const FBXTOutputInfo& InOther)
@@ -264,6 +282,11 @@ public:
 		{
 			DataTag = InOther.DataTag;
 			StructType = InOther.StructType;
+
+		#if WITH_EDITORONLY_DATA
+			// 搬迁保留身份(同移动构造)
+			UniqueID = InOther.UniqueID;
+		#endif
 		}
 
 		return *this;
@@ -278,7 +301,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	UScriptStruct* StructType = nullptr;
 
-	
+
 #if WITH_EDITORONLY_DATA
 public:
 	int64 GetUniqueID()
@@ -287,8 +310,14 @@ public:
 		{
 			UniqueID = UBXFunctionLibrary::GetUniqueID();
 		}
-		
+
 		return UniqueID;
+	}
+
+	// 重置UID(资产整体复制经序列化原样携带旧UID,置0后由GetUniqueID惰性分配全新值)
+	void ResetUniqueID()
+	{
+		UniqueID = 0;
 	}
 
 private:
@@ -436,6 +465,13 @@ public:
 
 #if WITH_EDITORONLY_DATA
 public:
+	// 重置原点/X轴输入UID(任务复制场景:残留源任务UID会在输入重建时经SetUniqueID注入新任务,违反全局唯一;置0后惰性分配全新值)
+	void ResetInputUniqueIDs()
+	{
+		OriginInputUniqueID = 0;
+		XAxisInputUniqueID = 0;
+	}
+
 	int64 GetOriginInputUniqueID()
 	{
 		if (OriginInputUniqueID <= 0)

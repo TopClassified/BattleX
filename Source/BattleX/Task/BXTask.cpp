@@ -25,8 +25,81 @@ void UBXTask::GetDynamicObjectByRuntimeData_Implementation(UBXManager* InBXMgr, 
 void UBXTask::PreSave(FObjectPreSaveContext SaveContext)
 {
 	RefreshTransformCreaters();
-	
+
 	Super::PreSave(SaveContext);
+}
+
+void UBXTask::PostDuplicate(EDuplicateMode::Type DuplicateMode)
+{
+	Super::PostDuplicate(DuplicateMode);
+
+	// PIE复制为瞬态运行时拷贝,与原实例保持同一身份;仅Normal(资产整体复制等DuplicateObject路径)重分配
+	if (DuplicateMode == EDuplicateMode::PIE)
+	{
+		return;
+	}
+
+	// 序列化复制原样携带源实例UID,新旧实例共享违反全局唯一:创建器先换新UID并记录旧→新映射,变换输入条目按映射跟随保连线,其余条目重置为惰性新值
+	TMap<int64, int64> CreaterUIDMap;
+	for (TFieldIterator<FProperty> PropIt(GetClass()); PropIt; ++PropIt)
+	{
+		if (FStructProperty* StructProp = CastField<FStructProperty>(*PropIt))
+		{
+			if (StructProp->Struct != FBXTTransformCreater::StaticStruct())
+			{
+				continue;
+			}
+
+			FBXTTransformCreater* Creater = StructProp->ContainerPtrToValuePtr<FBXTTransformCreater>(this);
+			int64 OldOriginUID = Creater->GetOriginInputUniqueID();
+			int64 OldXAxisUID = Creater->GetXAxisInputUniqueID();
+			Creater->ResetInputUniqueIDs();
+			CreaterUIDMap.Add(OldOriginUID, Creater->GetOriginInputUniqueID());
+			CreaterUIDMap.Add(OldXAxisUID, Creater->GetXAxisInputUniqueID());
+		}
+		else if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(*PropIt))
+		{
+			FStructProperty* ArrayInnerProp = CastField<FStructProperty>(ArrayProp->Inner);
+			if (!ArrayInnerProp || ArrayInnerProp->Struct != FBXTTransformCreater::StaticStruct())
+			{
+				continue;
+			}
+
+			FScriptArrayHelper ArrayHelper(ArrayProp, this);
+			for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+			{
+				FBXTTransformCreater* Creater = ArrayInnerProp->ContainerPtrToValuePtr<FBXTTransformCreater>(ArrayHelper.GetRawPtr(i));
+				int64 OldOriginUID = Creater->GetOriginInputUniqueID();
+				int64 OldXAxisUID = Creater->GetXAxisInputUniqueID();
+				Creater->ResetInputUniqueIDs();
+				CreaterUIDMap.Add(OldOriginUID, Creater->GetOriginInputUniqueID());
+				CreaterUIDMap.Add(OldXAxisUID, Creater->GetXAxisInputUniqueID());
+			}
+		}
+	}
+
+	for (FBXTInputInfo& Info : InputDatas)
+	{
+		// 变换输入条目按映射重配对创建器新UID(RefreshTransformCreaters按UID配对,断裂则条目被删除重建丢连线),普通条目重置为全新UID
+		if (int64* MappedUID = CreaterUIDMap.Find(Info.GetUniqueID()))
+		{
+			Info.SetUniqueID(*MappedUID);
+		}
+		else
+		{
+			Info.ResetUniqueID();
+		}
+	}
+
+	for (FBXTInputInfo& Info : CollisionInputDatas)
+	{
+		Info.ResetUniqueID();
+	}
+
+	for (FBXTOutputInfo& Info : OutputDatas)
+	{
+		Info.ResetUniqueID();
+	}
 }
 
 void UBXTask::AlignTimeProperty(float InAlign)
@@ -120,6 +193,32 @@ void UBXTask::CopyDataFromOther(UBXTask* Other)
 	InputDatas.Reset();
 	OutputDatas.Reset();
 	CollisionInputDatas.Reset();
+
+	// 重置坐标系创建器输入UID:CopyObject按属性原样搬运会拷入源任务UID,RefreshTransformCreaters重建输入时经SetUniqueID将其注入本任务,令新旧任务的InputInfo共享UID违反全局唯一;置0后由RestoreTasksRelation按源UID重映射到全新值
+	for (TFieldIterator<FProperty> PropIt(GetClass()); PropIt; ++PropIt)
+	{
+		if (FStructProperty* StructProp = CastField<FStructProperty>(*PropIt))
+		{
+			if (StructProp->Struct == FBXTTransformCreater::StaticStruct())
+			{
+				StructProp->ContainerPtrToValuePtr<FBXTTransformCreater>(this)->ResetInputUniqueIDs();
+			}
+		}
+		else if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(*PropIt))
+		{
+			FStructProperty* ArrayInnerProp = CastField<FStructProperty>(ArrayProp->Inner);
+			if (!ArrayInnerProp || ArrayInnerProp->Struct != FBXTTransformCreater::StaticStruct())
+			{
+				continue;
+			}
+
+			FScriptArrayHelper ArrayHelper(ArrayProp, this);
+			for (int32 i = 0; i < ArrayHelper.Num(); ++i)
+			{
+				ArrayInnerProp->ContainerPtrToValuePtr<FBXTTransformCreater>(ArrayHelper.GetRawPtr(i))->ResetInputUniqueIDs();
+			}
+		}
+	}
 }
 
 bool UBXTask::RefreshProperty()

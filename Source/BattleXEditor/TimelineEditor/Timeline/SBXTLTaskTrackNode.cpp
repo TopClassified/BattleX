@@ -55,8 +55,9 @@ void FBXTLTaskNodeData::SetStartTime(float Time)
 {
 	if (CachedTask.IsValid())
 	{
-		CachedTask->StartTime = Time;
+		// Modify须在赋值前调用(事务快照记录旧值才能撤销,原实现先赋值后快照导致撤销恢复的仍是新值)
 		CachedTask->Modify();
+		CachedTask->StartTime = Time;
 	}
 }
 
@@ -93,8 +94,9 @@ void FBXTLTaskNodeData::SetDuration(float InDuration)
 {
 	if (CachedTask.IsValid())
 	{
-		CachedTask->Duration = InDuration;
+		// Modify须在赋值前调用(事务快照记录旧值才能撤销)
 		CachedTask->Modify();
+		CachedTask->Duration = InDuration;
 	}
 }
 
@@ -485,7 +487,7 @@ FReply SBXTLTaskTrackNode::OnDragDetected(const FGeometry& MyGeometry, const FPo
 	
 		if (DragType == EDragType::StartTime)
 		{
-			DragIndex = GEditor->BeginTransaction(NSLOCTEXT("Node", "Drag Postion", "Drag State Node Postion"));
+			DragIndex = GEditor->BeginTransaction(NSLOCTEXT("Node", "Drag Position", "Drag State Node Position"));
 
 			return DragTTNEvent.Execute(SharedThis(this), MouseEvent, FVector2D(MyGeometry.AbsolutePosition), false);
 		}
@@ -517,8 +519,9 @@ FReply SBXTLTaskTrackNode::OnMouseMove(const FGeometry& MyGeometry, const FPoint
 
 		float XPositionInTrack = MyGeometry.AbsolutePosition.X - CachedTrackGeometry.AbsolutePosition.X;
 		float NewDuration = ScaleInfo.LocalXToInput((FVector2f(MouseEvent.GetScreenSpacePosition()) - MyGeometry.AbsolutePosition + XPositionInTrack).X) - TaskNodeData.GetStartTime();
-		
-		NodeDuration = NewDuration;
+
+		// 钳制下限防止拖出负时长任务(与SBXTLExtraTrackNode同路径对齐)
+		NodeDuration = FMath::Max(NewDuration, 0.0f);
 
 		return FReply::Handled();
 	}

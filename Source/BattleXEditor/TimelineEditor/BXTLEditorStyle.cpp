@@ -27,9 +27,13 @@ void FBXTLEditorStyle::Initialize()
 
 void FBXTLEditorStyle::Shutdown()
 {
-	FSlateStyleRegistry::UnRegisterSlateStyle(*StyleInstance);
-	ensure(StyleInstance.IsUnique());
-	StyleInstance.Reset();
+	// 未Initialize即Shutdown时StyleInstance为空,解引用崩溃
+	if (StyleInstance.IsValid())
+	{
+		FSlateStyleRegistry::UnRegisterSlateStyle(*StyleInstance);
+		ensure(StyleInstance.IsUnique());
+		StyleInstance.Reset();
+	}
 }
 
 FName FBXTLEditorStyle::GetStyleSetName()

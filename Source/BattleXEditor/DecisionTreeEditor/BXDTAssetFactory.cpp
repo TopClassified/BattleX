@@ -25,7 +25,8 @@ UBXDecisionTreeAssetFactory::UBXDecisionTreeAssetFactory(const FObjectInitialize
 {
 	bCreateNew = true;
 	bEditAfterNew = true;
-	SupportedClass = UBXDecisionTreeAssetFactory::StaticClass();
+	// 原误写为工厂自身类(应为目标资产类):工厂类被当作模板实例化,后续TreeType赋值等访问内存错乱
+	SupportedClass = UBXDecisionTreeTemplate::StaticClass();
 }
 
 UBXDecisionTreeAssetFactory::~UBXDecisionTreeAssetFactory()

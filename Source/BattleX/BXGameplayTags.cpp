@@ -12,6 +12,7 @@ namespace BXGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Behavior_Jump, "BXEvent.Behavior.Jump", "行为事件 跳跃");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Behavior_Landed, "BXEvent.Behavior.Landed", "行为事件 落地");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Root, "BXBehavior", "行为根Tag(持续行为命名空间,激活记录判定用)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Move, "BXBehavior.Locomotion.Move", "主动移动");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Rotate, "BXBehavior.Locomotion.Rotate", "主动转向");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXPlayMontage_Default, "BXBehavior.PlayMontage.Default", "播放Montage默认Tag");

@@ -491,7 +491,8 @@ TSharedRef<SWidget> SBXTLAssetDetailTab::PopulateSlot(TSharedRef<SWidget> Proper
 
 EVisibility SBXTLAssetDetailTab::GetAssetDisplayNameVisibility() const
 {
-	return (GetObjectToObserve() != NULL) ? EVisibility::Hidden : EVisibility::Collapsed;
+	// 有观察对象时显示标题(原实现两个分支都不可见,标题区永远不显示)
+	return (GetObjectToObserve() != NULL) ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
 FText SBXTLAssetDetailTab::GetAssetDisplayName() const

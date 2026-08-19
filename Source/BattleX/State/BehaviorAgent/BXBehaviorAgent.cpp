@@ -40,7 +40,8 @@ bool UBXBehaviorAgent::Initialize()
 
 bool UBXBehaviorAgent::NativeInitialize()
 {
-	return false;
+	// 默认true与UBXStateMachine基类NativeXxx语义对齐(返回false会使未重写该虚函数的派生类对应操作恒失败)
+	return true;
 }
 
 bool UBXBehaviorAgent::Deinitialize()
@@ -62,7 +63,7 @@ bool UBXBehaviorAgent::Deinitialize()
 
 bool UBXBehaviorAgent::NativeDeinitialize()
 {
-	return false;
+	return true;
 }
 
 bool UBXBehaviorAgent::StartBehavior(const FInstancedStruct& InParameter)
@@ -84,7 +85,7 @@ bool UBXBehaviorAgent::StartBehavior(const FInstancedStruct& InParameter)
 
 bool UBXBehaviorAgent::NativeStartBehavior(const FInstancedStruct& InParameter)
 {
-	return false;
+	return true;
 }
 
 bool UBXBehaviorAgent::StopBehavior(const FInstancedStruct& InParameter)
@@ -106,7 +107,7 @@ bool UBXBehaviorAgent::StopBehavior(const FInstancedStruct& InParameter)
 
 bool UBXBehaviorAgent::NativeStopBehavior(const FInstancedStruct& InParameter)
 {
-	return false;
+	return true;
 }
 
 bool UBXBehaviorAgent::CheckStartBehavior(const FInstancedStruct& InParameter)
@@ -128,5 +129,5 @@ bool UBXBehaviorAgent::CheckStartBehavior(const FInstancedStruct& InParameter)
 
 bool UBXBehaviorAgent::NativeCheckStartBehavior(const FInstancedStruct& InParameter)
 {
-	return false;
+	return true;
 }

@@ -4,7 +4,11 @@
 UBXTSwitch::UBXTSwitch()
 {
 	LifeType = EBXTLifeType::L_Instant;
+	// 保留基类预置的Start/End条目(StartTask/EndTask末尾无条件以这两个Tag调用AddPendingTask,
+	// 清掉会令每次触发刷"EventTag not found"警告)
 	Events.Empty();
+	Events.Add(BXGameplayTags::BXTEvent_Start);
+	Events.Add(BXGameplayTags::BXTEvent_End);
 	DefaultEventTag = BXGameplayTags::BXTEvent_BranchDefault;
 }
 
@@ -47,8 +51,10 @@ void UBXTSwitch::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEv
 				}
 			}
 
-			// 重建Events：Cases中所有EventTag + DefaultEventTag
+			// 重建Events：Cases中所有EventTag + DefaultEventTag(保留基类预置的Start/End,否则StartTask/EndTask触发时刷警告)
 			Events.Empty();
+			Events.Add(BXGameplayTags::BXTEvent_Start);
+			Events.Add(BXGameplayTags::BXTEvent_End);
 			for (const FBXTSwitchCase& Case : Cases)
 			{
 				if (Case.EventTag.IsValid())

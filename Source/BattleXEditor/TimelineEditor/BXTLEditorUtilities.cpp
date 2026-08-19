@@ -3,6 +3,7 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/Blueprint.h"
+#include "UObject/UnrealType.h"
 
 #include "BXTLEditorSettings.h"
 #include "BXTLAsset.h"
@@ -208,6 +209,44 @@ TSharedRef<SWidget> FBXTLEditorUtilities::MakeTrackButton(FText HoverText, FOnGe
 	return ComboButton;
 }
 
+// 构建同类两Task间坐标系创建器输入UID映射(源UID→目标UID):目标侧UID已被CopyDataFromOther重置,此处惰性分配全新值,供变换输入条目重新配对
+static void BuildCreaterInputUIDMap(UBXTask* SrcTask, UBXTask* DestTask, TMap<int64, int64>& OutUIDMap)
+{
+	for (TFieldIterator<FProperty> PropIt(SrcTask->GetClass()); PropIt; ++PropIt)
+	{
+		if (FStructProperty* StructProp = CastField<FStructProperty>(*PropIt))
+		{
+			if (StructProp->Struct != FBXTTransformCreater::StaticStruct())
+			{
+				continue;
+			}
+
+			FBXTTransformCreater* SrcCreater = StructProp->ContainerPtrToValuePtr<FBXTTransformCreater>(SrcTask);
+			FBXTTransformCreater* DestCreater = StructProp->ContainerPtrToValuePtr<FBXTTransformCreater>(DestTask);
+			OutUIDMap.Add(SrcCreater->GetOriginInputUniqueID(), DestCreater->GetOriginInputUniqueID());
+			OutUIDMap.Add(SrcCreater->GetXAxisInputUniqueID(), DestCreater->GetXAxisInputUniqueID());
+		}
+		else if (FArrayProperty* ArrayProp = CastField<FArrayProperty>(*PropIt))
+		{
+			FStructProperty* ArrayInnerProp = CastField<FStructProperty>(ArrayProp->Inner);
+			if (!ArrayInnerProp || ArrayInnerProp->Struct != FBXTTransformCreater::StaticStruct())
+			{
+				continue;
+			}
+
+			FScriptArrayHelper SrcArrayHelper(ArrayProp, SrcTask);
+			FScriptArrayHelper DestArrayHelper(ArrayProp, DestTask);
+			for (int32 j = 0; j < SrcArrayHelper.Num() && j < DestArrayHelper.Num(); ++j)
+			{
+				FBXTTransformCreater* SrcCreater = ArrayInnerProp->ContainerPtrToValuePtr<FBXTTransformCreater>(SrcArrayHelper.GetRawPtr(j));
+				FBXTTransformCreater* DestCreater = ArrayInnerProp->ContainerPtrToValuePtr<FBXTTransformCreater>(DestArrayHelper.GetRawPtr(j));
+				OutUIDMap.Add(SrcCreater->GetOriginInputUniqueID(), DestCreater->GetOriginInputUniqueID());
+				OutUIDMap.Add(SrcCreater->GetXAxisInputUniqueID(), DestCreater->GetXAxisInputUniqueID());
+			}
+		}
+	}
+}
+
 void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, const TArray<UBXTask*>& SrcTasks)
 {
 	// 两个数组的大小不一致，则直接返回
@@ -230,6 +269,10 @@ void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, con
 	{
 		UBXTask* SrcTask = SrcTasks[i];
 		UBXTask* DestTask = DestTasks[i];
+
+		// 变换输入UID映射(源→目标):拷贝构造不携带UID,须为变换输入条目配对目标Task创建器的新UID
+		TMap<int64, int64> CreaterUIDMap;
+		BuildCreaterInputUIDMap(SrcTask, DestTask, CreaterUIDMap);
 
 		// 修复CollisionInputDatas
 		DestTask->CollisionInputDatas.Empty();
@@ -258,10 +301,16 @@ void FBXTLEditorUtilities::RestoreTasksRelation(TArray<UBXTask*>& DestTasks, con
 		DestTask->InputDatas.Empty();
 		for (int32 j = 0; j < SrcTask->InputDatas.Num(); j++)
 		{
-			const FBXTInputInfo& Template = SrcTask->InputDatas[j];
+			FBXTInputInfo& Template = SrcTask->InputDatas[j];
 
 			// 无脑拷贝所有数据
 			FBXTInputInfo& NewInfo = DestTask->InputDatas.Add_GetRef(Template);
+
+			// 变换输入条目重配对目标创建器UID:条目UID与目标创建器断裂时,PreSave的RefreshTransformCreaters会删除重建该条目,丢失已接线的DataTask/DataTag
+			if (int64* MappedUID = CreaterUIDMap.Find(Template.GetUniqueID()))
+			{
+				NewInfo.SetUniqueID(*MappedUID);
+			}
 
 			int32 FindIndex = SrcTasks.Find(Cast<UBXTask>(Template.DataTask.Get()));
 			if (FindIndex >= 0)

@@ -151,6 +151,11 @@ const FPinConnectionResponse UBXTLGraphSchema::CanCreateConnection(const UEdGrap
 	{
 		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, LOCTEXT("Connect Error", "Invalid Node!"));
 	}
+	// CachedTask可为null(撤销/数据异常的残留节点),解引用前判空
+	if (!InputNode->CachedTask || !OutputNode->CachedTask)
+	{
+		return FPinConnectionResponse(CONNECT_RESPONSE_DISALLOW, LOCTEXT("Connect Error", "Invalid Node Task!"));
+	}
 	if (UBXTLAsset* Asset = Cast<UBXTLAsset>(InputNode->CachedTask->GetOuter()))
 	{
 		int32 InputSectionID;
@@ -231,13 +236,14 @@ bool UBXTLGraphSchema::CreateAutomaticConversionNodeAndConnections(UEdGraphPin* 
 	UBXTLGraphNode* NodeA = Cast<UBXTLGraphNode>(A->GetOwningNode());
 	UBXTLGraphNode* NodeB = Cast<UBXTLGraphNode>(B->GetOwningNode());
 
-	UEdGraph* Graph = NodeA->GetGraph();
-	if (!Graph)
+	// 判空必须先于GetGraph(Pin属主为TransitionNode等非UBXTLGraphNode时NodeA为null,原实现解引用空指针崩溃)
+	if (!NodeA || !NodeB)
 	{
 		return Super::CreateAutomaticConversionNodeAndConnections(A, B);
 	}
 
-	if (!NodeA || !NodeB)
+	UEdGraph* Graph = NodeA->GetGraph();
+	if (!Graph)
 	{
 		return Super::CreateAutomaticConversionNodeAndConnections(A, B);
 	}

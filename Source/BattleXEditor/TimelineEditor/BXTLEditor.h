@@ -345,8 +345,8 @@ public:
 	static bool IsTaskRunning(class UBXTask* InTask);
 
 private:
-	// Debug:当前正在执行的Task缓存(每帧Tick刷新)
-	static TArray<TWeakObjectPtr<UBXTask>> DebugRunningTasksCache;
+	// Debug:各编辑器实例独立的运行Task缓存(键为编辑器弱引用,多编辑器并存时互不覆写)
+	static TMap<TWeakPtr<FBXTLEditor>, TArray<TWeakObjectPtr<UBXTask>>> DebugRunningTasksCache;
 
 #pragma endregion Event
 

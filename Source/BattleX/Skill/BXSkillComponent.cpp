@@ -82,6 +82,7 @@ void UBXSkillComponent::OnRep_RunningSkillStates(TArray<FBXSkillReplicatedState>
 
 		if (!bExisted)
 		{
+			UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillComponent::OnRep_RunningSkillStates: Rebuild entry. SkillID=%lld TimelineID=%d RunTime=%.2fs Sections=%d."), State.SkillID, State.TLRunTimeData.TimelineID, State.TLRunTimeData.RunTime, State.TLRunTimeData.RunningSections.Num());
 			RebuildSkillFromState(State);
 		}
 	}
@@ -101,6 +102,7 @@ void UBXSkillComponent::OnRep_RunningSkillStates(TArray<FBXSkillReplicatedState>
 
 		if (!bStillExists)
 		{
+			UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillComponent::OnRep_RunningSkillStates: Entry vanished, fallback stop. SkillID=%lld."), OldState.SkillID);
 			StopSkillIfNotPredicting(OldState.SkillID);
 		}
 	}
@@ -186,6 +188,7 @@ int64 UBXSkillComponent::PlaySkillWithInputData(UBXSkillAsset* InAsset, TMap<FGa
 	{
 		if (!IsCooldownReady(InAsset))
 		{
+			UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillComponent::PlaySkillWithInputData: Authority rejected by cooldown. Asset=%s."), *InAsset->GetName());
 			return INDEX_NONE;
 		}
 
@@ -200,6 +203,7 @@ int64 UBXSkillComponent::PlaySkillWithInputData(UBXSkillAsset* InAsset, TMap<FGa
 
 		OwnedSkillIDs.Add(Header.SkillID);
 		RecordCooldown(InAsset);
+		UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillComponent::PlaySkillWithInputData: Authority play. SkillID=%lld Asset=%s."), Header.SkillID, *InAsset->GetName());
 		MulticastPlaySkill(Header, Payload);
 		return Header.SkillID;
 	}
@@ -210,6 +214,7 @@ int64 UBXSkillComponent::PlaySkillWithInputData(UBXSkillAsset* InAsset, TMap<FGa
 		// 本地冷却检查防连点(服务器仍会权威校验)
 		if (!IsCooldownReady(InAsset))
 		{
+			UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillComponent::PlaySkillWithInputData: Prediction rejected by local cooldown. Asset=%s."), *InAsset->GetName());
 			return INDEX_NONE;
 		}
 
@@ -227,8 +232,10 @@ int64 UBXSkillComponent::PlaySkillWithInputData(UBXSkillAsset* InAsset, TMap<FGa
 		if (InAsset->Cooldown >= 0.0f)
 		{
 			PendingCooldownAssetIDs.Add(InAsset->ID);
+			PendingCooldownSkills.Add(Header.SkillID, InAsset->ID);
 		}
 
+		UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillComponent::PlaySkillWithInputData: Prediction started. SkillID=%lld Asset=%s."), Header.SkillID, *InAsset->GetName());
 		ServerPlaySkill(Header, Payload);
 		return Header.SkillID;
 	}
@@ -261,7 +268,8 @@ bool UBXSkillComponent::IsSkillRunning(int64 InSkillID) const
 #pragma region RPC
 bool UBXSkillComponent::ServerPlaySkill_Validate(FBXSkillSyncHeader InHeader, FBXSkillSyncPayload InPayload)
 {
-	return true;
+	// 钳制输入数据规模,防止恶意客户端撑大服务器内存(超限断连)
+	return InPayload.InputDatas.Num() <= 64;
 }
 
 void UBXSkillComponent::ServerPlaySkill_Implementation(FBXSkillSyncHeader InHeader, FBXSkillSyncPayload InPayload)
@@ -277,42 +285,45 @@ void UBXSkillComponent::ClientPredictResult_Implementation(int64 InSkillID, bool
 		return;
 	}
 
-	// 先取回技能资产用于假冷却结算(回滚只标记bEarlyFinish,运行数据下一帧才清理)
-	UBXSkillAsset* PendingAsset = nullptr;
-	if (FBXSkillRuntimeData* Data = SkillMgr->GetSkillRuntimeDataByID(InSkillID))
+	// 取回预测登记的资产ID(登记表独立于运行数据,预测超时回滚清理后迟到的结果仍可正确结算)
+	int32 PendingAssetID = INDEX_NONE;
+	if (const int32* FindResult = PendingCooldownSkills.Find(InSkillID))
 	{
-		PendingAsset = Data->SkillAsset;
+		PendingAssetID = *FindResult;
+		PendingCooldownSkills.Remove(InSkillID);
 	}
 
 	if (bSuccess)
 	{
 		SkillMgr->ConfirmPrediction(InSkillID, InServerTimestamp);
+		UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillComponent::ClientPredictResult: Confirmed. SkillID=%lld CooldownRemaining=%.2fs."), InSkillID, InCooldownRemaining);
 	}
 	else
 	{
 		SkillMgr->RollbackPrediction(InSkillID);
 		OwnedSkillIDs.Remove(InSkillID);
+		UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillComponent::ClientPredictResult: Denied, rolled back. SkillID=%lld ServerCooldownRemaining=%.2fs."), InSkillID, InCooldownRemaining);
 	}
 
 	// 假冷却结算:
 	// InCooldownRemaining>=0: 确认=假冷却转正 / 冷却拒绝=同步服务器真冷却(以 本地时间+服务器剩余时长 为准)
 	// InCooldownRemaining<0: 服务器侧无冷却(条件/时间戳等否认),移除假冷却允许重试
-	if (PendingAsset)
+	if (PendingAssetID != INDEX_NONE)
 	{
 		if (InCooldownRemaining >= 0.0f)
 		{
 			UWorld* World = GetWorld();
 			if (World)
 			{
-				CooldownMap.Add(PendingAsset->ID, World->GetTimeSeconds() + InCooldownRemaining);
+				CooldownMap.Add(PendingAssetID, World->GetTimeSeconds() + InCooldownRemaining);
 			}
 		}
 		else
 		{
-			ClearCooldown(PendingAsset);
+			CooldownMap.Remove(PendingAssetID);
 		}
 
-		PendingCooldownAssetIDs.Remove(PendingAsset->ID);
+		PendingCooldownAssetIDs.Remove(PendingAssetID);
 	}
 }
 
@@ -347,6 +358,8 @@ void UBXSkillComponent::MulticastStopSkill_Implementation(int64 InSkillID, uint8
 		return;
 	}
 
+	UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillComponent::MulticastStopSkill: Received. SkillID=%lld Reason=%d."), InSkillID, (int32)InFinishReason);
+
 	// 停止本地实例(服务器端实例已停,StopSkill的bEarlyFinish守卫会跳过)
 	SkillMgr->StopSkill(InSkillID, static_cast<EBXTLFinishReason>(InFinishReason));
 	OwnedSkillIDs.Remove(InSkillID);
@@ -354,7 +367,8 @@ void UBXSkillComponent::MulticastStopSkill_Implementation(int64 InSkillID, uint8
 
 bool UBXSkillComponent::ServerReportCollisionResults_Validate(int64 InSkillID, int32 InTaskFullIndex, FGameplayTag InDataTag, FBXTHitResults InResults)
 {
-	return true;
+	// 钳制碰撞结果规模,防止恶意客户端撑大服务器内存(超限断连)
+	return InResults.Results.Num() <= 100;
 }
 
 void UBXSkillComponent::ServerReportCollisionResults_Implementation(int64 InSkillID, int32 InTaskFullIndex, FGameplayTag InDataTag, FBXTHitResults InResults)
@@ -443,6 +457,7 @@ void UBXSkillComponent::HandleServerPlaySkill(const FBXSkillSyncHeader& InHeader
 
 	// 服务器登记该技能(客户端发起的技能同样纳入生命周期管理,Actor销毁时EndPlay会停止它们)
 	OwnedSkillIDs.Add(SkillID);
+	UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillComponent::HandleServerPlaySkill: Server play. SkillID=%lld Asset=%s Initiator=%d."), SkillID, *SkillAsset->GetName(), (int32)InHeader.Initiator);
 
 	// 通知客户端预测成功,携带权威冷却剩余(客户端假冷却转正)
 	const float CooldownRemaining = SkillAsset->Cooldown >= 0.0f ? SkillAsset->Cooldown : -1.0f;
@@ -495,6 +510,7 @@ void UBXSkillComponent::HandleClientPlaySkill(const FBXSkillSyncHeader& InHeader
 	}
 
 	OwnedSkillIDs.Add(SkillID);
+	UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillComponent::HandleClientPlaySkill: Remote play. SkillID=%lld Asset=%s."), SkillID, *SkillAsset->GetName());
 
 	// 客户端加速弥补
 	FBXSkillRuntimeData* Data = SkillMgr->GetSkillRuntimeDataByID(SkillID);
@@ -543,6 +559,19 @@ void UBXSkillComponent::StopSkillIfNotPredicting(int64 InSkillID)
 
 	SkillMgr->StopSkill(InSkillID, EBXTLFinishReason::FR_Interrupt);
 	OwnedSkillIDs.Remove(InSkillID);
+}
+
+void UBXSkillComponent::InternalOnSkillFinished(int64 InSkillID)
+{
+	OwnedSkillIDs.Remove(InSkillID);
+
+	// 技能结束时预测结果仍未到达(超时回滚):释放假冷却允许重试,迟到的结果因无登记直接跳过结算
+	int32 PendingAssetID = INDEX_NONE;
+	if (PendingCooldownSkills.RemoveAndCopyValue(InSkillID, PendingAssetID))
+	{
+		CooldownMap.Remove(PendingAssetID);
+		PendingCooldownAssetIDs.Remove(PendingAssetID);
+	}
 }
 
 #pragma endregion Internal

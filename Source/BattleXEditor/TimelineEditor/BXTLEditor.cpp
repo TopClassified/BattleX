@@ -71,8 +71,9 @@ class FBXTLGraphNodeFactory : public FGraphPanelNodeFactory
 };
 TSharedPtr<FGraphPanelNodeFactory> BXTLGraphNodeFactory;
 
-// Debug:正在执行的Task缓存(静态,每帧由FBXTLEditor::Tick刷新)
-TArray<TWeakObjectPtr<UBXTask>> FBXTLEditor::DebugRunningTasksCache;
+// Debug:正在执行的Task缓存(静态,键为编辑器弱引用,每帧由各编辑器实例Tick独立刷新;
+// 原单一静态数组在多编辑器并存时互相覆写,导致节点运行高亮跨编辑器串台闪烁)
+TMap<TWeakPtr<FBXTLEditor>, TArray<TWeakObjectPtr<UBXTask>>> FBXTLEditor::DebugRunningTasksCache;
 
 
 
@@ -98,9 +99,12 @@ FBXTLEditor::FBXTLEditor()
 	FBXTLEditor::BXTLEditorNum += 1;
 	FBXTLEditor::BXTLEditorIndex += 1;
 
-	// 注册节点工厂
-	BXTLGraphNodeFactory = MakeShareable(new FBXTLGraphNodeFactory());
-	FEdGraphUtilities::RegisterVisualNodeFactory(BXTLGraphNodeFactory);
+	// 注册节点工厂(实例计数管理:首个实例注册,末个实例关闭时注销,原实现每个实例重复注册且永不注销)
+	if (BXTLEditorNum == 1)
+	{
+		BXTLGraphNodeFactory = MakeShareable(new FBXTLGraphNodeFactory());
+		FEdGraphUtilities::RegisterVisualNodeFactory(BXTLGraphNodeFactory);
+	}
 }
 
 FBXTLEditor::~FBXTLEditor()
@@ -264,23 +268,24 @@ void FBXTLEditor::Tick(float DeltaTime)
 		RefreshPanelEvent.Broadcast();
 	}
 
-	// Debug:预览播放时每帧收集正在执行的Task,供节点高亮查询
+	// Debug:预览播放时每帧收集正在执行的Task,供节点高亮查询(按编辑器实例独立缓存)
+	TArray<TWeakObjectPtr<UBXTask>>& InstanceCache = DebugRunningTasksCache.FindOrAdd(SharedThis(this));
 	if (PreviewProxy->IsPlaying())
 	{
 		TArray<UBXTask*> CurrentRunningTasks;
 		PreviewProxy->GetRunningTasks(CurrentRunningTasks);
 		RunningTasksChangedEvent.Broadcast(CurrentRunningTasks);
-		DebugRunningTasksCache.Reset();
+		InstanceCache.Reset();
 		for (UBXTask* Task : CurrentRunningTasks)
 		{
-			DebugRunningTasksCache.Add(Task);
+			InstanceCache.Add(Task);
 		}
 	}
 	else
 	{
 		static TArray<UBXTask*> EmptyTasks;
 		RunningTasksChangedEvent.Broadcast(EmptyTasks);
-		DebugRunningTasksCache.Reset();
+		InstanceCache.Reset();
 	}
 }
 
@@ -291,11 +296,15 @@ bool FBXTLEditor::IsTaskRunning(UBXTask* InTask)
 		return false;
 	}
 
-	for (const TWeakObjectPtr<UBXTask>& WeakTask : DebugRunningTasksCache)
+	// Task唯一归属单一资产/编辑器,跨编辑器条目查询不会误命中
+	for (const TPair<TWeakPtr<FBXTLEditor>, TArray<TWeakObjectPtr<UBXTask>>>& Pair : DebugRunningTasksCache)
 	{
-		if (WeakTask.Get() == InTask)
+		for (const TWeakObjectPtr<UBXTask>& WeakTask : Pair.Value)
 		{
-			return true;
+			if (WeakTask.Get() == InTask)
+			{
+				return true;
+			}
 		}
 	}
 
@@ -304,6 +313,9 @@ bool FBXTLEditor::IsTaskRunning(UBXTask* InTask)
 
 void FBXTLEditor::OnClose()
 {
+	// 清理本实例的Debug缓存条目(弱引用键的Map条目不随对象销毁自动移除,不清理会随编辑器开关累积)
+	DebugRunningTasksCache.Remove(SharedThis(this));
+
 	if (PreviewProxy.IsValid())
 	{
 		PreviewProxy->Finish();
@@ -328,12 +340,23 @@ void FBXTLEditor::OnClose()
 	}
 	CachedManagers.Empty();
 
-	if (UBXTLGraph* BXTLGraph = Cast<UBXTLGraph>(EditAsset->Graph))
+	// 资产可能已被外部删除/重编译替换(弱引用失效),失效时跳过图表反初始化
+	if (EditAsset.IsValid())
 	{
-		BXTLGraph->Uninit();
+		if (UBXTLGraph* BXTLGraph = Cast<UBXTLGraph>(EditAsset->Graph))
+		{
+			BXTLGraph->Uninit();
+		}
 	}
 	
 	FBXTLEditor::BXTLEditorNum -= 1;
+
+	// 末个实例关闭时注销节点工厂(原实现从不注销,工厂随编辑器开关无限累积)
+	if (BXTLEditorNum <= 0 && BXTLGraphNodeFactory.IsValid())
+	{
+		FEdGraphUtilities::UnregisterVisualNodeFactory(BXTLGraphNodeFactory.ToSharedRef());
+		BXTLGraphNodeFactory.Reset();
+	}
 
 	FWorkflowCentricApplication::OnClose();
 }
@@ -607,7 +630,13 @@ void FBXTLEditor::Step()
 		PreviewProxy->Pause();
 	}
 
-	TSharedPtr<FBXTLEditorViewportClient> ViewportClient = StaticCastSharedPtr<FBXTLEditorViewportClient>(Viewport.Get()->GetViewportClient());
+	// 视口Widget可能未生成或已被关闭(工具栏命令可在视口就绪前触发)
+	if (!Viewport.IsValid())
+	{
+		return;
+	}
+
+	TSharedPtr<FBXTLEditorViewportClient> ViewportClient = StaticCastSharedPtr<FBXTLEditorViewportClient>(Viewport->GetViewportClient());
 	if (ViewportClient.IsValid())
 	{
 		if (const UBXTLEditorSettings* Setting = GetDefault<UBXTLEditorSettings>())
@@ -635,7 +664,13 @@ void FBXTLEditor::ShowCollision()
 		Manager->ChangeShowCollision(bShowCollision);
 	}
 
-	TSharedPtr<FBXTLEditorViewportClient> ViewportClient = StaticCastSharedPtr<FBXTLEditorViewportClient>(Viewport.Get()->GetViewportClient());
+	// 视口Widget可能未生成或已被关闭
+	if (!Viewport.IsValid())
+	{
+		return;
+	}
+
+	TSharedPtr<FBXTLEditorViewportClient> ViewportClient = StaticCastSharedPtr<FBXTLEditorViewportClient>(Viewport->GetViewportClient());
 	if (ViewportClient.IsValid())
 	{
 		ViewportClient->SetEngineShowFlagCollision(bShowCollision);
@@ -758,7 +793,13 @@ FGameplayTag FBXTLEditor::GetLockedBodyPartType()
 
 void FBXTLEditor::SetPreviewFPS(double InFPS)
 {
-	TSharedPtr<FBXTLEditorViewportClient> ViewportClient = StaticCastSharedPtr<FBXTLEditorViewportClient>(Viewport.Get()->GetViewportClient());
+	// 视口Widget可能未生成或已被关闭
+	if (!Viewport.IsValid())
+	{
+		return;
+	}
+
+	TSharedPtr<FBXTLEditorViewportClient> ViewportClient = StaticCastSharedPtr<FBXTLEditorViewportClient>(Viewport->GetViewportClient());
 	if (ViewportClient.IsValid())
 	{
 		ViewportClient->SetForceFPS(InFPS);
@@ -842,7 +883,13 @@ void FBXTLEditor::CollectAllTaskClass()
 			return;
 		}
 
+		// 资产数据可能非蓝图本体(如BPGC)或同步加载失败,判空防止空指针解引用
 		UBlueprint* CurBP = LoadObject<UBlueprint>(nullptr, *ClassPath);
+		if (!CurBP)
+		{
+			return;
+		}
+
 		UClass* CurClass = CurBP->GeneratedClass;
 
 		if (!CurClass)
@@ -967,7 +1014,8 @@ void FBXTLEditor::SetGraphEditor(const TSharedPtr<SGraphEditor>& InGraphEditor)
 
 void FBXTLEditor::SetGraphEditorViewLocationByTask(UBXTask* InTask)
 {
-	if (!InTask || !GraphEditor.IsValid())
+	// 资产可能已被外部删除/重编译替换(弱引用失效),失效时跳过
+	if (!InTask || !GraphEditor.IsValid() || !EditAsset.IsValid())
 	{
 		return;
 	}
@@ -1002,6 +1050,12 @@ void FBXTLEditor::OnSelectedNodesChanged(const TSet<UObject*>& NewSelection)
 
 void FBXTLEditor::OnSelectedNodesDeleted()
 {
+	// 资产可能已被外部删除/重编译替换(弱引用失效),失效时跳过(与OnClose的防御对齐)
+	if (!EditAsset.IsValid())
+	{
+		return;
+	}
+
 	if (UBXTLGraph* Graph = Cast<UBXTLGraph>(EditAsset->Graph))
 	{
 		TArray<UEdGraphNode*> CurNodes;
@@ -1024,7 +1078,8 @@ void FBXTLEditor::OnSelectedNodesDeleted()
 
 void FBXTLEditor::GenerateGraphNodes(TArray<UBXTask*> InTaskList)
 {
-	if (InTaskList.Num() <= 0)
+	// 资产可能已被外部删除/重编译替换(弱引用失效),失效时跳过
+	if (InTaskList.Num() <= 0 || !EditAsset.IsValid())
 	{
 		return;
 	}

@@ -22,7 +22,6 @@ public:
 	bool bEnableFading;
 
 private:
-	FEditorModeTools* ModelTools = nullptr;
 
 #pragma endregion Important
 

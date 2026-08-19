@@ -33,7 +33,12 @@ FBXTLPreviewProxy::FBXTLPreviewProxy(UBXTLAsset* InAsset, const TSharedPtr<FBXTL
 
 FBXTLPreviewProxy::~FBXTLPreviewProxy()
 {
-
+	// 兜底解绑全局委托(raw委托持有裸指针,对象销毁不会自动失效;RemoveAll幂等,Finish已解绑时为空操作)
+	if (GEngine)
+	{
+		GEngine->OnActorMoving().RemoveAll(this);
+		GEngine->OnComponentTransformChanged().RemoveAll(this);
+	}
 }
 
 void FBXTLPreviewProxy::Tick(float DeltaTime)
@@ -57,9 +62,14 @@ void FBXTLPreviewProxy::Tick(float DeltaTime)
 			if (RTData->Timeline)
 			{
 				for (int32 i = 0; i < RTData->RunningSections.Num(); ++i)
+			{
+				FBXTLSectionRTData& SRTData = RTData->RunningSections[i];
+				// 播放/暂停期间资产Section可被删改,索引越界校验(与GetRunningTasks的防御对齐)
+				if (!RTData->Timeline->Sections.IsValidIndex(SRTData.Index))
 				{
-					FBXTLSectionRTData& SRTData = RTData->RunningSections[i];
-					FBXTLSection& Section = RTData->Timeline->Sections[SRTData.Index];
+					continue;
+				}
+				FBXTLSection& Section = RTData->Timeline->Sections[SRTData.Index];
 
 					for (int32 j = 0; j < SRTData.RunningTasks.Num(); ++j)
 					{
@@ -98,10 +108,10 @@ void FBXTLPreviewProxy::Finish()
 		CachedEditor.Pin()->TaskSelectedEvent.RemoveAll(this);
 	}
 
-	// 注销关心的事件
+	// 注销关心的事件(绑定的委托为OnActorMoving而非OnActorMoved,解绑错委托会留下悬空raw指针导致主视口拖动Actor时崩溃)
 	if (GEngine)
 	{
-		GEngine->OnActorMoved().RemoveAll(this);
+		GEngine->OnActorMoving().RemoveAll(this);
 		GEngine->OnComponentTransformChanged().RemoveAll(this);
 	}
 }
@@ -202,6 +212,12 @@ void FBXTLPreviewProxy::GetRunningTasks(TArray<UBXTask*>& OutTasks)
 
 UBXTLComponent* FBXTLPreviewProxy::GetPreviewTimelineComponent()
 {
+	// 编辑器可能已销毁(Pin()为空,空指针解引用)
+	if (!CachedEditor.IsValid())
+	{
+		return nullptr;
+	}
+
 	TSharedPtr<FBXTLPreviewScene> Scene = CachedEditor.Pin()->GetPreviewScene();
 	if (!Scene.IsValid())
 	{
@@ -304,12 +320,15 @@ void FBXTLPreviewProxy::Stop()
 	{
 		return;
 	}
+
+	// 先缓存ID再清零(原实现先清零后使用,StopTimeline(0)找不到数据,时间轴永不被停止:Task的End不执行,运行数据残留Manager持续Tick)
+	const int64 StoppedTimelineID = TimelineRunTimeDataID;
 	TimelineRunTimeDataID = 0;
 
 	// TODO:尝试先找到技能组件
 	if (UBXTLComponent* TLComponent = GetPreviewTimelineComponent())
 	{
-		TLComponent->StopTimeline(TimelineRunTimeDataID, EBXTLFinishReason::FR_Interrupt);
+		TLComponent->StopTimeline(StoppedTimelineID, EBXTLFinishReason::FR_Interrupt);
 	}
 }
 
@@ -403,6 +422,12 @@ void FBXTLPreviewProxy::OnComponentMoving(USceneComponent* InComponent, ETelepor
 void FBXTLPreviewProxy::OnObjectMoving(UObject* InObject)
 {
 	if (!IsValid(InObject) || !InObject->IsValidLowLevelFast())
+	{
+		return;
+	}
+
+	// 全局委托回调时编辑器可能已销毁(Pin()空指针解引用),与Tick/GetTimelineRunTimeData防御对齐
+	if (!CachedEditor.IsValid())
 	{
 		return;
 	}

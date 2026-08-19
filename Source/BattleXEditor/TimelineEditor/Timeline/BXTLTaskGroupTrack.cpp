@@ -25,8 +25,30 @@ FBXTLTaskGroupTrack::FBXTLTaskGroupTrack
 (
 	const TSharedRef<FBXTLController>& InController, FBXTLTaskGroup& InGroupData,
 	const FText& InDisplayName, const FText& InToolTipText
-) : FTimelineTrack(InController, InDisplayName, InToolTipText, true), GroupData(&InGroupData)
+) : FTimelineTrack(InController, InDisplayName, InToolTipText, true)
 {
+	// 构造时指针有效,解析出组索引供后续按需定位(数组重排后索引可能漂移,
+	// 但悬垂指针读写已释放内存的风险远小于索引漂移:漂移表现为操作错组,可通过RefreshTracks重建轨道收敛)
+	if (const FBXTLController* TC = &InController.Get())
+	{
+		if (UBXTLAsset* Asset = TC->GetAsset())
+		{
+			const int32 SectionID = TC->GetSectionID();
+			if (Asset->Sections.IsValidIndex(SectionID))
+			{
+				const TArray<FBXTLTaskGroup>& Groups = Asset->Sections[SectionID].Groups;
+				for (int32 i = 0; i < Groups.Num(); ++i)
+				{
+					if (&Groups[i] == &InGroupData)
+					{
+						GroupID = i;
+						break;
+					}
+				}
+			}
+		}
+	}
+
 	SetHeight(30.0f);
 }
 
@@ -63,7 +85,7 @@ TSharedRef<SWidget> FBXTLTaskGroupTrack::GenerateContainerWidgetForOutliner(cons
 		FBXTLEditorUtilities::MakeTrackButton(LOCTEXT("BXTLTaskGroupTrack", "Group Menu"),FOnGetContent::CreateSP(this, &FBXTLTaskGroupTrack::OnBuildSubMenu))
 	];
 
-	TSharedRef<SWidget> Outliner = SNew(SBXTLTaskGroupTrackOutliner, GetEditorTimelineController(), *GroupData).MainWidget(OutlinerWidget);
+	TSharedRef<SWidget> Outliner = SNew(SBXTLTaskGroupTrackOutliner, GetEditorTimelineController(), GroupID).MainWidget(OutlinerWidget);
 
 	return Outliner;
 }
@@ -75,34 +97,37 @@ bool FBXTLTaskGroupTrack::CanRename() const
 
 FText FBXTLTaskGroupTrack::GetLabel() const
 {
-	return GroupData->Name;
+	// 绘制路径每帧调用,按索引解析防悬垂(组被删时返回空文本)
+	if (const FBXTLTaskGroup* Group = GetGroupData())
+	{
+		return Group->Name;
+	}
+
+	return FText::GetEmpty();
 }
 
 int32 FBXTLTaskGroupTrack::GetGroupIndex() const
 {
-	if (FBXTLController* TC = StaticCast<FBXTLController*>(TimelineController.Pin().Get()))
-	{
-		UBXTLAsset* Asset = TC->GetAsset();
-		if (!Asset)
-		{
-			return -1;
-		}
+	return GroupID;
+}
 
-		int32 GroupID = -1;
-		for (int32 i = 0; i < Asset->Sections.Num(); ++i)
-		{
-			const FBXTLSection& Section = Asset->Sections[i];
-			for (int32 j = 0; j < Section.Groups.Num(); ++i)
-			{
-				if (&(Section.Groups[j]) == GroupData)
-				{
-					return i;
-				}
-			}
-		}
+FBXTLTaskGroup* FBXTLTaskGroupTrack::GetGroupData() const
+{
+	FBXTLController* TC = StaticCast<FBXTLController*>(TimelineController.Pin().Get());
+	if (!TC)
+	{
+		return nullptr;
 	}
 
-	return -1;
+	UBXTLAsset* Asset = TC->GetAsset();
+	const int32 SectionID = TC->GetSectionID();
+	if (!Asset || !Asset->Sections.IsValidIndex(SectionID))
+	{
+		return nullptr;
+	}
+
+	TArray<FBXTLTaskGroup>& Groups = Asset->Sections[SectionID].Groups;
+	return Groups.IsValidIndex(GroupID) ? &Groups[GroupID] : nullptr;
 }
 
 #pragma endregion Important
@@ -112,7 +137,11 @@ int32 FBXTLTaskGroupTrack::GetGroupIndex() const
 #pragma region Callback
 void FBXTLTaskGroupTrack::OnCommitName(const FText& InText, ETextCommit::Type CommitInfo)
 {
-	GroupData->Name = InText;
+	// 写路径按索引解析(组被删后改名静默跳过,原悬垂指针写已释放内存)
+	if (FBXTLTaskGroup* Group = GetGroupData())
+	{
+		Group->Name = InText;
+	}
 }
 
 TSharedRef<SWidget> FBXTLTaskGroupTrack::OnBuildSubMenu()
@@ -186,7 +215,10 @@ void FBXTLTaskGroupTrack::OnAddTask(UClass* InTaskClass)
 {
 	if (FBXTLController* TC = StaticCast<FBXTLController*>(TimelineController.Pin().Get()))
 	{
-		TC->AddNewTask(*GroupData, InTaskClass);
+		if (FBXTLTaskGroup* Group = GetGroupData())
+		{
+			TC->AddNewTask(*Group, InTaskClass);
+		}
 	}
 }
 
@@ -213,7 +245,10 @@ void FBXTLTaskGroupTrack::OnDeleteGroup()
 {
 	if (FBXTLController* TC = StaticCast<FBXTLController*>(TimelineController.Pin().Get()))
 	{
-		TC->DeleteTaskGroup(*GroupData);
+		if (FBXTLTaskGroup* Group = GetGroupData())
+		{
+			TC->DeleteTaskGroup(*Group);
+		}
 	}
 }
 

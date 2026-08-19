@@ -34,7 +34,11 @@ FBXTLPreviewScene::FBXTLPreviewScene(ConstructionValues CVS, TSharedPtr<FBXTLEdi
 
 FBXTLPreviewScene::~FBXTLPreviewScene()
 {
-
+	// 兜底解绑全局委托(raw委托持有裸指针,对象销毁不会自动失效;RemoveAll幂等,Finish已解绑时为空操作)
+	if (GEngine)
+	{
+		GEngine->OnActorMoving().RemoveAll(this);
+	}
 }
 
 void FBXTLPreviewScene::OnCreateViewport(SBXTLEditorViewport* InEditorViewport, TSharedPtr<FSceneViewport> InSceneViewport)
@@ -96,8 +100,11 @@ void FBXTLPreviewScene::Finish()
 		}
 	}
 
-	// 注销关心的事件
-	GEngine->OnActorMoved().RemoveAll(this);
+	// 注销关心的事件(绑定的委托为OnActorMoving而非OnActorMoved,解绑错委托会留下悬空raw指针导致主视口拖动Actor时崩溃)
+	if (GEngine)
+	{
+		GEngine->OnActorMoving().RemoveAll(this);
+	}
 }
 
 void FBXTLPreviewScene::AddReferencedObjects(FReferenceCollector& Collector)
@@ -230,8 +237,9 @@ void FBXTLPreviewScene::DestroyPreviewActors()
 		{
 			continue;
 		}
-		
-		// 删除所有装备中的武器
+
+		// 删除所有装备中的武器(GearList每Actor清空:列表为追加式,残留上一Actor已销毁的武器会二次销毁)
+		GearList.Reset();
 		if (UBXGearComponent* GearComp = ActorPtr->FindComponentByClass<UBXGearComponent>())
 		{
 			GearComp->GetEquipGearList(GearList);
@@ -337,6 +345,8 @@ void FBXTLPreviewScene::OnActorMoving(AActor* InActor)
 			if (UBXTLPreviewActor* PInfo = Cast<UBXTLPreviewActor>(Asset->PlayerInformation))
 			{
 				PInfo->SpawnTransform = InActor->GetActorTransform();
+				// 仅预览对象实际变更时标脏(该回调来自全局OnActorMoving,原无条件标脏会令主关卡拖动任意Actor也标脏当前资产)
+				Asset->MarkPackageDirty();
 			}
 		}
 	}
@@ -347,11 +357,10 @@ void FBXTLPreviewScene::OnActorMoving(AActor* InActor)
 			if (UBXTLPreviewActor* PInfo = Cast<UBXTLPreviewActor>(Asset->TargetInformation))
 			{
 				PInfo->SpawnTransform = InActor->GetActorTransform();
+				Asset->MarkPackageDirty();
 			}
 		}
 	}
-
-	Asset->MarkPackageDirty();
 }
 
 #pragma endregion Preview
