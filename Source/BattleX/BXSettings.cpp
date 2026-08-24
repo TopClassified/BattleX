@@ -7,5 +7,7 @@
 
 UBXSettings::UBXSettings(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
-
+	FDirectoryPath DefaultPath;
+	DefaultPath.Path = "/Game/BattleX/Projectile";
+	ProjectileAssetPaths.Add(DefaultPath);
 }

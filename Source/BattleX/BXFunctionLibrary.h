@@ -136,7 +136,23 @@ public:
 	// 计算线段到长方体之间的最短距离
 	UFUNCTION(BlueprintCallable, Category = "Math")
 	static float SegmentToBox(const FVector& InL1S, const FVector& InL1E, const FVector& InCenter, const FRotator& InRotation, const FVector& InExtent);
-	
+
+	// 判定长方体沿线段扫掠与球体是否相交(精确:等价转化为球心反向轨迹线段到静止盒的距离判定)
+	UFUNCTION(BlueprintCallable, Category = "Math")
+	static bool SweptBoxToSphere(const FVector& InBoxStart, const FVector& InBoxEnd, const FRotator& InBoxRotation, const FVector& InBoxExtent, const FVector& InSphereCenter, const float& InSphereRadius);
+
+	// 判定长方体沿线段扫掠与胶囊体是否相交(精确:7轴SAT粗筛拒绝后,对凸距离函数f(t)=轴线段反向平移到盒距离在[0,1]三分搜索最小值)
+	UFUNCTION(BlueprintCallable, Category = "Math")
+	static bool SweptBoxToCapsule(const FVector& InBoxStart, const FVector& InBoxEnd, const FRotator& InBoxRotation, const FVector& InBoxExtent, const FVector& InCapsuleCenter, const FRotator& InCapsuleRotation, const float& InCapsuleRadius, const float& InCapsuleHalfHeight);
+
+	// 判定长方体沿线段扫掠与长方体是否相交(精确:15轴SAT重叠时段区间交集)
+	UFUNCTION(BlueprintCallable, Category = "Math")
+	static bool SweptBoxToBox(const FVector& InBoxStart, const FVector& InBoxEnd, const FRotator& InBoxRotation, const FVector& InBoxExtent, const FVector& InTargetCenter, const FRotator& InTargetRotation, const FVector& InTargetExtent);
+
+protected:
+	// 单轴扫掠区间测试:|中心投影差+t·扫掠投影|≤半径和在[0,1]上的t区间与已有时段求交,确定分离或区间已空返回false
+	static bool InternalSweptAxisOverlap(const FVector& InAxis, const FVector& InSweepDelta, float InCenterDelta, float InRadiusSum, float& InOutMinTime, float& InOutMaxTime);
+
 #pragma endregion Math
 
 

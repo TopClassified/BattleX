@@ -36,6 +36,7 @@ public class BattleX : ModuleRules
                 "BattleX/DecisionTree",
                 "BattleX/Skill",
                 "BattleX/Net",
+                "BattleX/Projectile",
             }
 		);
 		
@@ -61,6 +62,7 @@ public class BattleX : ModuleRules
                 "GameplayTags",
                 "StructUtils",
                 "NetCore",
+                "Niagara",
             }
 		);
 		

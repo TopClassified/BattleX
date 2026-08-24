@@ -2,8 +2,9 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
+#include "Misc/DirectoryPath.h"
 
-#include "BXSettings.generated.h" 
+#include "BXSettings.generated.h"
 
 
 
@@ -66,5 +67,54 @@ public:
 	// 服务器校验释放请求的最大年龄(服务器世界时间域毫秒,超过视为过老请求拒绝)
 	UPROPERTY(Config, EditDefaultsOnly, Category = "Sync", meta = (ClampMin = "0"))
 	int32 SkillRequestMaxAgeMs = 500;
+
+
+#pragma region Projectile
+public:
+	// 子弹模拟固定步长(秒,与帧率解耦保证双端步进序列一致)
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Projectile", meta = (ClampMin = "0.005"))
+	float ProjectileFixedStep = 0.033334f;
+
+	// 子弹每帧最大步数(超出丢弃欠账防螺旋)
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Projectile", meta = (ClampMin = "1"))
+	int32 ProjectileMaxStepsPerFrame = 2;
+
+	// 子弹速度/转向曲线烘焙采样数
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Projectile", meta = (ClampMin = "8"))
+	int32 ProjectileCurveBakeSamples = 128;
+
+	// 贝塞尔弧长表采样段数
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Projectile", meta = (ClampMin = "8"))
+	int32 ProjectileBezierArcSamples = 64;
+
+	// 贝塞尔目标移动重建阈值(cm)
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Projectile", meta = (ClampMin = "1.0"))
+	float ProjectileTargetRefreshDistance = 100.0f;
+
+	// 长寿命子弹快照下发间隔(秒,0关闭)
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Projectile", meta = (ClampMin = "0.0"))
+	float ProjectileSnapshotInterval = 0.5f;
+
+	// 快照下发的子弹最低存活时长(秒,低于此视为短寿命子弹不下发)
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Projectile", meta = (ClampMin = "0.0"))
+	float ProjectileSnapshotMinAge = 2.0f;
+
+	// 快照矫正临界阻尼弹簧自然频率(Hz,越大收敛越快)
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Projectile", meta = (ClampMin = "0.1"))
+	float ProjectileSpringFrequency = 4.0f;
+
+	// 物理检测模式每桶每帧Sweep预算(各桶独立预算,预算轮转避免尖峰)
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Projectile", meta = (ClampMin = "1"))
+	int32 ProjectileSweepBudgetPerFrame = 128;
+
+	// 是否启用子弹异步计算驻留线程(积分与数学判定移交专职线程分发,命中结算延后一帧;关闭则GameThread同步并行)
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Projectile")
+	bool bProjectileAsyncCompute = true;
+
+	// 子弹资源扫描目录
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Projectile")
+	TArray<FDirectoryPath> ProjectileAssetPaths;
+
+#pragma endregion Projectile
 
 };

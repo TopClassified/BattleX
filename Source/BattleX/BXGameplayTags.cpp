@@ -151,4 +151,9 @@ namespace BXGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXSkillInput_AimLocation, "BXSkillInput.AimLocation", "技能输入 瞄准位置");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXSkillInput_AimRotation, "BXSkillInput.AimRotation", "技能输入 瞄准朝向");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXSkillInput_LockParts, "BXSkillInput.LockParts", "技能输入 锁定部位列表");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Projectile_Fired, "BXEvent.Projectile.Fired", "子弹已发射");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Projectile_Hit, "BXEvent.Projectile.Hit", "子弹命中");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Projectile_Finished, "BXEvent.Projectile.Finished", "子弹已结束");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Projectile_Denied, "BXEvent.Projectile.Denied", "子弹预测被否认");
 }

@@ -1289,6 +1289,175 @@ float UBXFunctionLibrary::SegmentToBox(const FVector& InL1S, const FVector& InL1
 	return FMath::Sqrt(ResultSquareDistance);
 }
 
+bool UBXFunctionLibrary::SweptBoxToSphere(const FVector& InBoxStart, const FVector& InBoxEnd, const FRotator& InBoxRotation, const FVector& InBoxExtent, const FVector& InSphereCenter, const float& InSphereRadius)
+{
+	// 等价转化:盒沿线段扫掠命中球 <=> 球心沿反向线段移动到静止盒的距离不超过球半径
+	const FVector ReverseStart = InSphereCenter - (InBoxEnd - InBoxStart);
+	return UBXFunctionLibrary::SegmentToBox(ReverseStart, InSphereCenter, InBoxStart, InBoxRotation, InBoxExtent) <= InSphereRadius;
+}
+
+bool UBXFunctionLibrary::SweptBoxToCapsule(const FVector& InBoxStart, const FVector& InBoxEnd, const FRotator& InBoxRotation, const FVector& InBoxExtent, const FVector& InCapsuleCenter, const FRotator& InCapsuleRotation, const float& InCapsuleRadius, const float& InCapsuleHalfHeight)
+{
+	const FRotationMatrix BoxMatrix(InBoxRotation);
+	const FVector BoxAxes[3] = { BoxMatrix.GetUnitAxis(EAxis::X), BoxMatrix.GetUnitAxis(EAxis::Y), BoxMatrix.GetUnitAxis(EAxis::Z) };
+	const FVector CapsuleAxis = FRotationMatrix(InCapsuleRotation).GetUnitAxis(EAxis::X);
+
+	const FVector SweepDelta = InBoxEnd - InBoxStart;
+	float MinTime = 0.0f;
+	float MaxTime = 1.0f;
+
+	// SAT粗筛(轴集不完备仅作拒绝,拒绝即精确未命中):盒3面轴+胶囊轴+3叉积轴,胶囊投影半径=|轴·胶囊轴|·半高+半径
+	auto TestAxis = [&](const FVector& InRawAxis)
+	{
+		if (InRawAxis.SizeSquared() < KINDA_SMALL_NUMBER)
+		{
+			return true;
+		}
+
+		const FVector Axis = InRawAxis.GetSafeNormal();
+		float RadiusSum = FMath::Abs(FVector::DotProduct(Axis, CapsuleAxis)) * InCapsuleHalfHeight + InCapsuleRadius;
+		for (int32 Index = 0; Index < 3; ++Index)
+		{
+			RadiusSum += FMath::Abs(FVector::DotProduct(Axis, BoxAxes[Index])) * InBoxExtent[Index];
+		}
+
+		return InternalSweptAxisOverlap(Axis, SweepDelta, FVector::DotProduct(Axis, InBoxStart - InCapsuleCenter), RadiusSum, MinTime, MaxTime);
+	};
+
+	const FVector Axes[7] = { BoxAxes[0], BoxAxes[1], BoxAxes[2], CapsuleAxis, FVector::CrossProduct(BoxAxes[0], CapsuleAxis), FVector::CrossProduct(BoxAxes[1], CapsuleAxis), FVector::CrossProduct(BoxAxes[2], CapsuleAxis) };
+	for (const FVector& Axis : Axes)
+	{
+		if (!TestAxis(Axis))
+		{
+			return false;
+		}
+	}
+
+	if (MinTime > MaxTime + KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	// 精确阶段:胶囊=轴线段⊕球,命中<=>存在t使轴线段反向平移t·扫掠量后到盒距离≤半径;f(t)=dist(t·扫掠量,轴线段⊖盒)为凸函数,三分搜索最小值
+	const FVector CapsuleStart = InCapsuleCenter - CapsuleAxis * InCapsuleHalfHeight;
+	const FVector CapsuleEnd = InCapsuleCenter + CapsuleAxis * InCapsuleHalfHeight;
+	auto EvaluateDistance = [&](float InTime)
+	{
+		const FVector Offset = SweepDelta * InTime;
+		return UBXFunctionLibrary::SegmentToBox(CapsuleStart - Offset, CapsuleEnd - Offset, InBoxStart, InBoxRotation, InBoxExtent);
+	};
+
+	if (EvaluateDistance(0.0f) <= InCapsuleRadius || EvaluateDistance(1.0f) <= InCapsuleRadius)
+	{
+		return true;
+	}
+
+	// 24次三分迭代后残余区间(2/3)^24≈2e-5扫掠长度,亚毫米级收敛
+	float LowerTime = 0.0f;
+	float UpperTime = 1.0f;
+	for (int32 Iteration = 0; Iteration < 24; ++Iteration)
+	{
+		const float Third = (UpperTime - LowerTime) / 3.0f;
+		const float TimeA = LowerTime + Third;
+		const float TimeB = UpperTime - Third;
+		const float DistanceA = EvaluateDistance(TimeA);
+		const float DistanceB = EvaluateDistance(TimeB);
+		if (DistanceA <= InCapsuleRadius || DistanceB <= InCapsuleRadius)
+		{
+			return true;
+		}
+
+		if (DistanceA < DistanceB)
+		{
+			UpperTime = TimeB;
+		}
+		else
+		{
+			LowerTime = TimeA;
+		}
+	}
+
+	return EvaluateDistance((LowerTime + UpperTime) * 0.5f) <= InCapsuleRadius;
+}
+
+bool UBXFunctionLibrary::SweptBoxToBox(const FVector& InBoxStart, const FVector& InBoxEnd, const FRotator& InBoxRotation, const FVector& InBoxExtent, const FVector& InTargetCenter, const FRotator& InTargetRotation, const FVector& InTargetExtent)
+{
+	const FRotationMatrix BoxMatrix(InBoxRotation);
+	const FRotationMatrix TargetMatrix(InTargetRotation);
+	const FVector BoxAxes[3] = { BoxMatrix.GetUnitAxis(EAxis::X), BoxMatrix.GetUnitAxis(EAxis::Y), BoxMatrix.GetUnitAxis(EAxis::Z) };
+	const FVector TargetAxes[3] = { TargetMatrix.GetUnitAxis(EAxis::X), TargetMatrix.GetUnitAxis(EAxis::Y), TargetMatrix.GetUnitAxis(EAxis::Z) };
+
+	const FVector SweepDelta = InBoxEnd - InBoxStart;
+	float MinTime = 0.0f;
+	float MaxTime = 1.0f;
+
+	// 轴集合:目标盒3面轴+扫掠盒3面轴+9边叉积轴,双方投影半径按各自轴向与半尺寸展开
+	auto TestAxis = [&](const FVector& InRawAxis)
+	{
+		if (InRawAxis.SizeSquared() < KINDA_SMALL_NUMBER)
+		{
+			return true;
+		}
+
+		const FVector Axis = InRawAxis.GetSafeNormal();
+		float RadiusSum = 0.0f;
+		for (int32 Index = 0; Index < 3; ++Index)
+		{
+			RadiusSum += FMath::Abs(FVector::DotProduct(Axis, TargetAxes[Index])) * InTargetExtent[Index];
+			RadiusSum += FMath::Abs(FVector::DotProduct(Axis, BoxAxes[Index])) * InBoxExtent[Index];
+		}
+
+		return InternalSweptAxisOverlap(Axis, SweepDelta, FVector::DotProduct(Axis, InBoxStart - InTargetCenter), RadiusSum, MinTime, MaxTime);
+	};
+
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		if (!TestAxis(TargetAxes[Index]) || !TestAxis(BoxAxes[Index]))
+		{
+			return false;
+		}
+	}
+
+	for (int32 TargetIndex = 0; TargetIndex < 3; ++TargetIndex)
+	{
+		for (int32 BoxIndex = 0; BoxIndex < 3; ++BoxIndex)
+		{
+			if (!TestAxis(FVector::CrossProduct(TargetAxes[TargetIndex], BoxAxes[BoxIndex])))
+			{
+				return false;
+			}
+		}
+	}
+
+	return MinTime <= MaxTime + KINDA_SMALL_NUMBER;
+}
+
+bool UBXFunctionLibrary::InternalSweptAxisOverlap(const FVector& InAxis, const FVector& InSweepDelta, float InCenterDelta, float InRadiusSum, float& InOutMinTime, float& InOutMaxTime)
+{
+	const float AxisDelta = FVector::DotProduct(InAxis, InSweepDelta);
+	if (FMath::Abs(AxisDelta) < KINDA_SMALL_NUMBER)
+	{
+		// 扫掠方向与轴垂直:全程投影关系不变,分离则整条扫掠均不相交
+		if (FMath::Abs(InCenterDelta) > InRadiusSum)
+		{
+			return false;
+		}
+		return true;
+	}
+
+	// |中心投影差+t·扫掠投影|≤半径和的t区间与已有时段求交
+	float LowerTime = (-InRadiusSum - InCenterDelta) / AxisDelta;
+	float UpperTime = (InRadiusSum - InCenterDelta) / AxisDelta;
+	if (LowerTime > UpperTime)
+	{
+		Swap(LowerTime, UpperTime);
+	}
+
+	InOutMinTime = FMath::Max(InOutMinTime, LowerTime);
+	InOutMaxTime = FMath::Min(InOutMaxTime, UpperTime);
+	return InOutMinTime <= InOutMaxTime;
+}
+
 #pragma endregion Math
 
 
