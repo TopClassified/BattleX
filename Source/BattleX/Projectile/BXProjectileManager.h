@@ -12,6 +12,8 @@
 class UBXProjectileAsset;
 class UBXProjectileComponent;
 class UBXShapeComponent;
+class UBXBuffAsset;
+class UBXSkillAsset;
 class UNiagaraComponent;
 class UNiagaraSystem;
 class UAudioComponent;
@@ -69,6 +71,21 @@ struct FBXProjectileTargetRegistration
 
 
 
+// 命中效果运行时缓存(桶创建时解析,弱引用+Manager强引用防GC悬空)
+struct FBXProjectileHitEffectRuntime
+{
+	// 效果类型
+	EBXProjectileHitEffectType EffectType = EBXProjectileHitEffectType::HE_Damage;
+
+	// BUFF资产(HE_Buff时有效)
+	TWeakObjectPtr<UBXBuffAsset> BuffAsset;
+
+	// 技能资产(HE_Skill时有效)
+	TWeakObjectPtr<UBXSkillAsset> SkillAsset;
+};
+
+
+
 // 子弹桶(同类型子弹连续内存,共享烘焙配置与飞行渲染组件)
 struct FBXProjectileBucket
 {
@@ -116,6 +133,9 @@ struct FBXProjectileBucket
 
 	// 筛选器不可通过类型解析(桶创建时从软引用同步加载)
 	TArray<UClass*> FilterIgnoreClassTypes;
+
+	// 命中效果运行时缓存(桶创建时从软引用同步加载,与Asset->HitEffects下标对齐)
+	TArray<FBXProjectileHitEffectRuntime> HitEffects;
 
 	// 物理检测轮转游标(预算分帧,子弹轮流受检)
 	int32 SweepCursor = 0;
@@ -278,6 +298,19 @@ protected:
 	// 客户端命中上报(经Instigator的载体组件发往服务器)
 	void InternalReportClientHit(const FBXProjectileHitPayload& InPayload, const FBXProjectileSimData& InData);
 
+	// 执行命中效果列表(仅权威端调用:伤害[待框架接入]/施加BUFF/播放技能,客户端代劳端不执行)
+	void InternalApplyHitEffects(const FBXProjectileBucket& InBucket, const FBXProjectileSimData& InData, AActor* InTargetActor);
+
+	// 目标是否处于命中冷却期(含同帧去重:命中当步同目标重复候选同样被抑制)
+	bool InternalIsTargetInCooldown(const FBXProjectileSimData& InData, uint32 InTargetUID) const;
+
+	// 记录目标命中冷却(刷新截止时刻,顺带清理过期条目)
+	void InternalMarkTargetHitCooldown(FBXProjectileSimData& InData, uint32 InTargetUID, float InCooldownSeconds);
+
+	// 记录本地上报命中时刻+组播回声判定(服务器回声按命中时刻精确匹配则跳过表现与事件)
+	void InternalRecordReportedHitTime(FBXProjectileSimData& InOutData, float InHitTime);
+	bool InternalIsLocalReportedEcho(const FBXProjectileSimData& InData, float InHitTime) const;
+
 	// 生命周期流转与死亡清理(寿命尽/残留到期/swap-remove回收/Finished事件广播)
 	void ProcessBucketLifecycle(const FGameplayTag& InBucketType, FBXProjectileBucket& InOutBucket);
 
@@ -397,6 +430,10 @@ protected:
 	// 筛选器解析类型GC强引用登记(桶内裸UClass指针不可见GC,防蓝图类无强引用被回收悬空)
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UClass>> PinnedFilterClasses;
+
+	// 命中效果资产GC强引用登记(桶内弱引用失效则效果静默丢失,强引用保证运行期可靠)
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UObject>> PinnedHitEffectAssets;
 
 	// 子弹桶(种类标签→桶)
 	TMap<FGameplayTag, FBXProjectileBucket> Buckets;

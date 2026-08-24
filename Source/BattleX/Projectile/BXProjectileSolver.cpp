@@ -460,8 +460,8 @@ void FBXProjectileSolver::MathCheckBullet(const FBXProjectileBakedConfig& InBake
 			continue;
 		}
 
-		// 排除自身与已穿透命中过的目标
-		if (Snapshot.TargetUID == InData.InstigatorUID || InData.HitTargetUIDs.Contains(Snapshot.TargetUID))
+		// 排除自身(命中冷却与穿透计数由GameThread结算权威判定,几何检测不预过滤冷却中目标,防冷却在步进中过期被错杀)
+		if (Snapshot.TargetUID == InData.InstigatorUID)
 		{
 			continue;
 		}

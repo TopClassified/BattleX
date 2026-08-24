@@ -12,6 +12,11 @@
 #include "BXCollision.h"
 #include "BXNetStructs.h"
 #include "BXShapeComponent.h"
+#include "BXBuffManager.h"
+#include "BXBuffStructs.h"
+#include "BXBuffAsset.h"
+#include "BXSkillComponent.h"
+#include "BXSkillAsset.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Async/ParallelFor.h"
@@ -89,6 +94,12 @@ void UBXProjectileManager::Deinitialize()
 
 void UBXProjectileManager::OnWorldCleanupStart(UWorld* InWorld, bool bSessionEnded, bool bCleanupResources)
 {
+	// 只清理自己所属世界(PIE多实例并行时避免误清其它实例的运行数据)
+	if (InWorld != GetWorld())
+	{
+		return;
+	}
+
 	// 世界销毁(PIE结束/关卡切换):清空全部运行数据,桶表现组件随宿主Actor销毁
 	Buckets.Empty();
 	ProjectileIndexMap.Empty();
@@ -825,6 +836,37 @@ FBXProjectileBucket* UBXProjectileManager::GetOrCreateBucket(const FGameplayTag&
 		}
 	}
 
+	// 命中效果资产解析并登记GC强引用(桶内弱引用,失效则命中时静默跳过)
+	for (const FBXProjectileHitEffect& Effect : Asset->HitEffects)
+	{
+		FBXProjectileHitEffectRuntime Runtime;
+		Runtime.EffectType = Effect.EffectType;
+
+		switch (Effect.EffectType)
+		{
+		case EBXProjectileHitEffectType::HE_Buff:
+			if (UBXBuffAsset* BuffAsset = Effect.BuffAsset.LoadSynchronous())
+			{
+				Runtime.BuffAsset = BuffAsset;
+				PinnedHitEffectAssets.AddUnique(BuffAsset);
+			}
+			break;
+
+		case EBXProjectileHitEffectType::HE_Skill:
+			if (UBXSkillAsset* SkillAsset = Effect.SkillAsset.LoadSynchronous())
+			{
+				Runtime.SkillAsset = SkillAsset;
+				PinnedHitEffectAssets.AddUnique(SkillAsset);
+			}
+			break;
+
+		default:
+			break;
+		}
+
+		NewBucket.HitEffects.Add(Runtime);
+	}
+
 	return &Buckets.Add(InProjectileType, MoveTemp(NewBucket));
 }
 
@@ -1034,6 +1076,7 @@ void UBXProjectileManager::PhysicsSweepBucket(const FGameplayTag& InBucketType, 
 				Payload.ProjectileID = Data.ProjectileID;
 				Payload.ProjectileType = InBucketType;
 				Payload.HitType = EBXProjectileHitType::HT_World;
+				Payload.HitTime = Data.ElapsedTime;
 				Payload.HitLocation = Hit.Location;
 				Payload.HitNormal = Hit.Normal;
 				Payload.HitTarget = Hit.GetActor();
@@ -1056,7 +1099,7 @@ void UBXProjectileManager::PhysicsSweepBucket(const FGameplayTag& InBucketType, 
 				{
 					// 客户端代劳:本地预测结算+上报服务器权威校验
 					HandleHitMulticast(Payload, true);
-					Data.bLocalHitReported = true;
+					InternalRecordReportedHitTime(Data, Payload.HitTime);
 					InternalReportClientHit(Payload, Data);
 				}
 			}
@@ -1118,8 +1161,8 @@ void UBXProjectileManager::InternalResolveHitCandidate(const FGameplayTag& InBuc
 		return;
 	}
 
-	// 同帧同目标去重(多受击盒展开可能同帧多次命中同一目标)
-	if (Data.HitTargetUIDs.Contains(Snapshot.TargetUID))
+	// 命中冷却判定(含同帧同目标去重:多受击盒展开/冷却期内重复候选由此过滤)
+	if (InternalIsTargetInCooldown(Data, Snapshot.TargetUID))
 	{
 		return;
 	}
@@ -1155,8 +1198,8 @@ void UBXProjectileManager::InternalResolveAsyncCandidate(const FBXProjectileAsyn
 		return;
 	}
 
-	// 穿透去重(跨步重复候选由当前去重集过滤)
-	if (Data.HitTargetUIDs.Contains(InCandidate.TargetUID))
+	// 命中冷却判定(跨步重复候选由当前冷却表过滤,冷却结束允许再次命中)
+	if (InternalIsTargetInCooldown(Data, InCandidate.TargetUID))
 	{
 		return;
 	}
@@ -1174,18 +1217,22 @@ void UBXProjectileManager::InternalExecuteHitResolution(const FGameplayTag& InBu
 		return;
 	}
 
-	// 穿透判定:命中次数达上限则终态
-	InOutData.HitTargetUIDs.Add(static_cast<uint32>(InTargetActor->GetUniqueID()));
+	// 穿透判定:命中次数达上限则终态(冷却后再命中同一目标同样消耗预算)
+	InternalMarkTargetHitCooldown(InOutData, static_cast<uint32>(InTargetActor->GetUniqueID()), InOutBucket.Baked.HitCooldown);
 	const bool bTerminal = InOutData.PenetrationCount >= InOutBucket.Baked.MaxPenetrationCount - 1;
 	if (!bTerminal)
 	{
 		++InOutData.PenetrationCount;
 	}
 
+	// 命中效果(权威端执行:伤害占位/施加BUFF/播放技能)
+	InternalApplyHitEffects(InOutBucket, InOutData, InTargetActor);
+
 	FBXProjectileHitPayload Payload;
 	Payload.ProjectileID = InOutData.ProjectileID;
 	Payload.ProjectileType = InBucketType;
 	Payload.HitType = EBXProjectileHitType::HT_Unit;
+	Payload.HitTime = InOutData.ElapsedTime;
 	Payload.HitLocation = InHitLocation;
 	Payload.HitNormal = InHitNormal;
 	Payload.HitTarget = InTargetActor;
@@ -1207,8 +1254,8 @@ void UBXProjectileManager::InternalExecuteHitResolution(const FGameplayTag& InBu
 
 void UBXProjectileManager::InternalResolveClientHitCandidate(const FGameplayTag& InBucketType, FBXProjectileBucket& InOutBucket, FBXProjectileSimData& InOutData, AActor* InTargetActor, const FVector& InHitLocation, const FVector& InHitNormal, const FGameplayTag& InHitBoxTag)
 {
-	// 穿透计数与去重(本地预测,服务器校验通过后权威覆写)
-	InOutData.HitTargetUIDs.Add(static_cast<uint32>(InTargetActor->GetUniqueID()));
+	// 穿透计数与冷却(本地预测,服务器校验通过后权威覆写)
+	InternalMarkTargetHitCooldown(InOutData, static_cast<uint32>(InTargetActor->GetUniqueID()), InOutBucket.Baked.HitCooldown);
 	const bool bTerminal = InOutData.PenetrationCount >= InOutBucket.Baked.MaxPenetrationCount - 1;
 	if (!bTerminal)
 	{
@@ -1219,6 +1266,7 @@ void UBXProjectileManager::InternalResolveClientHitCandidate(const FGameplayTag&
 	Payload.ProjectileID = InOutData.ProjectileID;
 	Payload.ProjectileType = InBucketType;
 	Payload.HitType = EBXProjectileHitType::HT_Unit;
+	Payload.HitTime = InOutData.ElapsedTime;
 	Payload.HitLocation = InHitLocation;
 	Payload.HitNormal = InHitNormal;
 	Payload.HitTarget = InTargetActor;
@@ -1230,8 +1278,8 @@ void UBXProjectileManager::InternalResolveClientHitCandidate(const FGameplayTag&
 	// 本地预测表现+事件+终态流转
 	HandleHitMulticast(Payload, bTerminal);
 
-	// 上报服务器权威校验(每发命中均上报,服务器按穿透去重)
-	InOutData.bLocalHitReported = true;
+	// 上报服务器权威校验(每次命中均上报,服务器按命中冷却校验)
+	InternalRecordReportedHitTime(InOutData, Payload.HitTime);
 	InternalReportClientHit(Payload, InOutData);
 }
 
@@ -1249,6 +1297,123 @@ void UBXProjectileManager::InternalReportClientHit(const FBXProjectileHitPayload
 	{
 		Carrier->ServerReportProjectileHit(InPayload);
 	}
+}
+
+void UBXProjectileManager::InternalApplyHitEffects(const FBXProjectileBucket& InBucket, const FBXProjectileSimData& InData, AActor* InTargetActor)
+{
+	// 仅权威端调用(服务器检测路径与客户端上报校验通过路径);客户端代劳端不执行,等待服务器权威结算
+	for (const FBXProjectileHitEffectRuntime& Effect : InBucket.HitEffects)
+	{
+		switch (Effect.EffectType)
+		{
+		case EBXProjectileHitEffectType::HE_Damage:
+			// TODO: 伤害/属性框架接入后实现(命中目标+部位+子弹资产结算伤害)
+			break;
+
+		case EBXProjectileHitEffectType::HE_Buff:
+		{
+			// 对命中目标施加BUFF(始作俑者/触发者随子弹上下文传递)
+			UBXBuffAsset* BuffAsset = Effect.BuffAsset.Get();
+			UBXBuffManager* BuffManager = UBXBuffManager::Get(this);
+			if (BuffAsset && BuffManager && IsValid(InTargetActor))
+			{
+				FBXBuffPlayContext Context;
+				Context.Instigator = InData.FireContext.Instigator;
+				Context.Triggerer = InData.FireContext.Triggerer;
+				BuffManager->AddBuff(BuffAsset, InTargetActor, Context);
+			}
+			break;
+		}
+
+		case EBXProjectileHitEffectType::HE_Skill:
+		{
+			// 在命中目标身上播放技能(目标须持有技能组件)
+			UBXSkillAsset* SkillAsset = Effect.SkillAsset.Get();
+			if (SkillAsset && IsValid(InTargetActor))
+			{
+				if (UBXSkillComponent* TargetSkillComponent = InTargetActor->FindComponentByClass<UBXSkillComponent>())
+				{
+					TargetSkillComponent->PlaySkill(SkillAsset, InData.FireContext.Instigator, InData.FireContext.Triggerer);
+				}
+			}
+			break;
+		}
+
+		default:
+			break;
+		}
+	}
+}
+
+bool UBXProjectileManager::InternalIsTargetInCooldown(const FBXProjectileSimData& InData, uint32 InTargetUID) const
+{
+	for (const FBXProjectileTargetCooldown& Entry : InData.TargetHitCooldowns)
+	{
+		if (Entry.TargetUID == InTargetUID)
+		{
+			// 含等值比较:冷却0时命中当步(同帧多受击盒重复候选)同样被抑制,下一步即放行
+			return InData.ElapsedTime <= Entry.CooldownEndTime;
+		}
+	}
+	return false;
+}
+
+void UBXProjectileManager::InternalMarkTargetHitCooldown(FBXProjectileSimData& InData, uint32 InTargetUID, float InCooldownSeconds)
+{
+	// 先清理过期条目(倒序RemoveAtSwap,换入元素来自已访问的高位索引;表规模以不同目标数为上界)
+	for (int32 Index = InData.TargetHitCooldowns.Num() - 1; Index >= 0; --Index)
+	{
+		if (InData.ElapsedTime > InData.TargetHitCooldowns[Index].CooldownEndTime)
+		{
+			InData.TargetHitCooldowns.RemoveAtSwap(Index);
+		}
+	}
+
+	// 已有条目刷新截止时刻,新目标追加
+	for (FBXProjectileTargetCooldown& Entry : InData.TargetHitCooldowns)
+	{
+		if (Entry.TargetUID == InTargetUID)
+		{
+			Entry.CooldownEndTime = InData.ElapsedTime + InCooldownSeconds;
+			return;
+		}
+	}
+
+	FBXProjectileTargetCooldown NewEntry;
+	NewEntry.TargetUID = InTargetUID;
+	NewEntry.CooldownEndTime = InData.ElapsedTime + InCooldownSeconds;
+	InData.TargetHitCooldowns.Add(NewEntry);
+}
+
+void UBXProjectileManager::InternalRecordReportedHitTime(FBXProjectileSimData& InOutData, float InHitTime)
+{
+	// 记录本地上报时刻并清理过期记录(回声匹配窗口需覆盖一次网络往返;上限8条防极端刷屏)
+	for (int32 Index = InOutData.RecentReportedHitTimes.Num() - 1; Index >= 0; --Index)
+	{
+		if (InOutData.RecentReportedHitTimes[Index] < InHitTime - 2.0f || InOutData.RecentReportedHitTimes[Index] > InHitTime)
+		{
+			InOutData.RecentReportedHitTimes.RemoveAtSwap(Index);
+		}
+	}
+
+	InOutData.RecentReportedHitTimes.Add(InHitTime);
+	if (InOutData.RecentReportedHitTimes.Num() > 8)
+	{
+		InOutData.RecentReportedHitTimes.RemoveAt(0, InOutData.RecentReportedHitTimes.Num() - 8);
+	}
+}
+
+bool UBXProjectileManager::InternalIsLocalReportedEcho(const FBXProjectileSimData& InData, float InHitTime) const
+{
+	// 服务器原样回传本地上报的子弹时刻(RPC浮点精确传输),步进粒度远大于容差防误匹配
+	for (const float ReportedTime : InData.RecentReportedHitTimes)
+	{
+		if (FMath::Abs(ReportedTime - InHitTime) < 0.001f)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 void UBXProjectileManager::ProcessBucketLifecycle(const FGameplayTag& InBucketType, FBXProjectileBucket& InOutBucket)
@@ -1602,6 +1767,14 @@ bool UBXProjectileManager::HandleServerFireProjectile(const FBXProjectileSyncHea
 		return false;
 	}
 
+	// 连接归属校验:发射请求的Instigator须属于发起RPC的连接(防Instigator伪造嫁祸他人/绕过归属约束)
+	AActor* CarrierOwner = IsValid(InCarrier) ? InCarrier->GetOwner() : nullptr;
+	if (!IsValid(InContext.Instigator) || !CarrierOwner || CarrierOwner->GetNetConnection() != InContext.Instigator->GetNetConnection())
+	{
+		OutDenyReason = EBXProjectileDenyReason::DR_InvalidOwnership;
+		return false;
+	}
+
 	// ID查重(防跨客户端ID碰撞覆盖正在运行的子弹)
 	if (ProjectileIndexMap.Contains(InHeader.ProjectileID))
 	{
@@ -1729,8 +1902,8 @@ void UBXProjectileManager::HandleHitMulticast(const FBXProjectileHitPayload& InP
 	FBXProjectileBucket* Bucket = Ref ? Buckets.Find(Ref->BucketType) : nullptr;
 	const bool bIndexValid = Bucket && Bucket->Bullets.IsValidIndex(Ref->Index) && Bucket->BulletIDs.IsValidIndex(Ref->Index) && Bucket->BulletIDs[Ref->Index] == InPayload.ProjectileID;
 
-	// 代劳端已本地结算:跳过重复表现与事件,仅应用权威终态
-	if (!bIndexValid || !Bucket->Bullets[Ref->Index].bLocalHitReported)
+	// 代劳端回声去重:服务器组播与本地上报命中同时刻(原样回传的子弹时刻)则跳过重复表现与事件,其余命中正常表现
+	if (!bIndexValid || !InternalIsLocalReportedEcho(Bucket->Bullets[Ref->Index], InPayload.HitTime))
 	{
 		if (FBXProjectileBucket* PresentationBucket = Buckets.Find(InPayload.ProjectileType))
 		{
@@ -1767,6 +1940,12 @@ void UBXProjectileManager::HandleServerReportProjectileHit(const FBXProjectileHi
 		return;
 	}
 
+	// 服务器自检模式下客户端上报通道无效(命中由服务器权威Sweep判定,拒绝上报防伪造命中作弊)
+	if (GetDefault<UBXSettings>()->bServerCollisionCheck)
+	{
+		return;
+	}
+
 	// 子弹存在且仍在飞行
 	FBXProjectileIndexRef* Ref = ProjectileIndexMap.Find(InPayload.ProjectileID);
 	if (!Ref)
@@ -1794,7 +1973,7 @@ void UBXProjectileManager::HandleServerReportProjectileHit(const FBXProjectileHi
 		return;
 	}
 
-	// 权威字段以服务器数据为准(不信任客户端载荷)
+	// 权威字段以服务器数据为准(不信任客户端载荷;HitTime刻意保留客户端原值,组播回声去重按此匹配)
 	FBXProjectileHitPayload Payload = InPayload;
 	Payload.ProjectileType = Ref->BucketType;
 	Payload.Instigator = Instigator;
@@ -1812,17 +1991,20 @@ void UBXProjectileManager::HandleServerReportProjectileHit(const FBXProjectileHi
 		}
 
 		const uint32 TargetUID = static_cast<uint32>(Target->GetUniqueID());
-		if (Data.HitTargetUIDs.Contains(TargetUID))
+		if (InternalIsTargetInCooldown(Data, TargetUID))
 		{
 			return;
 		}
 
-		Data.HitTargetUIDs.Add(TargetUID);
+		InternalMarkTargetHitCooldown(Data, TargetUID, Bucket->Baked.HitCooldown);
 		bTerminal = Data.PenetrationCount >= Bucket->Baked.MaxPenetrationCount - 1;
 		if (!bTerminal)
 		{
 			++Data.PenetrationCount;
 		}
+
+		// 命中效果(客户端代劳模式,校验通过后权威端执行)
+		InternalApplyHitEffects(*Bucket, Data, Target);
 	}
 
 	// 权威结算组播(本端经本地执行表现/事件/终态流转,无载体兜底仅本端)

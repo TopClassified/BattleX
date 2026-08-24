@@ -12,6 +12,7 @@ void UBXProjectileAsset::BuildBakedConfig(FBXProjectileBakedConfig& OutBaked, in
 	OutBaked.BulletRadius = FMath::Max(BulletRadius, 0.1f);
 	OutBaked.BulletBoxExtent = BulletBoxExtent.ComponentMax(FVector::ZeroVector);
 	OutBaked.MaxPenetrationCount = FMath::Max(MaxPenetrationCount, 1);
+	OutBaked.HitCooldown = FMath::Max(HitCooldown, 0.0f);
 	OutBaked.bHoming = bHoming;
 	OutBaked.TargetInvalidPolicy = TargetInvalidPolicy;
 	OutBaked.bUseBezier = bUseBezier;

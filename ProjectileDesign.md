@@ -126,7 +126,9 @@
 | 碰撞 | `EBXProjectileShape BulletShape` | 子弹碰撞形状：点 / 球体 / 长方体（§8.0） |
 | 碰撞 | `float BulletRadius` | 球体形状半径（cm），Sweep 与数学判定共用 |
 | 碰撞 | `FVector BulletBoxExtent` | 长方体半尺寸（cm），局部 X 沿飞行方向，仅长方体形状 |
-| 碰撞 | `int32 MaxPenetrationCount` | 最大穿透次数（命中后继续飞行），1 = 命中即毁 |
+| 碰撞 | `int32 MaxPenetrationCount` | 最大穿透次数（总命中预算，含冷却后对同一目标的再次命中），1 = 命中即毁 |
+| 碰撞 | `float HitCooldown` | 同目标命中冷却（秒）：命中后经过该时长才允许再次命中同一目标，0 = 仅同帧去重 |
+| 命中效果 | `TArray<FBXProjectileHitEffect> HitEffects` | 每次单位命中在权威端逐条执行的效果列表。条目类型三选一：**伤害**（HE_Damage，占位——待伤害/属性框架接入后实现）、**施加 BUFF**（HE_Buff，对命中目标 AddBuff，Instigator/Triggerer 随子弹上下文）、**播放技能**（HE_Skill，在命中目标身上的 SkillComponent 播放技能资产） |
 | 贝塞尔 | `bool bUseBezier` | 是否贝塞尔移动（与 Homing 互斥） |
 | 贝塞尔 | `TArray<FBXBezierControlPoint> BezierControlPoints` | 2~4 个中间控制点，见 §7 |
 | 表现 | `TSoftObjectPtr<UNiagaraSystem> FireSystem / FlightSystem / HitSystem` | 创建 / 飞行 / 命中特效 |
@@ -160,8 +162,8 @@ struct FBXProjectileSimData
     float ResidualTimer;         // 残留倒计时
     EBXProjectileState State;    // Active / Residual / Dead(内部)
     uint32 InstigatorUID;        // 始作俑者UID(排除自身命中)
-    TArray<uint32> HitTargetUIDs; // 穿透去重
-    int32 PenetrationCount;      // 已穿透计数
+    TArray<FBXProjectileTargetCooldown> TargetHitCooldowns; // 目标命中冷却表(冷却结束允许再次命中同一目标)
+    int32 PenetrationCount;      // 已穿透计数(每次命中消耗,含冷却后再命中)
     FBXProjectileFireContext FireContext;  // 发射上下文(Owner/Instigator/方向/附带数据)
     TWeakObjectPtr<UBXProjectileComponent> Carrier;  // 发射载体组件(RPC通道)
     FBXBezierRuntimeContext Bezier;  // 控制点缓存 + 弧长表 + 当前参数 u
@@ -172,14 +174,14 @@ struct FBXProjectileSimData
     FVector SpringTarget;        // 弹簧矫正目标(快照外推偏差,0代表期望偏移归零)
 
     bool bLocalDetectable;       // 本端是否对该子弹执行命中检测(GameThread解析,§8.4)
-    bool bLocalHitReported;      // 客户端代劳已本地结算标记(组播去重)
+    TArray<float> RecentReportedHitTimes; // 最近本地上报命中的子弹时刻(代劳端组播回声去重,按命中时刻精确匹配)
 };
 
 // 目标快照（Tick 开始时 GameThread 拷贝，供并行阶段只读；多受击盒目标逐盒展开为多条）
 struct FBXProjectileTargetSnapshot
 {
     TWeakObjectPtr<AActor> Target;   // 目标弱引用(GameThread复查)
-    uint32 TargetUID;                // 目标UID(穿透去重/排除自身)
+    uint32 TargetUID;                // 目标UID(命中冷却/排除自身)
     FGameplayTag HitBoxTag;          // 受击盒标签(命中部位)
     FVector Location;
     FQuat Rotation;
@@ -211,7 +213,7 @@ struct FBXProjectileBucket
 2. **StepSimulation（每固定步，`bProjectileAsyncCompute=false` 或提交失败时本地执行）**：
    - **Snapshot**：GameThread 将注册目标（含多受击盒逐盒展开）的 Transform/形状拷贝进快照数组，并解析每发子弹的 `bLocalDetectable`（检测职责分流，§8.4）
    - **Integrate（ParallelFor）**：按桶分片并行运动积分。调用 `FBXProjectileSolver` 纯函数，输出新位置/速度；`bMathCheck` 开启时数学判定在本阶段并行完成（点/球体子弹 SegmentToXxx 距离判定、盒形子弹 SweptBoxToXxx 扫掠判定，§8.0），只产出命中候选索引；模拟期间新发射的子弹进入挂起区，步末合并入桶
-   - **Collide/Commit（GameThread）**：数学候选复查结算（目标有效性 + 筛选器 + 穿透去重）；`bPhysicsCheck` 开启时按预算轮转对线段做 Sweep + `FBXCFilter` 过滤（§8.2）；命中事件广播、状态流转（→Residual）、残留计时结束回收
+   - **Collide/Commit（GameThread）**：数学候选复查结算（目标有效性 + 筛选器 + 命中冷却）；`bPhysicsCheck` 开启时按预算轮转对线段做 Sweep + `FBXCFilter` 过滤（§8.2）；命中事件广播、状态流转（→Residual）、残留计时结束回收
 3. **UpdateSprings（每帧）**：客户端弹簧矫正步进（表现层平滑，非固定步长，§10.5）
 4. **UpdateSnapshots（每帧，服务器）**：长寿命子弹快照定时收集与组播（§10.5）
 5. **RenderCommit（每帧）**：每桶 `SetNiagaraArrayVector` 批量提交（位置叠加弹簧偏移）
@@ -225,7 +227,7 @@ struct FBXProjectileBucket
 1. HarvestComputeResults(先收割):
    Drain 输出队列 → 逐桶数值回写(按ID定位,基线守卫:主容器State与提交时一致才回写,
    在途期间被GT事件改动的子弹丢弃回写) → 候选结算(InternalResolveAsyncCandidate幂等复查:
-   ID定位/State复查/目标有效/筛选器/穿透去重) → 涉及桶物理Sweep+生命周期 → 合并挂起区
+   ID定位/State复查/目标有效/筛选器/命中冷却) → 涉及桶物理Sweep+生命周期 → 合并挂起区
 2. TrySubmitComputeJob(后提交):
    BuildTargetSnapshots(GT) → 全桶轻量计算副本入Job(CopyComputeFieldsTo仅拷贝积分/判定/
    回写字段,跳过ContextData实例克隆与GT专用字段,消除每步每发堆分配;每桶记录
@@ -333,9 +335,9 @@ Location += Velocity * FixedStep
 
 - 目标（单位/角色）经 `RegisterProjectileTarget(AActor*)` 注册进 Manager；快照从目标 `UBXShapeComponent` 的受击信息逐盒展开——一个多受击盒目标展开为多条快照，每条携带 `HitBoxTag`（命中部位标签，无形状组件的目标用默认整包形状）
 - **与运动积分同并行阶段执行**（ParallelFor 分片内逐弹判定）：对 `PrevLocation→Location` 线段（叠加弹簧偏移，与渲染位置一致）判定——点/球体子弹按膨胀量做 `SegmentToSphere / SegmentToCapsule / SegmentToBox` 距离判定，盒形子弹整盒扫掠走 `SweptBoxToSphere / SweptBoxToCapsule / SweptBoxToBox`（§8.0）
-- 完全确定性、可并行、双端行为一致；GameThread 仅做候选复查结算（目标有效性 + 筛选器 + 穿透去重，需访问 UObject）
+- 完全确定性、可并行、双端行为一致；GameThread 仅做候选复查结算（目标有效性 + 筛选器 + 命中冷却，需访问 UObject）
 - 第一版遍历注册目标表（项目规模可控）；进阶加均匀网格 hash 空间划分
-- 穿透去重：per-bullet 已命中目标 UID 集合（多受击盒展开后同帧命中同目标多条快照按目标 UID 去重，首个命中的 HitBoxTag 生效）
+- 命中冷却：per-bullet 目标冷却表 `{TargetUID, CooldownEndTime}`（以子弹时刻为基准的绝对截止时刻，免逐帧递减）。命中目标后该目标进入冷却，冷却结束允许再次命中；冷却 0 时含命中当步的同帧去重（多受击盒展开后同帧命中同目标多条快照按目标 UID 去重，首个命中的 HitBoxTag 生效）。每次命中（含冷却后再命中）消耗一次穿透预算
 
 ### 8.2 物理检测（场景交互，`bPhysicsCheck`）
 
@@ -346,8 +348,9 @@ Location += Velocity * FixedStep
 
 ### 8.3 命中结算（权威端）
 
-- 服务器（或代劳客户端，§8.4）命中 → 状态流转（穿透计数耗尽或 MaxPenetration=1 → Active→Residual 或直接销毁）→ `MulticastProjectileHit` 全端表现 + `BXEvent.Projectile.Hit` 事件广播（`FBXProjectileHitPayload`：ID、命中点、法线、目标、受击盒标签、Instigator/Triggerer、Context 原样带回）
-- 伤害由现有战斗系统订阅事件处理，子弹系统不感知伤害数值
+- 服务器（或代劳客户端上报校验通过，§8.4）命中 → 状态流转（穿透计数耗尽或 MaxPenetration=1 → Active→Residual 或直接销毁）→ `MulticastProjectileHit` 全端表现 + `BXEvent.Projectile.Hit` 事件广播（`FBXProjectileHitPayload`：ID、命中点、法线、目标、受击盒标签、Instigator/Triggerer、Context 原样带回）
+- **内置命中效果（`HitEffects`）在权威端逐条执行**（组播前）：伤害占位（待伤害/属性框架接入）、对命中目标施加 BUFF（`UBXBuffManager::AddBuff`）、在命中目标身上播放技能（目标的 `UBXSkillComponent::PlaySkill`）；效果资产桶创建时同步加载并 GC 强引用登记；客户端代劳端不执行效果（仅预测表现），由服务器校验通过后权威执行
+- 事件广播仍是外部系统的补充订阅路径（如自定义受击逻辑），与内置效果互不冲突
 - 客户端预测命中只提前播本地表现，权威确认前不产生逻辑结果
 
 ### 8.4 检测职责分流（客户端代劳）
@@ -362,8 +365,8 @@ Location += Velocity * FixedStep
 | 客户端（`bServerCollisionCheck=false`） | **代劳**：仅本连接 Instigator（AutonomousProxy 拥有）的子弹 |
 
 - 客户端代劳命中：本地预测结算（表现/事件/终态流转立即执行）→ `ServerReportProjectileHit` 上报服务器权威校验
-- 服务器校验：连接归属（上报组件拥有者与始作俑者同一连接，防替他人伪造）+ 目标有效性 + 筛选器 + 穿透去重；权威字段（类型/Instigator/Triggerer/ContextData）以服务器数据覆写，不信任客户端载荷
-- 校验通过 → 服务器权威结算 + `MulticastProjectileHit` 组播；代劳端经 `bLocalHitReported` 去重（跳过重复表现/事件，仅应用权威终态）
+- 服务器校验：连接归属（上报组件拥有者与始作俑者同一连接，防替他人伪造）+ 目标有效性 + 筛选器 + 命中冷却；权威字段（类型/Instigator/Triggerer/ContextData）以服务器数据覆写，不信任客户端载荷（HitTime 刻意保留客户端原值供回声匹配）
+- 校验通过 → 服务器权威结算 + `MulticastProjectileHit` 组播；代劳端按命中时刻回声去重（Payload 携带命中时的子弹时刻 `HitTime`，与本地上报时刻精确匹配则跳过重复表现/事件，仅应用权威终态；保留最近多条上报时刻防连续上报间回声错配）
 - 其他客户端（非发射者）：不检测，等待组播结果
 
 ---
@@ -428,19 +431,19 @@ RPC 通道由发射者 Actor 上的 `UBXProjectileComponent` 承载（发射时 
 
 ```
 发射客户端(AutonomousProxy):
-  本连接Instigator子弹命中(数学判定/物理检测) 
-  → 本地预测结算(表现+事件+终态流转, bLocalHitReported=true)
-  → ServerReportProjectileHit(Payload)          [Server, Reliable]
+  本连接Instigator子弹命中(数学判定/物理检测)
+  → 本地预测结算(表现+事件+终态流转, 记录上报命中时刻)
+  → ServerReportProjectileHit(Payload含HitTime)  [Server, Reliable]
        │
        ↓
 服务器 HandleServerReportProjectileHit:
   ├─ 子弹存在且Active + 连接归属校验(上报组件Owner与Instigator同连接)
-  ├─ 单位命中: 目标有效 + 筛选器 + 穿透去重(HitTargetUIDs)
-  ├─ 权威字段覆写(Type/Instigator/Triggerer/ContextData以服务器为准)
+  ├─ 单位命中: 目标有效 + 筛选器 + 命中冷却(TargetHitCooldowns)
+  ├─ 权威字段覆写(Type/Instigator/Triggerer/ContextData以服务器为准, HitTime保留客户端原值)
   └─ 通过 → 权威结算 + MulticastProjectileHit
        │
        ↓
-代劳端收到组播回声: bLocalHitReported去重 → 跳过重复表现/事件,仅应用权威终态
+代劳端收到组播回声: 命中时刻匹配去重 → 跳过重复表现/事件,仅应用权威终态
 其他客户端: 正常表现+事件
 ```
 
@@ -553,7 +556,7 @@ Source/BattleX/Task/
 | 3 | Late Join 投影重建 | **第一版需要**（§11） |
 | 4 | 物理碰撞模式 | **第一版需要**（场景交互如撞墙，§8.2） |
 | 5 | Unit/ 空壳文件 | **未来"单位实体"体系预留，不启用不删除** |
-| 6 | 命中检测职责 | **客户端代劳 + 服务器校验**：`bServerCollisionCheck=false` 时发射客户端检测上报，服务器做连接归属/筛选器/穿透去重校验后权威结算（§8.4 / §10.4） |
+| 6 | 命中检测职责 | **客户端代劳 + 服务器校验**：`bServerCollisionCheck=false` 时发射客户端检测上报，服务器做连接归属/筛选器/命中冷却校验后权威结算（§8.4 / §10.4） |
 | 7 | 长寿命浮点误差 | **服务器定时快照 + 客户端临界阻尼弹簧矫正**：`ProjectileSnapshotInterval/MinAge/SpringFrequency` 三参数（§10.5） |
 | 8 | 误差矫正统一 | **单一弹簧系统**：贝塞尔重建偏差、Late Join 重放偏差、快照矫正共用 SpringOffset/Velocity/Target，删除独立 ErrorOffset 机制 |
 | 9 | 子弹碰撞形状 | **点/球体/长方体三形状**（`EBXProjectileShape`）：数学判定点=膨胀0/球体=半径膨胀（均精确）、长方体=整盒扫掠精确判定（目标盒 15 轴 SAT 区间交集、目标球反向轨迹距离转化、目标胶囊 SAT 粗筛+凸距离三分搜索）；物理检测按形状生成 Sweep 几何体（长方体旋转对齐飞行方向）（§8.0） |

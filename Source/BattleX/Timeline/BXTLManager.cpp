@@ -1077,6 +1077,12 @@ void UBXTLManager::CleanTimeline()
 #pragma region Callback
 void UBXTLManager::OnWorldCleanupStart(UWorld* World, bool bSessionEnded, bool bCleanupResources)
 {
+	// 只清理自己所属世界(PIE多实例并行时避免误清其它实例的运行数据)
+	if (World != GetWorld())
+	{
+		return;
+	}
+
 	CleanTimeline();
 }
 

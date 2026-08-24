@@ -63,6 +63,40 @@ enum class EBXProjectileHitType : uint8
 
 
 
+// 命中效果类型(配置于子弹资产,每次命中在权威端逐条执行)
+UENUM(BlueprintType)
+enum class EBXProjectileHitEffectType : uint8
+{
+	HE_Damage                 = 0             UMETA(DisplayName = "伤害"),
+	HE_Buff                                   UMETA(DisplayName = "施加BUFF"),
+	HE_Skill                                  UMETA(DisplayName = "播放技能"),
+
+	HE_TMax                                   UMETA(Hidden)
+};
+
+
+
+// 命中效果条目(伤害待伤害/属性框架接入后实现;BUFF与技能资产桶创建时同步加载缓存)
+USTRUCT(BlueprintType)
+struct FBXProjectileHitEffect
+{
+	GENERATED_USTRUCT_BODY()
+
+	// 效果类型
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HitEffect")
+	EBXProjectileHitEffectType EffectType = EBXProjectileHitEffectType::HE_Damage;
+
+	// 施加的BUFF资产(对命中目标施加)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HitEffect", Meta = (EditCondition = "EffectType == EBXProjectileHitEffectType::HE_Buff", EditConditionHides))
+	TSoftObjectPtr<class UBXBuffAsset> BuffAsset;
+
+	// 播放的技能资产(在命中目标身上播放)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HitEffect", Meta = (EditCondition = "EffectType == EBXProjectileHitEffectType::HE_Skill", EditConditionHides))
+	TSoftObjectPtr<class UBXSkillAsset> SkillAsset;
+};
+
+
+
 // 服务器否认原因
 UENUM(BlueprintType)
 enum class EBXProjectileDenyReason : uint8
@@ -70,6 +104,7 @@ enum class EBXProjectileDenyReason : uint8
 	DR_DuplicateID            = 0             UMETA(DisplayName = "ID重复"),
 	DR_AssetMissing                           UMETA(DisplayName = "子弹种类不存在"),
 	DR_RequestExpired                         UMETA(DisplayName = "请求过老"),
+	DR_InvalidOwnership                       UMETA(DisplayName = "归属校验失败"),
 
 	DR_TMax                                   UMETA(Hidden)
 };
@@ -218,6 +253,10 @@ public:
 	// 命中类型
 	UPROPERTY(BlueprintReadWrite)
 	EBXProjectileHitType HitType = EBXProjectileHitType::HT_Unit;
+
+	// 命中时的子弹时刻(秒,服务器原样回传客户端上报值,代劳端以此做组播回声去重)
+	UPROPERTY(BlueprintReadWrite)
+	float HitTime = 0.0f;
 
 	// 命中点
 	UPROPERTY(BlueprintReadWrite)
@@ -420,8 +459,11 @@ struct FBXProjectileBakedConfig
 	// 子弹长方体半尺寸(cm,局部空间X沿飞行方向,长方体形状)
 	FVector BulletBoxExtent = FVector(10.0f, 10.0f, 10.0f);
 
-	// 最大穿透次数(1为命中即毁)
+	// 最大穿透次数(总命中预算,含冷却后对同一目标的再次命中,1为命中即毁)
 	int32 MaxPenetrationCount = 1;
+
+	// 同目标命中冷却(秒,命中后经过该时长才允许再次命中同一目标,0为仅同帧去重)
+	float HitCooldown = 0.0f;
 
 	// 是否跟踪目标
 	bool bHoming = false;
@@ -495,6 +537,18 @@ struct FBXProjectileTargetSnapshot
 
 
 
+// 目标命中冷却条目(以子弹时刻为基准的绝对截止时刻,免逐帧递减;命中时刷新,过期即允许再次命中)
+struct FBXProjectileTargetCooldown
+{
+	// 目标UID
+	uint32 TargetUID = 0;
+
+	// 冷却截止的子弹时刻(秒,命中时刻+冷却时长)
+	float CooldownEndTime = 0.0f;
+};
+
+
+
 // 子弹模拟数据(纯POD,并行阶段仅允许Solver访问数值成员,禁止解引用FireContext内的对象指针)
 struct FBXProjectileSimData
 {
@@ -534,8 +588,8 @@ struct FBXProjectileSimData
 	// 已穿透次数
 	int32 PenetrationCount = 0;
 
-	// 已命中目标UID列表(穿透模式去重)
-	TArray<uint32> HitTargetUIDs;
+	// 目标命中冷却表(穿透模式:对同一目标命中后进入冷却,冷却结束允许再次命中;GameThread读写,worker不参与判定)
+	TArray<FBXProjectileTargetCooldown> TargetHitCooldowns;
 
 	// 本步解析出的目标快照索引(INDEX_NONE代表无有效目标,每步GameThread重建)
 	int32 TargetSnapshotIndex = INDEX_NONE;
@@ -567,14 +621,15 @@ struct FBXProjectileSimData
 	// 是否本地预测(等待服务器确认/否认)
 	bool bPredicted = false;
 
-	// 是否已本地结算并上报过命中(代劳端组播去重标记)
-	bool bLocalHitReported = false;
+	// 最近本地上报命中的子弹时刻列表(代劳端组播回声去重:服务器回声按命中时刻精确匹配,保留多条防连续上报间回声错配)
+	TArray<float> RecentReportedHitTimes;
 
 	// 拷贝异步计算所需字段(积分/数学判定/候选聚合/收割回写;跳过ContextData实例克隆与GT专用字段,弹幕量级下消除每步每发的堆分配)
 	void CopyComputeFieldsTo(FBXProjectileSimData& OutData) const
 	{
 		OutData.ProjectileID = ProjectileID;
 		OutData.FireContext.StartLocation = FireContext.StartLocation;
+		OutData.FireContext.FireDirection = FireContext.FireDirection;
 		OutData.FireContext.FireUpVector = FireContext.FireUpVector;
 		OutData.Bezier = Bezier;
 		OutData.PrevLocation = PrevLocation;
@@ -588,7 +643,6 @@ struct FBXProjectileSimData
 		OutData.TargetSnapshotIndex = TargetSnapshotIndex;
 		OutData.bLocalDetectable = bLocalDetectable;
 		OutData.InstigatorUID = InstigatorUID;
-		OutData.HitTargetUIDs = HitTargetUIDs;
 	}
 };
 

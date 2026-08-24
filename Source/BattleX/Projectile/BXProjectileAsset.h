@@ -102,11 +102,25 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collision", Meta = (EditCondition = "BulletShape == EBXProjectileShape::BS_Box", ClampMin = "0.0"))
 	FVector BulletBoxExtent = FVector(10.0f, 10.0f, 10.0f);
 
-	// 最大穿透次数(命中后继续飞行,1为命中即毁)
+	// 最大穿透次数(总命中预算,含冷却后对同一目标的再次命中,1为命中即毁)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collision", Meta = (ClampMin = "1"))
 	int32 MaxPenetrationCount = 1;
 
+	// 同目标命中冷却(秒,命中后经过该时长才允许再次命中同一目标,0为仅同帧去重)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Collision", Meta = (ClampMin = "0.0"))
+	float HitCooldown = 0.0f;
+
 #pragma endregion Collision
+
+
+
+#pragma region HitEffect
+public:
+	// 命中效果列表(每次单位命中在权威端逐条执行:伤害[待框架接入]/施加BUFF/播放技能)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HitEffect")
+	TArray<FBXProjectileHitEffect> HitEffects;
+
+#pragma endregion HitEffect
 
 
 
