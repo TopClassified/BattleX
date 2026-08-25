@@ -486,6 +486,12 @@ void UBXTLManager::StartTimelineSections(FBXTLRunTimeData& InOutData)
 		return;
 	}
 
+	// 按保存期预估Reserve,消除首个增长窗口的rehash/整搬
+	if (Asset->CachedContextDataEstimate > 0)
+	{
+		InOutData.DynamicDatas.Reserve(InOutData.DynamicDatas.Num() + Asset->CachedContextDataEstimate);
+	}
+
 	// 初始Section填充RunningSections
 	for (int32 i = 0; i < Asset->StartSectionIndexes.Num(); ++i)
 	{
@@ -494,6 +500,12 @@ void UBXTLManager::StartTimelineSections(FBXTLRunTimeData& InOutData)
 
 		// LoopCount为1基计数(跳转/循环分支均以1表示"第1次运行"),初始0会导致LoopTime=1的Section多跑一周期
 		NewSectionData.LoopCount = 1;
+
+		// 按保存期预估预留并发任务容量
+		if (Asset->CachedSectionTaskEstimates.IsValidIndex(NewSectionData.Index) && Asset->CachedSectionTaskEstimates[NewSectionData.Index] > 0)
+		{
+			NewSectionData.RunningTasks.Reserve(Asset->CachedSectionTaskEstimates[NewSectionData.Index]);
+		}
 	}
 
 	// 立刻更新一次,通过KeyFrame触发Task首帧执行
@@ -579,7 +591,7 @@ void UBXTLManager::FinishTimelineSection(FBXTLRunTimeData& InOutData, FBXTLSecti
 		}
 
 		// 固定时长需要托管(条目保留在RunningTasks,由末尾Reset统一清空)
-		if (Task->LifeType == EBXTLifeType::L_Duration)
+		if (TaskData.LifeType == EBXTLifeType::L_Duration)
 		{
 			FBXTLTaskHostingData& NewHosting = TimelineTaskHostingDatas.AddDefaulted_GetRef();
 			NewHosting.Task = Task;
@@ -738,12 +750,18 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 
 	if (InTask->LifeType == EBXTLifeType::L_Instant)
 	{
-		// 创建Task运行时数据
+		// 创建Task运行时数据(带参构造已完成DynamicData初始化,勿重复InitializeAs)
 		FBXTLTaskRTData NewTaskData(CustomDataType);
 		NewTaskData.Task = InTask;
 		NewTaskData.Index = InTaskIndex;
 		NewTaskData.ParentScope = InParentScope;
-		NewTaskData.DynamicData.InitializeAs(CustomDataType);
+
+		// 捕获任务配置快照(见FBXTLTaskRTData快照区说明):Instant路径的StartTask内同样会经
+		// GetTargetComponentList读TargetTypes快照,遗漏会导致瞬时任务(如发射子弹)取不到目标组件
+		NewTaskData.LifeType = InTask->LifeType;
+		NewTaskData.Duration = InTask->Duration;
+		NewTaskData.NetTypes = InTask->NetTypes;
+		NewTaskData.TargetTypes = InTask->TargetTypes;
 
 		// 找到Task处理器
 		if (UBXTProcessor* Processor = GetTLTProcessorByTLTClass(InTask->GetClass()))
@@ -768,6 +786,12 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 		NewTaskData.ParentScope = InParentScope;
 		NewTaskData.RunTime = InStartOffset;
 		NewTaskData.DynamicData.InitializeAs(CustomDataType);
+
+		// 捕获任务配置快照(见FBXTLTaskRTData快照区说明):后续Tick只读快照,不再解引用Task本体
+		NewTaskData.LifeType = InTask->LifeType;
+		NewTaskData.Duration = InTask->Duration;
+		NewTaskData.NetTypes = InTask->NetTypes;
+		NewTaskData.TargetTypes = InTask->TargetTypes;
 
 		// 找到Task处理器
 		if (UBXTProcessor* Processor = GetTLTProcessorByTLTClass(InTask->GetClass()))

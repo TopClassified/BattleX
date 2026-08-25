@@ -5,7 +5,7 @@
 #include "UObject/NoExportTypes.h"
 
 #include "GameplayTagContainer.h"
-#include "InstancedStruct.h"
+#include "StructUtils/InstancedStruct.h"
 
 #include "BXEnums.h"
 #include "BXTEnums.h"

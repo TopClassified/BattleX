@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "GameplayTagContainer.h"
-#include "InstancedStruct.h"
+#include "StructUtils/InstancedStruct.h"
 
 #include "BXBuffEnums.h"
 #include "BXTLStructs.h"

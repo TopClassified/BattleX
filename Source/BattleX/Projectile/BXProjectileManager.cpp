@@ -21,6 +21,8 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Async/ParallelFor.h"
 #include "NiagaraFunctionLibrary.h"
+// UE5.8: 数组写入函数(SetNiagaraArrayVector/Float)移至 UNiagaraDataInterfaceArrayFunctionLibrary
+#include "NiagaraDataInterfaceArrayFunctionLibrary.h"
 #include "NiagaraComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/AudioComponent.h"
@@ -742,7 +744,8 @@ void UBXProjectileManager::CollectProjectileAssets()
 
 		if (!Asset->ProjectileType.IsValid())
 		{
-			UE_LOG(BXMGR_Projectile, Warning, TEXT("CollectProjectileAssets: 资产%s的ProjectileType未配置"), *AssetData.GetName().ToString());
+			// UE5.8: FAssetData::GetName 已移除,改用 AssetName 成员
+			UE_LOG(BXMGR_Projectile, Warning, TEXT("CollectProjectileAssets: 资产%s的ProjectileType未配置"), *AssetData.AssetName.ToString());
 			continue;
 		}
 
@@ -2141,7 +2144,7 @@ UBXProjectileComponent* UBXProjectileManager::GetOrCreateSnapshotChannel()
 	}
 
 	UBXProjectileComponent* Channel = NewObject<UBXProjectileComponent>(Host, NAME_None, RF_Transient);
-	Channel->SetIsReplicatedByDefault(true);
+	// UE5.8: SetIsReplicatedByDefault 已改为 protected;组件构造函数内已启用复制,此处冗余调用移除
 	Host->AddInstanceComponent(Channel);
 	Channel->RegisterComponent();
 	SnapshotChannel = Channel;
@@ -2286,7 +2289,7 @@ UBXProjectileComponent* UBXProjectileManager::GetOrCreateCarrier(AActor* InOwner
 	}
 
 	UBXProjectileComponent* NewCarrier = NewObject<UBXProjectileComponent>(InOwner, NAME_None, RF_Transient);
-	NewCarrier->SetIsReplicatedByDefault(true);
+	// UE5.8: SetIsReplicatedByDefault 已改为 protected;组件构造函数内已启用复制,此处冗余调用移除
 	InOwner->AddInstanceComponent(NewCarrier);
 	NewCarrier->RegisterComponent();
 
@@ -2371,9 +2374,10 @@ void UBXProjectileManager::CommitRender()
 				Bucket.ScratchAges.Add(Data.ElapsedTime);
 			}
 
-			UNiagaraFunctionLibrary::SetNiagaraArrayVector(FlightComp, TEXT("ProjectilePositions"), Bucket.ScratchPositions);
-			UNiagaraFunctionLibrary::SetNiagaraArrayVector(FlightComp, TEXT("ProjectileVelocities"), Bucket.ScratchVelocities);
-			UNiagaraFunctionLibrary::SetNiagaraArrayFloat(FlightComp, TEXT("ProjectileAges"), Bucket.ScratchAges);
+			// UE5.8: 数组写入函数移至 UNiagaraDataInterfaceArrayFunctionLibrary
+			UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(FlightComp, TEXT("ProjectilePositions"), Bucket.ScratchPositions);
+			UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(FlightComp, TEXT("ProjectileVelocities"), Bucket.ScratchVelocities);
+			UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayFloat(FlightComp, TEXT("ProjectileAges"), Bucket.ScratchAges);
 		}
 
 		// 飞行音效聚合:组件置于桶内子弹质心,音量随数量缩放
@@ -2441,7 +2445,8 @@ void UBXProjectileManager::InternalEnsureFlightPresentation(FBXProjectileBucket&
 	UNiagaraComponent* FlightComp = NewObject<UNiagaraComponent>(Host);
 	FlightComp->SetAsset(FlightSystem);
 	FlightComp->SetAbsolute(true, true, true);
-	FlightComp->bAutoDestroy = false;
+	// UE5.8: bAutoDestroy 已私有化,改用 SetAutoDestroy
+	FlightComp->SetAutoDestroy(false);
 	FlightComp->RegisterComponent();
 	InOutBucket.FlightComponent = FlightComp;
 

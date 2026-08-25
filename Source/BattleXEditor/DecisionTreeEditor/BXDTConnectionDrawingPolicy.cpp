@@ -94,7 +94,8 @@ void FBXDTConnectionDrawingPolicy::Internal_DrawLineWithArrow
 	const FVector2D EndPoint = EndAnchorPoint + DirectionBias - LengthBias;
 
 	// Draw a line/spline
-	DrawConnection(WireLayerID, StartPoint, EndPoint, Params);
+	// UE5.8: DrawConnection 的 FVector2D 重载已废弃,改用 FVector2f 版本
+	DrawConnection(WireLayerID, FVector2f(StartPoint), FVector2f(EndPoint), Params);
 
 	// Draw the arrow
 	const FVector2D ArrowDrawPos = EndPoint - ArrowRadius;

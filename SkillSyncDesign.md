@@ -516,7 +516,9 @@ Multicast RPC 是瞬时消息，只对"当时已在监听"的连接生效。两�
         │
         ▼
 【快照通道】(新复制体创建时初始化)
-  服务器: 组件PreReplication(每帧、收集前)从SkillRTDatas重建快照数组   ← 解决运行数据新鲜度
+  服务器: 组件PreReplication检测远程连接数增加(新客户端连入)时从SkillRTDatas重建快照数组
+        │   ← 常规帧零投影开销(避免每帧全量深拷贝DynamicDatas);时序:连接加入ClientConnections后
+        │     才在后续ServerReplicateActors打开通道,PreReplication在同一次flush序列化前运行,当帧重建即被消费
         │ 属性复制(COND_InitialOnly:仅新连接初始bunch发送,已有连接零属性流量)
         ▼
   客户端: OnRep(带旧值)差分 → 新增条目反投影重建 → 续跑
@@ -582,13 +584,15 @@ TArray<FBXBuffReplicatedState> RunningBuffStates;
 
 ### 11.4 服务器维护与显式中断广播
 
-**技能快照（PreReplication 每帧重建，无手动维护点）**：
+**技能快照（PreReplication 连接计数触发重建，无手动维护点）**：
 
 ```cpp
 void UBXSkillComponent::PreReplication(IRepChangedPropertyTracker&)
 {
-    // 服务器端、属性收集前:遍历OwnedSkillIDs,从SkillRTDatas投影最新运行数据重建数组
-    // bEarlyFinish的实例跳过(已结束);COND_InitialOnly抑制已有连接流量,仅新连接初始同步发送
+    // 仅当远程连接数增加(新客户端连入)时调用RebuildRunningSkillStates重建快照数组
+    // 常规帧零投影开销:COND_InitialOnly对已有连接零流量,每帧深拷贝DynamicDatas无意义
+    // 断线回落仅同步计数不重建(InitialOnly已发收不回);回落保证"断N再连N"后重新触发
+    // 初值-1保证组件首个复制周期(角色中途spawn等)必建一次基线快照
 }
 ```
 
@@ -637,6 +641,8 @@ OnRep_RunningBuffStates(旧值)
 | Stop RPC 先于快照 | 重建出已死技能→下次属性复制消失条目兜底停止（本地存在且非 Predicting） |
 | 预测技能出现在服务器快照 | 预测端本地已有同 ID 实例→重建跳过 |
 | 重建时资产未加载 | LoadSynchronous 阻塞一次(冷启动)；后续可改异步+延迟重建 |
+| 新客户端连入(快照重建触发) | PreReplication检测ClientConnections计数增加→当帧重建(序列化前运行无窗口期);断线回落不重建(已发收不回) |
+| 断线重连 | 断开:计数回落仅同步记录值;重连:计数超记录值→正常触发重建 |
 | BUFF 层变化同步 | 层级变化仅经 RunningBuffStates 无条件复制同步（原 MulticastBuffLayerChanged RPC 已删除，与快照通道冗余），属性复制频率低于 RPC，瞬时层级变化感知略慢 |
 
 ### 11.8 验证用例与观测日志

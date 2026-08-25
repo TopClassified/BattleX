@@ -6,6 +6,7 @@
 #include "BXNetStructs.h"
 
 #include "Net/UnrealNetwork.h"
+#include "Engine/NetDriver.h"
 
 
 
@@ -81,12 +82,13 @@ int64 UBXProjectileComponent::FireProjectile(FGameplayTag InProjectileType, FVec
 
 
 #pragma region RPC Fire
-bool UBXProjectileComponent::ServerFireProjectile_Validate(const FBXProjectileSyncHeader& InHeader, const FBXProjectileFireContext& InContext)
+// UE5.8: _Validate/_Implementation 定义签名须与UHT生成的按值声明一致(原const&定义与生成声明不匹配)
+bool UBXProjectileComponent::ServerFireProjectile_Validate(FBXProjectileSyncHeader InHeader, FBXProjectileFireContext InContext)
 {
 	return InHeader.ProjectileID != 0 && InHeader.ProjectileType.IsValid();
 }
 
-void UBXProjectileComponent::ServerFireProjectile_Implementation(const FBXProjectileSyncHeader& InHeader, const FBXProjectileFireContext& InContext)
+void UBXProjectileComponent::ServerFireProjectile_Implementation(FBXProjectileSyncHeader InHeader, FBXProjectileFireContext InContext)
 {
 	UBXProjectileManager* ProjectileMgr = UBXProjectileManager::Get(this);
 	if (!ProjectileMgr)
@@ -107,12 +109,13 @@ void UBXProjectileComponent::ServerFireProjectile_Implementation(const FBXProjec
 
 
 #pragma region RPC HitReport
-bool UBXProjectileComponent::ServerReportProjectileHit_Validate(const FBXProjectileHitPayload& InPayload)
+// UE5.8: _Validate 定义签名须与UHT生成的按值声明一致(原const&定义与生成声明不匹配)
+bool UBXProjectileComponent::ServerReportProjectileHit_Validate(FBXProjectileHitPayload InPayload)
 {
 	return InPayload.ProjectileID != 0;
 }
 
-void UBXProjectileComponent::ServerReportProjectileHit_Implementation(const FBXProjectileHitPayload& InPayload)
+void UBXProjectileComponent::ServerReportProjectileHit_Implementation(FBXProjectileHitPayload InPayload)
 {
 	UBXProjectileManager* ProjectileMgr = UBXProjectileManager::Get(this);
 	if (ProjectileMgr)
@@ -140,7 +143,7 @@ void UBXProjectileComponent::ClientDenyProjectile_Implementation(int64 InProject
 
 
 #pragma region RPC Multicast
-void UBXProjectileComponent::MulticastFireProjectile_Implementation(const FBXProjectileSyncHeader& InHeader, const FBXProjectileFireContext& InContext)
+void UBXProjectileComponent::MulticastFireProjectile_Implementation(FBXProjectileSyncHeader InHeader, FBXProjectileFireContext InContext)
 {
 	UBXProjectileManager* ProjectileMgr = UBXProjectileManager::Get(this);
 	if (!ProjectileMgr)
@@ -158,7 +161,7 @@ void UBXProjectileComponent::MulticastFireProjectile_Implementation(const FBXPro
 	ProjectileMgr->StartRemoteProjectile(InHeader, InContext, this);
 }
 
-void UBXProjectileComponent::MulticastProjectileHit_Implementation(const FBXProjectileHitPayload& InPayload, bool bTerminal)
+void UBXProjectileComponent::MulticastProjectileHit_Implementation(FBXProjectileHitPayload InPayload, bool bTerminal)
 {
 	UBXProjectileManager* ProjectileMgr = UBXProjectileManager::Get(this);
 	if (ProjectileMgr)
@@ -176,7 +179,7 @@ void UBXProjectileComponent::MulticastStopProjectile_Implementation(int64 InProj
 	}
 }
 
-void UBXProjectileComponent::MulticastProjectileSnapshots_Implementation(const FBXProjectileSnapshotBatch& InBatch)
+void UBXProjectileComponent::MulticastProjectileSnapshots_Implementation(FBXProjectileSnapshotBatch InBatch)
 {
 	UBXProjectileManager* ProjectileMgr = UBXProjectileManager::Get(this);
 	if (ProjectileMgr)
@@ -260,14 +263,25 @@ void UBXProjectileComponent::PreReplication(IRepChangedPropertyTracker& ChangedP
 		return;
 	}
 
-	// InitialOnly仅新连接消费:脏标记即时重建(发射/回收结构变更),低频定时兜底数值新鲜度(替代每帧重建)
-	const double Now = FPlatformTime::Seconds();
-	if (!bReplicatedStatesDirty && Now - LastStatesRefreshSeconds < 0.5)
+	// InitialOnly仅新连接消费:重建触发条件为"脏标记(结构变更)或远程连接数增加(新客户端连入)"
+	// 常规帧零重建开销;时序:连接加入ClientConnections后才在后续ServerReplicateActors打开通道,
+	// PreReplication在同一次flush序列化前运行,当帧重建即被新连接消费,无窗口期
+	UNetDriver* NetDriver = GetWorld() ? GetWorld()->GetNetDriver() : nullptr;
+	if (!NetDriver)
+	{
+		return;
+	}
+
+	const int32 ConnectionCount = NetDriver->ClientConnections.Num();
+	const bool bNewConnection = ConnectionCount > LastProjectedConnectionCount;
+	// 断线回落仅同步计数不重建(InitialOnly已发收不回);不回落则"断N+连N"净计数不变会漏触发
+	LastProjectedConnectionCount = ConnectionCount;
+
+	if (!bReplicatedStatesDirty && !bNewConnection)
 	{
 		return;
 	}
 	bReplicatedStatesDirty = false;
-	LastStatesRefreshSeconds = Now;
 
 	UBXProjectileManager* ProjectileMgr = UBXProjectileManager::Get(this);
 	if (!ProjectileMgr)

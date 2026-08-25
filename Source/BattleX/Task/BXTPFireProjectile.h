@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 
 #include "BXTProcessor.h"
+// UE5.8: 传递包含链不再带入子弹枚举,显式包含
+#include "Projectile/BXProjectileStructs.h"
 
 #include "BXTPFireProjectile.generated.h"
 

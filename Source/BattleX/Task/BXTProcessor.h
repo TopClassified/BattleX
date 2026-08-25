@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
 
-#include "StructUtils/Public/StructView.h"
+#include "StructUtils/StructView.h"
 
 #include "BXEnums.h"
 #include "BXTask.h"

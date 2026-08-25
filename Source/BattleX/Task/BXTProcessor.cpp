@@ -133,16 +133,17 @@ bool UBXTProcessor::IsTaskCompleted(const FBXTLTaskRTData& InTaskData, EBXTLFini
 	}
 
 	OutReason = EBXTLFinishReason::FR_EndOfLife;
-	switch (InTaskData.Task->LifeType)
+	// 读配置快照(见FBXTLTaskRTData快照区说明),避免热路径解引用Task本体
+	switch (InTaskData.LifeType)
 	{
 	case EBXTLifeType::L_Instant:
 		return true;
 	case EBXTLifeType::L_Duration:
-		return InTaskData.RunTime >= InTaskData.Task->Duration;
+		return InTaskData.RunTime >= InTaskData.Duration;
 	case EBXTLifeType::L_Timeline:
 		return false;
 	case EBXTLifeType::L_DurationTimeline:
-		return InTaskData.RunTime >= InTaskData.Task->Duration;
+		return InTaskData.RunTime >= InTaskData.Duration;
 	default:
 		return true;
 	}
@@ -270,7 +271,8 @@ void UBXTProcessor::GetTargetComponentList(const FBXTLRunTimeData& InRTData, con
 	
 	for (int32 i = 0; i < (int32)EBXTTargetType::T_TMax; ++i)
 	{
-		if ((InTaskData.Task->TargetTypes & (1 << i)) <= 0)
+		// 读取任务配置快照,避免解引用配置UObject
+		if ((InTaskData.TargetTypes & (1 << i)) <= 0)
 		{
 			continue;
 		}

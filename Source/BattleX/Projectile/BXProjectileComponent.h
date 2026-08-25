@@ -112,8 +112,8 @@ protected:
 	// 复制快照脏标记(发射/回收结构变更置位,PreReplication即时重建)
 	bool bReplicatedStatesDirty = false;
 
-	// 复制快照上次重建时间(FPlatformTime秒,低频兜底刷新数值新鲜度)
-	double LastStatesRefreshSeconds = 0.0;
+	// 上次投影时的远程连接数(-1保证组件首个复制周期必建一次基线快照;连接数增加才触发重建)
+	int32 LastProjectedConnectionCount = -1;
 
 #pragma endregion Data
 };

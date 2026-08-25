@@ -120,6 +120,9 @@ protected:
 	UFUNCTION()
 	void OnRep_RunningSkillStates(TArray<FBXSkillReplicatedState> InOldStates);
 
+	// 从SkillRTDatas重建RunningSkillStates快照(新客户端连入时调用)
+	void RebuildRunningSkillStates();
+
 public:
 	// 根据复制状态重建进行中的技能(新复制到本地的对象初始化用)
 	void RebuildSkillFromState(const FBXSkillReplicatedState& InState);
@@ -158,6 +161,9 @@ protected:
 	// 已有连接的技能动态由显式RPC维护,详见BXSkillReplicated.h文件头注释)
 	UPROPERTY(ReplicatedUsing=OnRep_RunningSkillStates)
 	TArray<FBXSkillReplicatedState> RunningSkillStates;
+
+	// 上次投影时的远程连接数(-1保证组件首个复制周期必建一次基线快照;连接数增加才重建快照)
+	int32 LastProjectedConnectionCount = -1;
 
 #pragma endregion Data
 

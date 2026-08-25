@@ -18,12 +18,14 @@ UBXDTAssetThumbnailRenderers::UBXDTAssetThumbnailRenderers(const FObjectInitiali
 	NameFont = NewObject<UFont>(GetTransientPackage(), FName(this->GetFullName() + TEXT("Name")), RF_Transient);
 	NameFont->FontCacheType = EFontCacheType::Runtime;
 	NameFont->LegacyFontSize = 27.0f;
-	NameFont->CompositeFont = *FCoreStyle::GetDefaultFont();
+	// UE5.8: CompositeFont 公有访问已废弃,改用 GetMutableInternalCompositeFont()
+	NameFont->GetMutableInternalCompositeFont() = *FCoreStyle::GetDefaultFont();
 
 	TipFont = NewObject<UFont>(GetTransientPackage(), FName(this->GetFullName() + TEXT("Tips")), RF_Transient);
 	TipFont->FontCacheType = EFontCacheType::Runtime;
 	TipFont->LegacyFontSize = 20.0f;
-	TipFont->CompositeFont = *FCoreStyle::GetDefaultFont();
+	// UE5.8: CompositeFont 公有访问已废弃,改用 GetMutableInternalCompositeFont()
+	TipFont->GetMutableInternalCompositeFont() = *FCoreStyle::GetDefaultFont();
 }
 
 void UBXDTAssetThumbnailRenderers::Draw(UObject* Object, int32 X, int32 Y, uint32 Width, uint32 Height, FRenderTarget* RenderTarget, FCanvas* Canvas, bool bAdditionalViewFamily)

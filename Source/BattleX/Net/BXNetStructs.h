@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
 #include "GameplayTagContainer.h"
-#include "StructUtils/Public/InstancedStruct.h"
+#include "StructUtils/InstancedStruct.h"
 
 #include "BXStructs.h"
 #include "BXNetEnums.h"

@@ -377,7 +377,7 @@ void FBXTLEditor::InitializeManager()
 			{
 				continue;
 			}
-		
+
 			UBXManager* Manager = NewObject<UBXManager>(PreviewScene->GetWorld(), ClassType);
 			if (!IsValid(Manager))
 			{

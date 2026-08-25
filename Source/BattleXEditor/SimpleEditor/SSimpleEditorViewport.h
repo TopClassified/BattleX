@@ -40,7 +40,8 @@ public:
 	virtual TSharedRef<FEditorViewportClient> MakeEditorViewportClient() override;
 
 	// 创建窗口工具栏
-	virtual TSharedPtr<SWidget> MakeViewportToolbar() override;
+	// UE5.8: SEditorViewport::MakeViewportToolbar 已标记 final 废弃,改用 BuildViewportToolbar(工具栏位于窗口上方)
+	virtual TSharedPtr<SWidget> BuildViewportToolbar() override;
 
 	// 绑定命令
 	virtual void BindCommands() override;

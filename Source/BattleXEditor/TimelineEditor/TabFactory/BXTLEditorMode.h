@@ -15,9 +15,10 @@ public:
 
 	virtual void RegisterTabFactories(TSharedPtr<FTabManager> InTabManager) final override;
 
-	virtual void AddTabFactory(FCreateWorkflowTabFactory FactoryCreator) final override;
+	// UE5.8: FApplicationMode::AddTabFactory/RemoveTabFactory 已改为非虚函数,此处为普通成员(操作本Mode的TabFactories,隐藏基类版本)
+	void AddTabFactory(FCreateWorkflowTabFactory FactoryCreator);
 
-	virtual void RemoveTabFactory(FName TabFactoryID) final override;
+	void RemoveTabFactory(FName TabFactoryID);
 
 	virtual void CreateModeTabs(const TSharedRef<class FBXTLEditor> InEditor, FWorkflowAllowedTabSet& OutTabFactories);
 

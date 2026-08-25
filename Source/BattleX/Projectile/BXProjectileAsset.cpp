@@ -38,7 +38,8 @@ void UBXProjectileAsset::BuildBakedConfig(FBXProjectileBakedConfig& OutBaked, in
 		for (int32 Index = 0; Index < SampleCount; ++Index)
 		{
 			const float Alpha = static_cast<float>(Index) / static_cast<float>(SampleCount - 1);
-			OutCurve.Samples.Add(InSourceCurve.GetFloatValue(Alpha * OutBaked.MaxLifetime));
+			// UE5.8: FRuntimeFloatCurve::GetFloatValue 已移除,改用 GetRichCurveConst()->Eval
+			OutCurve.Samples.Add(InSourceCurve.GetRichCurveConst()->Eval(Alpha * OutBaked.MaxLifetime));
 		}
 	};
 

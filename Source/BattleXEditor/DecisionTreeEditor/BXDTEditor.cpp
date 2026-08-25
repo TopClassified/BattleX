@@ -704,7 +704,10 @@ void FBXDTEditor::PasteNodes()
 	TSharedPtr<SGraphEditor> CurrentGraphEditor = GetCurrentGraphEditor();
 
 	if (CurrentGraphEditor.IsValid())
-		PasteNodesHere(CurrentGraphEditor->GetPasteLocation());
+	{
+		// UE5.8: GetPasteLocation 的 FVector2D 版本已废弃,改用 GetPasteLocation2f
+		PasteNodesHere(FVector2D(CurrentGraphEditor->GetPasteLocation2f()));
+	}
 }
 
 void FBXDTEditor::PasteNodesHere(const FVector2D& Location)

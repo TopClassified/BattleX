@@ -176,7 +176,7 @@ void FBXTLEditorMode::RegisterTabFactories(TSharedPtr<FTabManager> InTabManager)
 	HostingApp->RegisterTabSpawners(InTabManager.ToSharedRef());
 	HostingApp->PushTabFactories(TabFactories);
 
-	FApplicationMode::RegisterTabFactories(InTabManager);
+	// UE5.8: 基类 RegisterTabFactories 已改为 private(旧版实现为空,此处移除显式基类调用保持原行为)
 }
 
 void FBXTLEditorMode::AddTabFactory(FCreateWorkflowTabFactory FactoryCreator)

@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
-#include "StructUtils/Public/InstancedStruct.h"
+#include "StructUtils/InstancedStruct.h"
 
 #include "Task/BXTask.h"
 #include "Projectile/BXProjectileStructs.h"

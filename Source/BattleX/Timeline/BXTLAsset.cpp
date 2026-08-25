@@ -2,6 +2,8 @@
 
 #include "UObject/ObjectSaveContext.h"
 
+#include "BXSettings.h"
+
 
 
 #pragma region Important
@@ -52,6 +54,85 @@ void UBXTLAsset::PreSave(FObjectPreSaveContext SaveContext)
 	ID = FCString::Atoi(*GetName());
 
 	RefreshSections();
+
+	BuildLayoutCache();
+}
+
+void UBXTLAsset::BuildLayoutCache()
+{
+	// 统计容量预估与类型直方图(复用运行时同一配置源TaskCustomDataMap,保证类型一致)
+
+	CachedStructUsages.Reset();
+	CachedContextDataEstimate = 0;
+	CachedSectionTaskEstimates.Reset();
+	CachedSectionTaskEstimates.AddDefaulted(Sections.Num());
+
+	// 逐Section统计容量预估
+	for (int32 i = 0; i < Sections.Num(); ++i)
+	{
+		const FBXTLSection& Section = Sections[i];
+		int32& TaskEstimate = CachedSectionTaskEstimates[i];
+		for (UBXTask* Task : Section.TaskList)
+		{
+			if (!Task)
+			{
+				continue;
+			}
+
+			// 每条输出双键写入,故×2
+			CachedContextDataEstimate += Task->OutputDatas.Num() * 2;
+
+			// Instant任务不驻留RunningTasks,不计入
+			if (Task->LifeType != EBXTLifeType::L_Instant)
+			{
+				++TaskEstimate;
+			}
+		}
+	}
+
+	// 统计自定义数据类型直方图(条目级LoadSynchronous,开销可忽略)
+	if (const UBXSettings* Settings = GetDefault<UBXSettings>())
+	{
+		for (const TPair<TSoftClassPtr<UObject>, TSoftObjectPtr<UScriptStruct>>& Pair : Settings->TaskCustomDataMap)
+		{
+			UClass* TaskClass = Pair.Key.LoadSynchronous();
+			UScriptStruct* StructType = Pair.Value.LoadSynchronous();
+			if (!TaskClass || !StructType)
+			{
+				continue;
+			}
+
+			// 统计该TaskClass在全部Section的实例数
+			int32 Count = 0;
+			for (const FBXTLSection& Section : Sections)
+			{
+				for (UBXTask* Task : Section.TaskList)
+				{
+					if (Task && Task->IsA(TaskClass))
+					{
+						++Count;
+					}
+				}
+			}
+
+			if (Count > 0)
+			{
+				// 同一结构体被多个TaskClass映射时合并计数,保证直方图条目按类型唯一
+				FBXTLStructUsageEntry* ExistEntry = CachedStructUsages.FindByPredicate(
+					[&StructType](const FBXTLStructUsageEntry& InEntry) { return InEntry.Type == StructType; });
+				if (ExistEntry)
+				{
+					ExistEntry->Count += Count;
+				}
+				else
+				{
+					FBXTLStructUsageEntry& NewEntry = CachedStructUsages.AddDefaulted_GetRef();
+					NewEntry.Type = StructType;
+					NewEntry.Count = Count;
+				}
+			}
+		}
+	}
 }
 
 void UBXTLAsset::RefreshDataBeforePreview()

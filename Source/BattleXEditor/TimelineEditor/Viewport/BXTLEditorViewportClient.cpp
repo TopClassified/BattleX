@@ -40,7 +40,8 @@ FBXTLEditorViewportClient::FBXTLEditorViewportClient
 
 	DrawHelper.bDrawGrid = true;
 	DrawHelper.AxesLineThickness = 0.0f;
-	DrawHelper.PerspectiveGridSize = HALF_WORLD_MAX1;
+	// UE5.8: PerspectiveGridSize 为 float,HALF_WORLD_MAX1 为 double,显式截断消除精度截断警告
+	DrawHelper.PerspectiveGridSize = static_cast<float>(HALF_WORLD_MAX1);
 
 	EngineShowFlags.Game = 0;
 	EngineShowFlags.ScreenSpaceReflections = 1;

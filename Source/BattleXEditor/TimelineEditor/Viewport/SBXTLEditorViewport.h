@@ -20,7 +20,8 @@ public:
 
 	virtual TSharedRef<FEditorViewportClient> MakeEditorViewportClient() override;
 
-	virtual TSharedPtr<SWidget> MakeViewportToolbar() override;
+	// UE5.8: MakeViewportToolbar 已废弃(final),改为经 PopulateViewportOverlays 在窗口内部顶部插入工具栏,保持原有布局
+	virtual void PopulateViewportOverlays(TSharedRef<SOverlay> Overlay) override;
 
 protected:
 	TWeakPtr<class FBXTLEditor> CachedEditor = nullptr;

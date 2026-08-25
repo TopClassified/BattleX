@@ -250,7 +250,7 @@ FCursorReply STrackArea::OnCursorQuery(const FGeometry& MyGeometry, const FPoint
 		TSharedPtr<FTimeSliderController> TimeSliderController = WeakTimeSliderController.Pin();
 		if(TimeSliderController.IsValid())
 		{
-			return TimeSliderController->OnCursorQuery(SharedThis(this), MyGeometry, CursorEvent);
+			return TimeSliderController->OnCursorQuery(*this, MyGeometry, CursorEvent);
 		}
 	}
 

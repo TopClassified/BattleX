@@ -1019,7 +1019,7 @@ BUFF 的客户端请求/服务器校验/广播/快照重建机制见 [4.14 Skill
 **关键设计**：
 - **服务器校验编排**：`HandleServerPlaySkill`（组件内部方法）串联完整校验链——注册表解析（`UBXTLManager::GetSkillAssetByID`）→ SkillID 校验 → 冷却校验（组件私有状态）→ `ServerValidateRelease`（Manager，时间戳+释放条件）→ 播放 + 回传预测结果 + 加速弥补 + 广播
 - **假冷却**：自主端预测启动时本地立即记录冷却防连点（`PendingCooldownAssetIDs` 标记），服务器确认时转正为权威冷却，否认且无服务器冷却时移除允许重试
-- **复制快照**：`RunningSkillStates` 标记 `COND_InitialOnly`，配合 `PreReplication` 每帧从 `SkillRTDatas` 重建快照——新连接初始同步拿到"打开通道时刻"的最新运行数据投影，已有连接零属性流量（技能动态完全由 Reliable RPC 维护）
+- **复制快照**：`RunningSkillStates` 标记 `COND_InitialOnly`，`PreReplication` 检测远程连接数增加（新客户端连入）时才从 `SkillRTDatas` 重建快照（`RebuildRunningSkillStates`）——新连接初始同步拿到"打开通道时刻"的最新运行数据投影，已有连接零属性流量（技能动态完全由 Reliable RPC 维护）。常规帧仅一次连接计数比较、零投影开销；连接加入 `ClientConnections` 后才会在后续 `ServerReplicateActors` 打开通道，`PreReplication` 在同一次 flush 序列化前运行，当帧重建即被新连接消费（无窗口期）；断线回落仅同步计数不重建（InitialOnly 已发收不回），回落保证"断 N 再连 N"后重新触发；`LastProjectedConnectionCount` 初值 -1 保证组件首个复制周期（角色中途 spawn）必建基线快照
 - **OnRep 差分**：新增条目 `RebuildSkillFromState` 重建续跑（已存在 ID 幂等跳过）；消失条目 `StopSkillIfNotPredicting` 兜底停止（仅处理 RPC 与属性乱序竞态，预测中实例不因快照消失而停止）
 - **EndPlay**：停止 `OwnedSkillIDs` 中所有技能（含客户端发起、服务器登记的技能）
 
@@ -1146,7 +1146,7 @@ Tick(每帧)
 | `MulticastStopProjectile(ID, Reason)` | NetMulticast, Reliable | 显式中断广播（自然结束不广播，双端自行模拟一致） |
 | `MulticastProjectileSnapshots(Batch)` | NetMulticast, Unreliable | 长寿命子弹定时位置快照（丢包下周期补），客户端弹簧矫正 |
 
-**ProjectileID**：`GetUniqueID` + 高 3 位 Initiator（与 SkillID 同方案）。**快照弹簧矫正**：服务器每 `ProjectileSnapshotInterval`（0.5s）收集存活超 `ProjectileSnapshotMinAge`（2s）的子弹快照经 GameState 上的常驻通道组播；客户端按服务器时间差外推后设置 `SpringTarget`，`UpdateSprings` 每帧临界阻尼步进（ω=2π×`ProjectileSpringFrequency`，无超调），模拟锚点不动、渲染/检测/线段三处叠加偏移。**Late Join**：`RunningProjectileStates`（COND_InitialOnly）+ PreReplication 每帧重建 + OnRep 差分 `RebuildProjectileFromState` 确定性重放续跑，重放偏差记入弹簧偏移。
+**ProjectileID**：`GetUniqueID` + 高 3 位 Initiator（与 SkillID 同方案）。**快照弹簧矫正**：服务器每 `ProjectileSnapshotInterval`（0.5s）收集存活超 `ProjectileSnapshotMinAge`（2s）的子弹快照经 GameState 上的常驻通道组播；客户端按服务器时间差外推后设置 `SpringTarget`，`UpdateSprings` 每帧临界阻尼步进（ω=2π×`ProjectileSpringFrequency`，无超调），模拟锚点不动、渲染/检测/线段三处叠加偏移。**Late Join**：`RunningProjectileStates`（COND_InitialOnly）+ PreReplication 按需重建（脏标记/新客户端连入触发，与技能侧同方案）+ OnRep 差分 `RebuildProjectileFromState` 确定性重放续跑，重放偏差记入弹簧偏移。
 
 **事件**：`BXEvent_Projectile_Fired`（发射）/ `BXEvent_Projectile_Hit`（命中，载荷含 HitBoxTag）/ `BXEvent_Projectile_Finished`（结束，含 FinishReason）/ `BXEvent_Projectile_Denied`（预测否认）。
 

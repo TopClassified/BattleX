@@ -799,7 +799,7 @@ FReply FTimeSliderController::OnMouseWheel(SWidget& WidgetOwner, const FGeometry
 	return FReply::Unhandled();
 }
 
-FCursorReply FTimeSliderController::OnCursorQuery(TSharedRef<const SWidget> WidgetOwner, const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const
+FCursorReply FTimeSliderController::OnCursorQuery(const SWidget& WidgetOwner, const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const
 {
 	FScrubRangeToScreen RangeToScreen(TimeSliderArgs.ViewRange.Get(), MyGeometry.Size);
 

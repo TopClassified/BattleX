@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "InstancedStruct.h"
+#include "StructUtils/InstancedStruct.h"
 
 #include "BXGameplayTags.h"
 #include "BXStateMachine.h"

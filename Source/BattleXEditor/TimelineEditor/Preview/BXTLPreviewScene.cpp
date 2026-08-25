@@ -137,9 +137,12 @@ void FBXTLPreviewScene::InitPreviewWorld()
 		PlayerController->FinishSpawning(FTransform::Identity);
 		PlayerController->AddToRoot();
 
-		// 初始化镜头
-		PlayerController->PlayerCameraManager->DispatchBeginPlay();
-		PlayerController->PlayerCameraManager->bDebugClientSideCamera = true;
+		// 初始化镜头(相机管理器可能尚未就绪,判空防止空指针解引用)
+		if (PlayerController->PlayerCameraManager)
+		{
+			PlayerController->PlayerCameraManager->DispatchBeginPlay();
+			PlayerController->PlayerCameraManager->bDebugClientSideCamera = true;
+		}
 	}
 
 	// 自动重置世界

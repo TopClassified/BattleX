@@ -6,6 +6,8 @@
 
 #include "BXManager.h"
 #include "BXProjectileStructs.h"
+// UE5.8: TUniquePtr<FBXProjectileComputeWorker> 成员需要完整类型(UHT生成的构造函数会实例化析构,不完整类型触发C4150)
+#include "BXProjectileComputeWorker.h"
 
 #include "BXProjectileManager.generated.h"
 

@@ -102,6 +102,24 @@ public:
 
 
 
+// 结构体用量直方图条目(保存期统计)
+USTRUCT()
+struct FBXTLStructUsageEntry
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	// 结构体类型
+	UPROPERTY(VisibleDefaultsOnly, Category = "LayoutCache")
+	TObjectPtr<UScriptStruct> Type = nullptr;
+
+	// 资产内使用计数
+	UPROPERTY(VisibleDefaultsOnly, Category = "LayoutCache")
+	int32 Count = 0;
+};
+
+
+
 UCLASS(BlueprintType, Blueprintable)
 class BATTLEX_API UBXTLAsset : public UPrimaryDataAsset
 {
@@ -145,6 +163,31 @@ protected:
 	TArray<FSoftObjectPath> AllResources;
 
 #pragma endregion Resource
+
+
+
+#pragma region LayoutCache
+public:
+	// ===== 保存期布局缓存区(PreSave统计,运行时Reserve依据;纯性能提示,缺失或偏小不影响正确性) =====
+
+	// 自定义结构体用量直方图(内联命中率分析与后续池化规划依据)
+	UPROPERTY(VisibleDefaultsOnly, Category = "LayoutCache")
+	TArray<FBXTLStructUsageEntry> CachedStructUsages;
+
+	// 上下文数据条目预估(Σ每任务OutputDatas×2,双键写入;DynamicDatas的Reserve入参)
+	UPROPERTY(VisibleDefaultsOnly, Category = "LayoutCache")
+	int32 CachedContextDataEstimate = 0;
+
+	// 各Section驻留任务数预估(非Instant计数,下标对应Sections;RunningTasks的Reserve入参)
+	UPROPERTY(VisibleDefaultsOnly, Category = "LayoutCache")
+	TArray<int32> CachedSectionTaskEstimates;
+
+#if WITH_EDITOR
+protected:
+	// 保存期统计布局缓存(PreSave调用)
+	void BuildLayoutCache();
+#endif
+#pragma endregion LayoutCache
 
 
 

@@ -87,7 +87,6 @@ public class BattleXEditor : ModuleRules
                 "SequencerWidgets",
 
                 "GameplayTags",
-                "StructUtils",
 
                 "BattleX",
 			}

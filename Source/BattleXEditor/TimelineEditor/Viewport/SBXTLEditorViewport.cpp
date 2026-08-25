@@ -69,15 +69,22 @@ TSharedRef<FEditorViewportClient> SBXTLEditorViewport::MakeEditorViewportClient(
 	return NewViewportClient.ToSharedRef();
 }
 
-TSharedPtr<SWidget> SBXTLEditorViewport::MakeViewportToolbar()
+void SBXTLEditorViewport::PopulateViewportOverlays(TSharedRef<SOverlay> Overlay)
 {
-	return SNew(SVerticalBox)
-	.Visibility(EVisibility::SelfHitTestInvisible)
-	+ SVerticalBox::Slot()
-	.AutoHeight()
+	SEditorViewport::PopulateViewportOverlays(Overlay);
+
+	// 工具栏悬浮于窗口内部顶部(与旧版 MakeViewportToolbar 布局一致)
+	Overlay->AddSlot()
 	.VAlign(VAlign_Top)
 	[
-		SNew(SBXTLEditorViewportToolBar, CachedEditor.Pin(), SharedThis(this)).Cursor(EMouseCursor::Default)
+		SNew(SVerticalBox)
+		.Visibility(EVisibility::SelfHitTestInvisible)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.VAlign(VAlign_Top)
+		[
+			SNew(SBXTLEditorViewportToolBar, CachedEditor.Pin(), SharedThis(this)).Cursor(EMouseCursor::Default)
+		]
 	];
 }
 

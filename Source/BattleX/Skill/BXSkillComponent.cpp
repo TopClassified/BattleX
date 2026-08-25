@@ -10,6 +10,7 @@
 #include "BXTStructs.h"
 #include "BXNetStructs.h"
 #include "Net/UnrealNetwork.h"
+#include "Engine/NetDriver.h"
 
 
 
@@ -30,13 +31,34 @@ void UBXSkillComponent::PreReplication(IRepChangedPropertyTracker& ChangedProper
 {
 	Super::PreReplication(ChangedPropertyTracker);
 
-	// 服务器端、属性收集前:从SkillRTDatas重建快照数组(解决运行数据新鲜度问题)
+	// 服务器端、属性收集前每帧执行
 	AActor* Owner = GetOwner();
 	if (!Owner || Owner->GetLocalRole() != ENetRole::ROLE_Authority)
 	{
 		return;
 	}
 
+	// RunningSkillStates为COND_InitialOnly:仅新连接初始同步时发送,已有连接零流量
+	// 故仅当远程连接数增加(新客户端连入)时才重建快照,避免每帧每技能全量深拷贝DynamicDatas
+	// 时序:连接加入ClientConnections后才会在后续ServerReplicateActors打开通道并序列化初始状态,
+	// PreReplication在同一次flush的序列化前运行,当帧重建即被新连接消费,无窗口期
+	UNetDriver* NetDriver = GetWorld() ? GetWorld()->GetNetDriver() : nullptr;
+	if (!NetDriver)
+	{
+		return;
+	}
+
+	const int32 ConnectionCount = NetDriver->ClientConnections.Num();
+	if (ConnectionCount > LastProjectedConnectionCount)
+	{
+		RebuildRunningSkillStates();
+	}
+	// 断线回落仅同步计数不重建(InitialOnly已发收不回);不回落则"断N+连N"净计数不变会漏触发
+	LastProjectedConnectionCount = ConnectionCount;
+}
+
+void UBXSkillComponent::RebuildRunningSkillStates()
+{
 	UBXSkillManager* SkillMgr = UBXSkillManager::Get(this);
 	if (!SkillMgr)
 	{

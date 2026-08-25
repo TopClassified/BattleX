@@ -14,7 +14,8 @@
 #pragma region Important
 FSimpleEditorViewportClient::FSimpleEditorViewportClient(FEditorModeTools* InModeTools, FPreviewScene* InPreviewScene, const TWeakPtr<SEditorViewport>& InEditorViewportWidget) : FEditorViewportClient(InModeTools, InPreviewScene, InEditorViewportWidget), FadeAmount(0.f), bEnableFading(false)
 {
-	DrawHelper.PerspectiveGridSize = HALF_WORLD_MAX1;
+	// UE5.8: PerspectiveGridSize 为 float,HALF_WORLD_MAX1 为 double,显式截断消除精度截断警告
+	DrawHelper.PerspectiveGridSize = static_cast<float>(HALF_WORLD_MAX1);
 	DrawHelper.AxesLineThickness = 0.0f;
 	DrawHelper.bDrawGrid = true;
 

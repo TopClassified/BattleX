@@ -70,7 +70,8 @@ TSharedRef< FSlateStyleSet > FBXTLEditorStyle::Create()
 
 	Style->Set("TextBlock.PlotNode.SpeakerName", FTextBlockStyle(NormalText)
 		.SetFont(DEFAULT_FONT("BoldCondensed", 16))
-		.SetColorAndOpacity(FLinearColor(0.9, 0.08f, 0.35f, 0.9f))
+		// UE5.8: FLinearColor 分量为 float,字面量统一 f 后缀消除 double→float 截断警告
+		.SetColorAndOpacity(FLinearColor(0.9f, 0.08f, 0.35f, 0.9f))
 		.SetShadowOffset(FVector2D::ZeroVector)
 	);
 

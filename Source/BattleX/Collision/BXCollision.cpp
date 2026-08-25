@@ -574,7 +574,8 @@ TArray<FHitResult> UBXCollisionLibrary::HollowCylinderCheck(const FBXCParameter&
 		if (Setting->CollisionDebugDuration > 0.0f)
 		{
 			FMatrix TransformMatrix = FTransform(Transform.Rotator(), Transform.GetLocation()).ToMatrixNoScale();
-			ULineBatchComponent* const LineBatcher = QueryWorld->PersistentLineBatcher;
+			// UE5.8: PersistentLineBatcher 成员已废弃,改用 GetLineBatcher(WorldPersistent)
+			ULineBatchComponent* const LineBatcher = QueryWorld->GetLineBatcher(UWorld::ELineBatcherType::WorldPersistent);
 			if (LineBatcher != NULL)
 			{
 				const float LineLifeTime = Setting->CollisionDebugDuration;
@@ -977,7 +978,8 @@ TArray<FHitResult> UBXCollisionLibrary::SectorCheck(const FBXCParameter& Paramet
 			DrawDebugBox(QueryWorld, BoxWorldTransform.GetLocation(), BoxExtend, WorldTransform.GetRotation(), FColor::Red, false, Setting->CollisionDebugDuration);
 
 			FMatrix TransformMatrix = FTransform(WorldTransform.Rotator(), WorldTransform.GetLocation()).ToMatrixNoScale();
-			ULineBatchComponent* const LineBatcher = QueryWorld->PersistentLineBatcher;
+			// UE5.8: PersistentLineBatcher 成员已废弃,改用 GetLineBatcher(WorldPersistent)
+			ULineBatchComponent* const LineBatcher = QueryWorld->GetLineBatcher(UWorld::ELineBatcherType::WorldPersistent);
 			if (LineBatcher != NULL)
 			{
 				const float LineLifeTime = Setting->CollisionDebugDuration;

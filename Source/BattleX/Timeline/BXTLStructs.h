@@ -3,10 +3,12 @@
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
 
-#include "StructUtils/Public/InstancedStruct.h"
+// UE5.5起 FInstancedStruct 移入 CoreUObject,新路径为 StructUtils/InstancedStruct.h
+#include "StructUtils/InstancedStruct.h"
 
 #include "BXStructs.h"
 #include "BXTLEnums.h"
+#include "BXTEnums.h"
 
 #include "BXTLStructs.generated.h" 
 
@@ -157,6 +159,10 @@ public:
 		NextTick = InOther.NextTick;
 		bEarlyFinish = InOther.bEarlyFinish;
 		DynamicData = InOther.DynamicData;
+		LifeType = InOther.LifeType;
+		Duration = InOther.Duration;
+		NetTypes = InOther.NetTypes;
+		TargetTypes = InOther.TargetTypes;
 		ServerExtraLifeTimer = InOther.ServerExtraLifeTimer;
 		bAwaitingClientCollision = InOther.bAwaitingClientCollision;
 	}
@@ -170,6 +176,10 @@ public:
 		NextTick = InOther.NextTick;
 		bEarlyFinish = InOther.bEarlyFinish;
 		DynamicData = MoveTemp(InOther.DynamicData);
+		LifeType = InOther.LifeType;
+		Duration = InOther.Duration;
+		NetTypes = InOther.NetTypes;
+		TargetTypes = InOther.TargetTypes;
 		ServerExtraLifeTimer = InOther.ServerExtraLifeTimer;
 		bAwaitingClientCollision = InOther.bAwaitingClientCollision;
 	}
@@ -185,6 +195,10 @@ public:
 			NextTick = InOther.NextTick;
 			bEarlyFinish = InOther.bEarlyFinish;
 			DynamicData = InOther.DynamicData;
+			LifeType = InOther.LifeType;
+			Duration = InOther.Duration;
+			NetTypes = InOther.NetTypes;
+			TargetTypes = InOther.TargetTypes;
 			ServerExtraLifeTimer = InOther.ServerExtraLifeTimer;
 			bAwaitingClientCollision = InOther.bAwaitingClientCollision;
 		}
@@ -203,6 +217,10 @@ public:
 			NextTick = InOther.NextTick;
 			bEarlyFinish = InOther.bEarlyFinish;
 			DynamicData = MoveTemp(InOther.DynamicData);
+			LifeType = InOther.LifeType;
+			Duration = InOther.Duration;
+			NetTypes = InOther.NetTypes;
+			TargetTypes = InOther.TargetTypes;
 			ServerExtraLifeTimer = InOther.ServerExtraLifeTimer;
 			bAwaitingClientCollision = InOther.bAwaitingClientCollision;
 		}
@@ -219,6 +237,10 @@ public:
 		NextTick = 0.0f;
 		bEarlyFinish = true;
 		DynamicData.Reset();
+		LifeType = EBXTLifeType::L_Instant;
+		Duration = 0.0f;
+		NetTypes = 0;
+		TargetTypes = 0;
 		ServerExtraLifeTimer = 0.0f;
 		bAwaitingClientCollision = false;
 	}
@@ -248,9 +270,27 @@ public:
 	UPROPERTY(Transient, BlueprintReadWrite)
 	bool bEarlyFinish = false;
 
-	// 自定义动态数据
+	// 自定义动态数据(UE5.5引擎版FInstancedStruct自带56B小缓冲内联,升级后自动免堆分配;5.4期间为纯堆分配)
 	UPROPERTY(Transient, BlueprintReadWrite)
 	FInstancedStruct DynamicData;
+
+	// ===== 任务配置快照区:创建/投影重建时自UBXTask拷贝,Tick热路径只读快照不解引用Task本体 =====
+
+	// 生命周期类型快照(自UBXTask::LifeType拷贝,结束判定分支依据)
+	UPROPERTY(Transient, BlueprintReadOnly)
+	EBXTLifeType LifeType = EBXTLifeType::L_Instant;
+
+	// 固定时长快照(自UBXTask::Duration拷贝,Duration类生命的结束阈值)
+	UPROPERTY(Transient, BlueprintReadOnly)
+	float Duration = 0.0f;
+
+	// 网络同步类型位掩码快照(自UBXTask::NetTypes拷贝,投影过滤与托管判断依据)
+	UPROPERTY(Transient, BlueprintReadOnly)
+	int32 NetTypes = 0;
+
+	// 目标类型位掩码快照(自UBXTask::TargetTypes拷贝,目标组件匹配依据)
+	UPROPERTY(Transient, BlueprintReadOnly)
+	int32 TargetTypes = 0;
 
 	// 服务器端等待客户端碰撞结果的额外生命计时(<=0代表不在等待)
 	UPROPERTY(Transient)
@@ -405,9 +445,10 @@ public:
 		LoopCount = 0;
 		bEarlyFinish = false;
 		ForceJumpSection = -1;
-		RunningTasks.Empty();
-		PendingTasks.Empty();
-		BroadcastTasks.Empty();
+		// 用Reset(析构元素保留容量)而非Empty(释放容量):循环/跳转复用本槽位,保留容量使Reserve预留跨周期生效
+		RunningTasks.Reset();
+		PendingTasks.Reset();
+		BroadcastTasks.Reset();
 	}
 
 public:

@@ -86,4 +86,4 @@ void FBattleXEditorModule::ShutdownModule()
 
 #undef LOCTEXT_NAMESPACE
 
-IMPLEMENT_MODULE(FBattleXEditorModule, BattleX)
+IMPLEMENT_MODULE(FBattleXEditorModule, BattleXEditor)

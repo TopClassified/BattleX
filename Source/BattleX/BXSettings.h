@@ -2,7 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
-#include "Misc/DirectoryPath.h"
+// UE5.8: FDirectoryPath 移至 UObject/SoftObjectPath.h(原 Misc/DirectoryPath.h 已删除)
+#include "UObject/SoftObjectPath.h"
 
 #include "BXSettings.generated.h"
 

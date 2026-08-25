@@ -60,7 +60,6 @@ public class BattleX : ModuleRules
 			new string[]
 			{
                 "GameplayTags",
-                "StructUtils",
                 "NetCore",
                 "Niagara",
             }

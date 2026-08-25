@@ -29,18 +29,14 @@ void BXToTLRunTimeProjection(const FBXTLRunTimeData& InSource, FBXTLRunTimeDataR
 		SectionProjection.ForceJumpSection = SectionRT.ForceJumpSection;
 		SectionProjection.bEarlyFinish = SectionRT.bEarlyFinish;
 
-		UBXTLAsset* Asset = InSource.Timeline;
+		// 模拟端位掩码(EBXTNetType::N_Simulated=2)
+		const int32 SimulatedMask = 1 << 2;
 		for (const FBXTLTaskRTData& TaskRT : SectionRT.RunningTasks)
 		{
-			// 按NetTypes过滤:仅保留重建端(模拟端)会执行的Task,避免权威/自主端Task在远端Update
-			if (bSimulatedOnly && Asset && Asset->Sections.IsValidIndex(SectionRT.Index) && Asset->Sections[SectionRT.Index].TaskList.IsValidIndex(TaskRT.Index))
+			// 按NetTypes过滤:仅保留重建端(模拟端)会执行的Task(读运行快照,避免PreReplication每帧查找TaskList并解引用Task本体;null-Task条目快照恒为0同样被过滤)
+			if (bSimulatedOnly && (TaskRT.NetTypes & SimulatedMask) == 0)
 			{
-				UBXTask* Task = Asset->Sections[SectionRT.Index].TaskList[TaskRT.Index];
-				const int32 SimulatedMask = 1 << 2;
-				if (!Task || (Task->NetTypes & SimulatedMask) == 0)
-				{
-					continue;
-				}
+				continue;
 			}
 
 			FBXTLTaskRTDataReplicated& TaskProjection = SectionProjection.RunningTasks.AddDefaulted_GetRef();
@@ -99,6 +95,15 @@ void BXFromTLRunTimeProjection(const FBXTLRunTimeDataReplicated& InSource, UBXTL
 			TaskRT.NextTick = TaskProjection.NextTick;
 			TaskRT.bEarlyFinish = TaskProjection.bEarlyFinish;
 			TaskRT.DynamicData = TaskProjection.DynamicData;
+
+			// 投影重建不走ExecuteTimelineTask,需在此补齐快照(遗漏会因默认L_Instant致续跑任务立即结束)
+			if (TaskRT.Task)
+			{
+				TaskRT.LifeType = TaskRT.Task->LifeType;
+				TaskRT.Duration = TaskRT.Task->Duration;
+				TaskRT.NetTypes = TaskRT.Task->NetTypes;
+				TaskRT.TargetTypes = TaskRT.Task->TargetTypes;
+			}
 		}
 	}
 }
