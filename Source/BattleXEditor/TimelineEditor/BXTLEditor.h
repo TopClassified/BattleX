@@ -341,12 +341,20 @@ public:
 	// Debug:正在执行的Task集合变化事件
 	FBXTLELogicRunningTasksChanged RunningTasksChangedEvent;
 
-	// Debug:查询指定Task是否正在执行(供Graph节点OnPaint高亮使用)
-	static bool IsTaskRunning(class UBXTask* InTask);
+	// Debug:查询指定Task的运行高亮透明度(运行中为1不透明,结束后残留期内由1线性衰减到0,其余为0)
+	static float GetTaskHighlightAlpha(class UBXTask* InTask);
 
 private:
 	// Debug:各编辑器实例独立的运行Task缓存(键为编辑器弱引用,多编辑器并存时互不覆写)
 	static TMap<TWeakPtr<FBXTLEditor>, TArray<TWeakObjectPtr<UBXTask>>> DebugRunningTasksCache;
+
+	// Debug:已结束Task的残留高亮条目(记录结束时间戳供残留期内透明度衰减)
+	struct FBXTLDebugFadeTask
+	{
+		TWeakObjectPtr<class UBXTask> Task;
+		double EndTime = 0.0;
+	};
+	static TMap<TWeakPtr<FBXTLEditor>, TArray<FBXTLDebugFadeTask>> DebugFadingTasksCache;
 
 #pragma endregion Event
 

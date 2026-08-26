@@ -771,6 +771,15 @@ bool UBXTLManager::ExecuteTimelineTask(FBXTLRunTimeData& InOutData, FBXTLSection
 
 			// 结束
 			Processor->EndTask(InOutData, InOutSectionData, NewTaskData, EBXTLFinishReason::FR_EndOfLife);
+
+#if WITH_EDITOR
+			// 瞬时Task不进入RunningTasks,编辑器Debug运行高亮(黄色框)无法感知其执行,此处登记供编辑器拉取
+			DebugExecutedInstantTasks.Add(InTask);
+			if (DebugExecutedInstantTasks.Num() > 64)
+			{
+				DebugExecutedInstantTasks.RemoveAt(0, DebugExecutedInstantTasks.Num() - 64);
+			}
+#endif
 		}
 		else
 		{
@@ -1124,5 +1133,19 @@ void UBXTLManager::ChangeShowCollision(bool InShow)
 {
 	bShowCollision = InShow;
 }
+
+#if WITH_EDITOR
+void UBXTLManager::DebugDrainExecutedInstantTasks(TArray<UBXTask*>& OutTasks)
+{
+	for (const TWeakObjectPtr<UBXTask>& WeakTask : DebugExecutedInstantTasks)
+	{
+		if (UBXTask* Task = WeakTask.Get())
+		{
+			OutTasks.AddUnique(Task);
+		}
+	}
+	DebugExecutedInstantTasks.Reset();
+}
+#endif
 
 #pragma endregion Debug

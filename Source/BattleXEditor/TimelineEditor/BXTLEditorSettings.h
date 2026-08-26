@@ -29,6 +29,10 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Preview")
 	float PreviewTickRate = 60.0f;
 
+	// Debug运行高亮(黄色框)结束后残留时长(残留期内透明度由不透明线性过渡到全透明)
+	UPROPERTY(Config, EditAnywhere, Category = "Preview", meta = (ClampMin = "0.0", Units = "s"))
+	float RunningHighlightResidualDuration = 1.0f;
+
 
 
 	UPROPERTY(Config, EditAnywhere, Category = "PreviewScene")

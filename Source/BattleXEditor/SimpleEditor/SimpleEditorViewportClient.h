@@ -63,6 +63,9 @@ protected:
 	// 获取被选中的组件
 	USceneComponent* GetSelectedComponent() const;
 
+	// 同步私有ModeTools的SelectionHasSceneComponent标志(决定选中Actor时Gizmo是否显示)
+	void UpdateSelectionHasSceneComponent();
+
 #pragma endregion Logic
 
 

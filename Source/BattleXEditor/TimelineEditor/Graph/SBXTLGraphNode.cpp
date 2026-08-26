@@ -49,28 +49,30 @@ int32 SBXTLGraphNode::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedG
 	// 先让基类正常绘制节点
 	int32 FinalLayerId = SGraphNode::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 
-	// Debug:若当前节点对应的Task正在执行,叠加黄色呼吸高亮框
+	// Debug:若当前节点对应的Task正在执行或处于结束残留期,叠加黄色高亮框(残留期内透明度衰减)
 	UBXTLGraphNode* TLGraphNode = Cast<UBXTLGraphNode>(GraphNode);
-	if (TLGraphNode && TLGraphNode->CachedTask && FBXTLEditor::IsTaskRunning(TLGraphNode->CachedTask))
+	if (TLGraphNode && TLGraphNode->CachedTask)
 	{
-		const double CurrentTime = FPlatformTime::Seconds();
-		const float BreathingAlpha = 0.35f + 0.45f * FMath::Sin(CurrentTime * 5.0f);
-		const FLinearColor HighlightColor(1.0f, 0.85f, 0.0f, BreathingAlpha);
+		const float HighlightAlpha = FBXTLEditor::GetTaskHighlightAlpha(TLGraphNode->CachedTask);
+		if (HighlightAlpha > 0.0f)
+		{
+			const FLinearColor HighlightColor(1.0f, 0.85f, 0.0f, HighlightAlpha);
 
-		const FVector2f NodeSize = AllottedGeometry.GetLocalSize();
-		const float BorderThickness = 2.0f;
-		const FSlateBrush* WhiteBrush = FAppStyle::GetBrush(TEXT("WhiteBrush"));
+			const FVector2f NodeSize = AllottedGeometry.GetLocalSize();
+			const float BorderThickness = 2.0f;
+			const FSlateBrush* WhiteBrush = FAppStyle::GetBrush(TEXT("WhiteBrush"));
 
-		// 上边
-		FSlateDrawElement::MakeBox(OutDrawElements, FinalLayerId + 1, AllottedGeometry.ToPaintGeometry(FVector2f(NodeSize.X, BorderThickness), FSlateLayoutTransform(FVector2f(0.0f, 0.0f))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
-		// 下边
-		FSlateDrawElement::MakeBox(OutDrawElements, FinalLayerId + 1, AllottedGeometry.ToPaintGeometry(FVector2f(NodeSize.X, BorderThickness), FSlateLayoutTransform(FVector2f(0.0f, NodeSize.Y - BorderThickness))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
-		// 左边
-		FSlateDrawElement::MakeBox(OutDrawElements, FinalLayerId + 1, AllottedGeometry.ToPaintGeometry(FVector2f(BorderThickness, NodeSize.Y), FSlateLayoutTransform(FVector2f(0.0f, 0.0f))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
-		// 右边
-		FSlateDrawElement::MakeBox(OutDrawElements, FinalLayerId + 1, AllottedGeometry.ToPaintGeometry(FVector2f(BorderThickness, NodeSize.Y), FSlateLayoutTransform(FVector2f(NodeSize.X - BorderThickness, 0.0f))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
+			// 上边
+			FSlateDrawElement::MakeBox(OutDrawElements, FinalLayerId + 1, AllottedGeometry.ToPaintGeometry(FVector2f(NodeSize.X, BorderThickness), FSlateLayoutTransform(FVector2f(0.0f, 0.0f))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
+			// 下边
+			FSlateDrawElement::MakeBox(OutDrawElements, FinalLayerId + 1, AllottedGeometry.ToPaintGeometry(FVector2f(NodeSize.X, BorderThickness), FSlateLayoutTransform(FVector2f(0.0f, NodeSize.Y - BorderThickness))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
+			// 左边
+			FSlateDrawElement::MakeBox(OutDrawElements, FinalLayerId + 1, AllottedGeometry.ToPaintGeometry(FVector2f(BorderThickness, NodeSize.Y), FSlateLayoutTransform(FVector2f(0.0f, 0.0f))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
+			// 右边
+			FSlateDrawElement::MakeBox(OutDrawElements, FinalLayerId + 1, AllottedGeometry.ToPaintGeometry(FVector2f(BorderThickness, NodeSize.Y), FSlateLayoutTransform(FVector2f(NodeSize.X - BorderThickness, 0.0f))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
 
-		return FinalLayerId + 2;
+			return FinalLayerId + 2;
+		}
 	}
 
 	return FinalLayerId;

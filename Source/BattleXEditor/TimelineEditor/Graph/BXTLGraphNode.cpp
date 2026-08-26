@@ -56,9 +56,9 @@ void UBXTLGraphNode::OnRefreshGraphNodeInformation()
 {
 	UpdatePins();
 
-	if (NodeWidget.IsValid())
+	if (TSharedPtr<SBXTLGraphNode> PinnedWidget = NodeWidget.Pin())
 	{
-		NodeWidget->UpdateGraphNode();
+		PinnedWidget->UpdateGraphNode();
 	}
 }
 	

@@ -197,12 +197,23 @@ protected:
 public:
 	UFUNCTION(BlueprintPure)
 	bool GetShowCollision() const;
-	
+
 	UFUNCTION(BlueprintCallable)
 	void ChangeShowCollision(bool InShow);
 
+#if WITH_EDITOR
+	// 取出并清空近期执行过的瞬时Task记录(瞬时Task执行即结束,从不进入RunningTasks;
+	// 编辑器Debug高亮经此补充感知瞬时Task的执行,合入运行集一帧后由残留淡出机制接管)
+	void DebugDrainExecutedInstantTasks(TArray<UBXTask*>& OutTasks);
+#endif
+
 protected:
 	bool bShowCollision = false;
+
+#if WITH_EDITOR
+	// 近期执行过的瞬时Task记录(仅编辑器Debug高亮使用,容量有界,弱引用不阻碍GC)
+	TArray<TWeakObjectPtr<UBXTask>> DebugExecutedInstantTasks;
+#endif
 
 #pragma endregion Debug
 

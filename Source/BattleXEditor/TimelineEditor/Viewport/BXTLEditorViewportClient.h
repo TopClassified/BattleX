@@ -25,10 +25,13 @@ public:
 
 	virtual void Tick(float DeltaSeconds) override;
 
+	// 播放中禁止拖拽预览对象(隐藏Gizmo+拒绝增量应用)
+	virtual bool InputWidgetDelta(FViewport* InViewport, EAxisList::Type InCurrentAxis, FVector& InDrag, FRotator& InRot, FVector& InScale) override;
+
 	void TickWorld(float DeltaSeconds);
 
 	void SetForceFPS(double InFPS);
-	
+
 private:
 	void HandlerPreviewScenePreTick();
 
@@ -36,8 +39,11 @@ private:
 
 private:
 	double ForceFPS = 0.0f;
-	
+
 	double RemainTime = 0.0f;
+
+	// 上帧预览运行状态(边沿检测,播放开始隐藏Gizmo/结束恢复)
+	bool bLastRunningState = false;
 
 	TWeakPtr<class FBXTLEditor> CachedEditor = nullptr;
 

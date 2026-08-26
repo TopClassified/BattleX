@@ -75,6 +75,9 @@ TSharedPtr<FGraphPanelNodeFactory> BXTLGraphNodeFactory;
 // 原单一静态数组在多编辑器并存时互相覆写,导致节点运行高亮跨编辑器串台闪烁)
 TMap<TWeakPtr<FBXTLEditor>, TArray<TWeakObjectPtr<UBXTask>>> FBXTLEditor::DebugRunningTasksCache;
 
+// Debug:已结束Task的残留高亮缓存(Task结束时由Tick登记,残留期内透明度线性衰减至全透明)
+TMap<TWeakPtr<FBXTLEditor>, TArray<FBXTLEditor::FBXTLDebugFadeTask>> FBXTLEditor::DebugFadingTasksCache;
+
 
 
 TSharedPtr<IBXTLEditor> IBXTLEditor::OpenEditor(UObject* InAsset, const TSharedPtr<IToolkitHost>& InitToolkitHost)
@@ -268,53 +271,106 @@ void FBXTLEditor::Tick(float DeltaTime)
 		RefreshPanelEvent.Broadcast();
 	}
 
-	// Debug:预览播放时每帧收集正在执行的Task,供节点高亮查询(按编辑器实例独立缓存)
+	// Debug:预览运行时每帧收集正在执行的Task,供节点高亮查询(按编辑器实例独立缓存)
+	// 步进预览处于暂停态(IsPlaying为false),须用IsRunning(播放或暂停)维持高亮缓存
 	TArray<TWeakObjectPtr<UBXTask>>& InstanceCache = DebugRunningTasksCache.FindOrAdd(SharedThis(this));
-	if (PreviewProxy->IsPlaying())
+	TArray<UBXTask*> CurrentRunningTasks;
+	if (PreviewProxy->IsRunning())
 	{
-		TArray<UBXTask*> CurrentRunningTasks;
 		PreviewProxy->GetRunningTasks(CurrentRunningTasks);
-		RunningTasksChangedEvent.Broadcast(CurrentRunningTasks);
-		InstanceCache.Reset();
-		for (UBXTask* Task : CurrentRunningTasks)
+	}
+
+	// 瞬时Task(含被动触发的瞬时Task)执行即结束,从不进入RunningTasks;
+	// 拉取本帧执行记录合入运行集(闪现一帧),下一帧移交残留淡出机制,形成"闪现+淡出"的Debug反馈
+	if (UBXTLManager* BXTLMgr = GetCachedManager<UBXTLManager>())
+	{
+		BXTLMgr->DebugDrainExecutedInstantTasks(CurrentRunningTasks);
+	}
+	RunningTasksChangedEvent.Broadcast(CurrentRunningTasks);
+
+	// 刚结束的Task登记残留高亮(残留起始时间为当前帧)
+	const double Now = FPlatformTime::Seconds();
+	TArray<FBXTLDebugFadeTask>& FadeList = DebugFadingTasksCache.FindOrAdd(SharedThis(this));
+	for (const TWeakObjectPtr<UBXTask>& WeakTask : InstanceCache)
+	{
+		UBXTask* Task = WeakTask.Get();
+		if (Task && !CurrentRunningTasks.Contains(Task))
 		{
-			InstanceCache.Add(Task);
+			FBXTLDebugFadeTask FadeTask;
+			FadeTask.Task = Task;
+			FadeTask.EndTime = Now;
+			FadeList.Add(FadeTask);
 		}
 	}
-	else
+
+	// 清理残留条目:残留期已过的、Task失效的、重新开始运行的(以运行态为准)
+	const UBXTLEditorSettings* Setting = GetDefault<UBXTLEditorSettings>();
+	const double ResidualDuration = Setting ? FMath::Max(Setting->RunningHighlightResidualDuration, 0.0) : 0.0;
+	for (int32 i = FadeList.Num() - 1; i >= 0; --i)
 	{
-		static TArray<UBXTask*> EmptyTasks;
-		RunningTasksChangedEvent.Broadcast(EmptyTasks);
-		InstanceCache.Reset();
+		UBXTask* Task = FadeList[i].Task.Get();
+		if (!Task || CurrentRunningTasks.Contains(Task) || (Now - FadeList[i].EndTime) >= ResidualDuration)
+		{
+			FadeList.RemoveAtSwap(i);
+		}
+	}
+
+	InstanceCache.Reset();
+	for (UBXTask* Task : CurrentRunningTasks)
+	{
+		InstanceCache.Add(Task);
 	}
 }
 
-bool FBXTLEditor::IsTaskRunning(UBXTask* InTask)
+float FBXTLEditor::GetTaskHighlightAlpha(UBXTask* InTask)
 {
 	if (!InTask)
 	{
-		return false;
+		return 0.0f;
 	}
 
 	// Task唯一归属单一资产/编辑器,跨编辑器条目查询不会误命中
+	// 运行中:不透明
 	for (const TPair<TWeakPtr<FBXTLEditor>, TArray<TWeakObjectPtr<UBXTask>>>& Pair : DebugRunningTasksCache)
 	{
 		for (const TWeakObjectPtr<UBXTask>& WeakTask : Pair.Value)
 		{
 			if (WeakTask.Get() == InTask)
 			{
-				return true;
+				return 1.0f;
 			}
 		}
 	}
 
-	return false;
+	// 结束后残留期内:透明度由不透明线性过渡到全透明
+	const UBXTLEditorSettings* Setting = GetDefault<UBXTLEditorSettings>();
+	const double ResidualDuration = Setting ? FMath::Max(Setting->RunningHighlightResidualDuration, 0.0) : 0.0;
+	if (ResidualDuration <= 0.0)
+	{
+		return 0.0f;
+	}
+
+	const double Now = FPlatformTime::Seconds();
+	for (const TPair<TWeakPtr<FBXTLEditor>, TArray<FBXTLDebugFadeTask>>& Pair : DebugFadingTasksCache)
+	{
+		for (const FBXTLDebugFadeTask& FadeTask : Pair.Value)
+		{
+			if (FadeTask.Task.Get() == InTask)
+			{
+				const float Alpha = 1.0f - static_cast<float>((Now - FadeTask.EndTime) / ResidualDuration);
+				return FMath::Max(Alpha, 0.0f);
+			}
+		}
+	}
+
+	return 0.0f;
 }
 
 void FBXTLEditor::OnClose()
 {
 	// 清理本实例的Debug缓存条目(弱引用键的Map条目不随对象销毁自动移除,不清理会随编辑器开关累积)
 	DebugRunningTasksCache.Remove(SharedThis(this));
+	DebugFadingTasksCache.Remove(SharedThis(this));
 
 	if (PreviewProxy.IsValid())
 	{
@@ -808,12 +864,13 @@ void FBXTLEditor::SetPreviewFPS(double InFPS)
 
 bool FBXTLEditor::ShouldPauseWorld() const
 {
+	// PIE模型:仅播放中世界才Tick,空闲/暂停/停止完全静止,编辑阶段可自由拖拽摆放
 	if (PreviewProxy->IsPaused())
 	{
 		return true;
 	}
 
-	return false;
+	return !PreviewProxy->IsPlaying();
 }
 
 void FBXTLEditor::CreatePreviewScene()

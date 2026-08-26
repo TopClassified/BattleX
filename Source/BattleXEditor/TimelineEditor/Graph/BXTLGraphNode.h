@@ -68,7 +68,9 @@ public:
 	UPROPERTY()
 	class UBXTask* CachedTask = nullptr;
 
-	TSharedPtr<class SBXTLGraphNode> NodeWidget = nullptr;
+	// 必须用弱引用:强引用会让SGraphNode及其Pin在面板重建(RemoveAllNodes)后仍存活,
+	// 鼠标捕获路径(拖线/拖节点)继续向已失效的SGraphPin路由事件,触发GetPinObj的ensure崩溃
+	TWeakPtr<class SBXTLGraphNode> NodeWidget = nullptr;
 
 #pragma endregion Important
 

@@ -278,25 +278,27 @@ int32 SBXTLTaskTrackNode::OnPaint(const FPaintArgs& Args, const FGeometry& Allot
 	FVector2f TextPosition(BXTLTTN::TextOffsetX, (FTimelineTrack::TimelineTrackNodeHeight - TextSize.Y) * 0.5f + Sign1TextSize.Y + BXTLTTN::NodePadding * 2.0f);
 	FSlateDrawElement::MakeText(OutDrawElements, TextLayerID, AllottedGeometry.ToPaintGeometry(TextSize, FSlateLayoutTransform(TextPosition)), Text, Font, ESlateDrawEffect::None, FLinearColor::White);
 
-	// Debug:若当前节点对应的Task正在执行,叠加黄色呼吸高亮框
+	// Debug:若当前节点对应的Task正在执行或处于结束残留期,叠加黄色高亮框(仅包裹根据Task时长计算出的Box控件,残留期内透明度衰减)
 	int32 HighlightLayerID = TextLayerID + 1;
 	if (UBXTask* MyTask = TaskNodeData.GetTask())
 	{
-		if (FBXTLEditor::IsTaskRunning(MyTask))
+		const float HighlightAlpha = FBXTLEditor::GetTaskHighlightAlpha(MyTask);
+		if (HighlightAlpha > 0.0f)
 		{
-			const double CurrentTime = FPlatformTime::Seconds();
-			const float BreathingAlpha = 0.35f + 0.45f * FMath::Sin(CurrentTime * 5.0f);
-			const FLinearColor HighlightColor(1.0f, 0.85f, 0.0f, BreathingAlpha);
+			const FLinearColor HighlightColor(1.0f, 0.85f, 0.0f, HighlightAlpha);
 
-			const FVector2f NodeSize = AllottedGeometry.GetLocalSize();
+			// 高亮框只覆盖时长Box区域(瞬时任务包裹瞬时标记)
+			const float HighlightWidth = TaskDurationSizeX > 0.0f ? TaskDurationSizeX : FTimelineTrack::TimelineTrackNodeHeight * 0.75f;
+			const FVector2f HighlightPosition = FVector2f(0.0f, Sign1TextSize.Y + BXTLTTN::NodePadding * 2.0f);
+			const FVector2f HighlightSize = FVector2f(HighlightWidth, FTimelineTrack::TimelineTrackNodeHeight);
 			const float BorderThickness = 2.0f;
 			const FSlateBrush* WhiteBrush = FAppStyle::GetBrush(TEXT("WhiteBrush"));
 
 			// 4条边
-			FSlateDrawElement::MakeBox(OutDrawElements, HighlightLayerID, AllottedGeometry.ToPaintGeometry(FVector2f(NodeSize.X, BorderThickness), FSlateLayoutTransform(FVector2f(0.0f, 0.0f))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
-			FSlateDrawElement::MakeBox(OutDrawElements, HighlightLayerID, AllottedGeometry.ToPaintGeometry(FVector2f(NodeSize.X, BorderThickness), FSlateLayoutTransform(FVector2f(0.0f, NodeSize.Y - BorderThickness))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
-			FSlateDrawElement::MakeBox(OutDrawElements, HighlightLayerID, AllottedGeometry.ToPaintGeometry(FVector2f(BorderThickness, NodeSize.Y), FSlateLayoutTransform(FVector2f(0.0f, 0.0f))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
-			FSlateDrawElement::MakeBox(OutDrawElements, HighlightLayerID, AllottedGeometry.ToPaintGeometry(FVector2f(BorderThickness, NodeSize.Y), FSlateLayoutTransform(FVector2f(NodeSize.X - BorderThickness, 0.0f))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
+			FSlateDrawElement::MakeBox(OutDrawElements, HighlightLayerID, AllottedGeometry.ToPaintGeometry(FVector2f(HighlightSize.X, BorderThickness), FSlateLayoutTransform(FVector2f(HighlightPosition.X, HighlightPosition.Y))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
+			FSlateDrawElement::MakeBox(OutDrawElements, HighlightLayerID, AllottedGeometry.ToPaintGeometry(FVector2f(HighlightSize.X, BorderThickness), FSlateLayoutTransform(FVector2f(HighlightPosition.X, HighlightPosition.Y + HighlightSize.Y - BorderThickness))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
+			FSlateDrawElement::MakeBox(OutDrawElements, HighlightLayerID, AllottedGeometry.ToPaintGeometry(FVector2f(BorderThickness, HighlightSize.Y), FSlateLayoutTransform(FVector2f(HighlightPosition.X, HighlightPosition.Y))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
+			FSlateDrawElement::MakeBox(OutDrawElements, HighlightLayerID, AllottedGeometry.ToPaintGeometry(FVector2f(BorderThickness, HighlightSize.Y), FSlateLayoutTransform(FVector2f(HighlightPosition.X + HighlightSize.X - BorderThickness, HighlightPosition.Y))), WhiteBrush, ESlateDrawEffect::None, HighlightColor);
 
 			return HighlightLayerID + 1;
 		}

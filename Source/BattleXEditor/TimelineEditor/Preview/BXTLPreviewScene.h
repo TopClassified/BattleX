@@ -25,8 +25,6 @@ public:
 private:
 	TWeakPtr<class FBXTLEditor> CachedEditor = nullptr;
 
-	TWeakObjectPtr<AActor> FloorOwner = nullptr;
-
 #pragma endregion Important
 
 

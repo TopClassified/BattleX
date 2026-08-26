@@ -27,9 +27,10 @@
 
 
 #pragma region Important
-FBXTLPreviewScene::FBXTLPreviewScene(ConstructionValues CVS, TSharedPtr<FBXTLEditor> InEditor) : FAdvancedPreviewScene(CVS), CachedEditor(InEditor)
+FBXTLPreviewScene::FBXTLPreviewScene(ConstructionValues CVS, TSharedPtr<FBXTLEditor> InEditor) : FAdvancedPreviewScene(CVS, 110.0f), CachedEditor(InEditor)
 {
-	
+	// 地表直接使用引擎 FAdvancedPreviewScene 自带的 FloorMeshComponent(Profile 配置),
+	// InFloorOffset=110 使其位于 Z=-110, 与历史自定义地板高度一致(角色 Spawn 在 Z=0 时脚底刚好落地)
 }
 
 FBXTLPreviewScene::~FBXTLPreviewScene()
@@ -47,23 +48,6 @@ void FBXTLPreviewScene::OnCreateViewport(SBXTLEditorViewport* InEditorViewport, 
 	if (!EditorSettings->DefaultViewMap.IsNull())
 	{
 		ExternalLevel = LoadExternalMap(EditorSettings->DefaultViewMap);
-	}
-
-	if (UStaticMesh* FloorMesh = LoadObject<UStaticMesh>(NULL, TEXT("/Engine/EditorMeshes/AssetViewer/Floor_Mesh.Floor_Mesh"), NULL, LOAD_None, NULL))
-	{
-		FloorOwner = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity);
-		FloorOwner->SetActorLocation(FVector(0.0f, 0.0f, -110.0f));
-		UStaticMeshComponent* NewFloor = NewObject<UStaticMeshComponent>(FloorOwner.Get());
-		FloorOwner->SetRootComponent(NewFloor);
-
-		NewFloor->RegisterComponent();
-		NewFloor->SetStaticMesh(FloorMesh);
-		NewFloor->SetCollisionObjectType(ECollisionChannel::ECC_WorldStatic);
-		NewFloor->SetRelativeLocation(FVector::ZeroVector);
-		NewFloor->SetRelativeScale3D(FVector(10.0f, 10.0f, 1.0f));
-		NewFloor->bReceivesDecals = true;
-
-		FloorMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 
 	// 注册关心的事件
@@ -198,16 +182,14 @@ void FBXTLPreviewScene::SpawnPreviewActors()
 
 				if (APawn* Pawn = Cast<APawn>(PreviewActors[i]))
 				{
-					if (Pawn == PreviewPlayer)
+					// 统一SpawnDefaultController(AIController):预览世界的PlayerController无ULocalPlayer,
+					// possess后IsLocallyControlled()为false,CMC不模拟重力(位置冻结)
+					Pawn->SpawnDefaultController();
+
+					// PlayerController保留相机职责,SetViewTarget复刻原Possess的自动跟镜行为
+					if (Pawn == PreviewPlayer && PlayerController.IsValid())
 					{
-						if (PlayerController.IsValid())
-						{
-							PlayerController->Possess(Pawn);
-						}
-					}
-					else
-					{
-						Pawn->SpawnDefaultController();
+						PlayerController->SetViewTarget(Pawn);
 					}
 				}
 			}
@@ -224,11 +206,6 @@ void FBXTLPreviewScene::SpawnPreviewActors()
 void FBXTLPreviewScene::DestroyPreviewActors()
 {
 	GEditor->SelectNone(false, false);
-
-	if (PlayerController.IsValid())
-	{
-		PlayerController->UnPossess();
-	}
 
 	UWorld* World = GetWorld();
 

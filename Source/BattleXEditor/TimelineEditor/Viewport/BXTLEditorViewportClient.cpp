@@ -30,8 +30,10 @@ const FName BXTLViewportCameraMode::RealGame = "RealGame";
 FBXTLEditorViewportClient::FBXTLEditorViewportClient
 (
 	TSharedPtr<FBXTLEditor> InEditor, FPreviewScene* InPreviewScene, const TWeakPtr<SEditorViewport>& InViewportWidget
-) : FSimpleEditorViewportClient(&GLevelEditorModeTools(), InPreviewScene, InViewportWidget), ViewportCameraMode(BXTLViewportCameraMode::Free)
+) : FSimpleEditorViewportClient(nullptr, InPreviewScene, InViewportWidget), ViewportCameraMode(BXTLViewportCameraMode::Free)
 {
+	// ModeTools传nullptr由基类自建私有实例:复用GLevelEditorModeTools时,UE5.8新TRS Gizmo的
+	// ITF点击交互组会吞掉预览视口的点击(仅服务关卡编辑器),导致无法选中/拖拽
 	CachedEditor = InEditor;
 
 	SetRealtime(true);
@@ -97,20 +99,44 @@ void FBXTLEditorViewportClient::Tick(float DeltaSeconds)
 	
 	FSimpleEditorViewportClient::Tick(TickDelta);
 
+	// 播放中隐藏Gizmo禁止拖拽(空闲/暂停世界静止可自由摆放)
+	const bool bRunningNow = CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning();
+	if (bRunningNow != bLastRunningState)
+	{
+		bLastRunningState = bRunningNow;
+		ShowWidget(!bRunningNow);
+	}
+
+	// 编辑器逻辑Tick须独立于世界Tick运行:空闲/暂停时世界静止(便于拖拽摆放),
+	// 但轨道刷新(SectionsToShow→RefreshPanelEvent)、时间属性对齐、Debug运行高亮等编辑器逻辑仍需每帧驱动,
+	// 否则编辑器打开后时间轴面板空白,须先Play一次(世界恢复Tick)才能看到内容
+	if (CachedEditor.IsValid())
+	{
+		CachedEditor.Pin()->Tick(TickDelta);
+	}
+
 	if (CachedEditor.IsValid() && !CachedEditor.Pin()->ShouldPauseWorld())
 	{
 		TickWorld(TickDelta);
 	}
 }
 
+bool FBXTLEditorViewportClient::InputWidgetDelta(FViewport* InViewport, EAxisList::Type InCurrentAxis, FVector& InDrag, FRotator& InRot, FVector& InScale)
+{
+	// 播放中拒绝拖拽增量(兜底,Gizmo已隐藏)
+	if (CachedEditor.IsValid() && CachedEditor.Pin()->IsRunning())
+	{
+		return true;
+	}
+
+	return FSimpleEditorViewportClient::InputWidgetDelta(InViewport, InCurrentAxis, InDrag, InRot, InScale);
+}
+
 void FBXTLEditorViewportClient::TickWorld(float DeltaSeconds)
 {
 	HandlerPreviewScenePreTick();
 
-	if (CachedEditor.IsValid())
-	{
-		CachedEditor.Pin()->Tick(DeltaSeconds);
-	}
+	// 编辑器逻辑Tick已上移至Tick(独立于世界暂停状态),此处仅负责推进世界
 
 	// PreviewScene可能未就绪(视口先于场景创建时Tick被触发)
 	if (PreviewScene && PreviewScene->GetWorld())
@@ -135,7 +161,7 @@ void FBXTLEditorViewportClient::HandlerPreviewScenePostTick()
 {
 	if (ViewportCameraMode == BXTLViewportCameraMode::RealGame)
 	{
-		// 预览世界可能无玩家相机管理器(未Possess/控制器未就绪),判空防止崩溃
+		// 预览世界可能无玩家相机管理器,判空防止崩溃
 		APlayerCameraManager* CameraManager = UGameplayStatics::GetPlayerCameraManager(GetWorld(), 0);
 		if (CameraManager)
 		{

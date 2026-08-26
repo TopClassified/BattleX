@@ -39,6 +39,9 @@ FSimpleEditorViewportClient::FSimpleEditorViewportClient(FEditorModeTools* InMod
 void FSimpleEditorViewportClient::Tick(float DeltaSeconds)
 {
 	FEditorViewportClient::Tick(DeltaSeconds);
+
+	// 兜底同步选区标志(选区可能被外部清空,残留true时Gizmo悬停原位)
+	UpdateSelectionHasSceneComponent();
 }
 
 #pragma endregion Important
@@ -106,6 +109,28 @@ void FSimpleEditorViewportClient::ProcessClick(FSceneView& View, HHitProxy* HitP
 	}
 
 	GUnrealEd->ComponentVisManager.HandleClick(this, HitProxy, Click);
+
+	UpdateSelectionHasSceneComponent();
+}
+
+void FSimpleEditorViewportClient::UpdateSelectionHasSceneComponent()
+{
+	// 私有ModeTools的SelectionHasSceneComponent不随选区自动更新,需手动同步,
+	// 否则选中Actor时Gizmo不显示(选中组件路径不受影响)
+	bool bHasSceneComponent = false;
+	for (FSelectionIterator It(GEditor->GetSelectedActorIterator()); It; ++It)
+	{
+		if (AActor* Actor = Cast<AActor>(*It))
+		{
+			if (Actor->GetRootComponent())
+			{
+				bHasSceneComponent = true;
+				break;
+			}
+		}
+	}
+
+	ModeTools->SetSelectionHasSceneComponent(bHasSceneComponent);
 }
 
 void FSimpleEditorViewportClient::PerspectiveCameraMoved()
@@ -273,6 +298,17 @@ USceneComponent* FSimpleEditorViewportClient::GetSelectedComponent() const
 #pragma region Widget
 FVector FSimpleEditorViewportClient::GetWidgetLocation() const
 {
+	// 私有ModeTools的Pivot不随选区更新,直接取选中对象位置
+	if (USceneComponent* SelectedComp = GetSelectedComponent())
+	{
+		return SelectedComp->GetComponentLocation();
+	}
+
+	if (AActor* SelectedActorPtr = GetSelectedActor())
+	{
+		return SelectedActorPtr->GetActorLocation();
+	}
+
 	return ModeTools->GetWidgetLocation();
 }
 
@@ -339,7 +375,7 @@ bool FSimpleEditorViewportClient::InputWidgetDelta(FViewport* InViewport, EAxisL
 			(
 				SelectedActor, true,
 				&InDrag, &InRot, &InScale,
-				GLevelEditorModeTools().PivotLocation, 
+				GetWidgetLocation(),
 				InputState
 			);
 
