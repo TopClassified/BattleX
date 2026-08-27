@@ -6,13 +6,15 @@ namespace BXGameplayTags
 {
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_TimelineStarted, "BXEvent.TimelineStarted", "时间轴已开始");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_TimelineClosing, "BXEvent.TimelineClosing", "时间轴将结束");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_ChangeForbiddenBehavior, "BXEvent.ChangeForbiddenBehavior", "行为禁止改变");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Behavior_Move, "BXEvent.Behavior.Move", "行为事件 移动");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Behavior_Rotate, "BXEvent.Behavior.Rotate", "行为事件 转向");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Behavior_Jump, "BXEvent.Behavior.Jump", "行为事件 跳跃");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Behavior_Landed, "BXEvent.Behavior.Landed", "行为事件 落地");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Behavior_Enter, "BXEvent.Behavior.Enter", "行为开始(条目从无到有,含挂起恢复)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_Behavior_Exit, "BXEvent.Behavior.Exit", "行为结束(最后来源退出:挤出/挂起/回滚)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_State_Enter, "BXEvent.State.Enter", "状态进入(条目从无到有)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_State_Exit, "BXEvent.State.Exit", "状态退出(最后来源退出)");
 
+	// 行为树根与族
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Root, "BXBehavior", "行为根Tag(持续行为命名空间,激活记录判定用)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion, "BXBehavior.Locomotion", "移动族Tag(行为矩阵轴/状态禁用族)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Attack, "BXBehavior.Attack", "攻击族Tag(技能姿态行为域)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Move, "BXBehavior.Locomotion.Move", "主动移动");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Rotate, "BXBehavior.Locomotion.Rotate", "主动转向");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXPlayMontage_Default, "BXBehavior.PlayMontage.Default", "播放Montage默认Tag");

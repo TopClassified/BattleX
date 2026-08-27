@@ -7,6 +7,7 @@
 #include "BXNetStructs.h"
 #include "BXSkillReplicated.h"
 #include "BXTStructs.h"
+#include "BXEventManager.h"
 
 #include "BXSkillComponent.generated.h"
 
@@ -145,9 +146,31 @@ public:
 	// (配合COND_InitialOnly:仅新连接初始同步发送,已有连接零属性流量)
 	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 
+	virtual void BeginPlay() override;
+
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
 #pragma endregion Lifecycle
+
+
+
+#pragma region BehaviorState
+protected:
+	// 取消窗口边界管理:推进时间轴检测窗口切换(姿态行为保护开/关)
+	void UpdateCancelWindows(float InDeltaTime);
+
+	// 技能互锁:姿态行为被挤出/挂起(Sign=本技能SkillID)→中断本技能
+	void OnBehaviorExitEvent(const struct FBXEventBehaviorChanged& InParameter);
+
+	// 互锁监听注册句柄
+	FBXNativeCallbackHandle BehaviorExitCallbackHandle;
+
+	// 取消窗口状态缓存:SkillID -> 当前是否处于窗口内
+	TMap<int64, bool> CancelWindowStates;
+
+#pragma endregion BehaviorState
 
 
 

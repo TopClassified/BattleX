@@ -513,6 +513,7 @@ Multicast RPC 是瞬时消息，只对"当时已在监听"的连接生效。两�
 【增量通道】(在场对象实时同步)
   MulticastPlaySkill(Reliable) / MulticastAddBuff(Reliable)
   MulticastStopSkill(Reliable, 服务器FR_Interrupt时) / MulticastRemoveBuff(Reliable, InternalRemoveBuff收束)
+  MulticastBuffStateChanged(Reliable, BUFF层/级/到期变化,Manager收束点广播)
         │
         ▼
 【快照通道】(新复制体创建时初始化)
@@ -524,7 +525,7 @@ Multicast RPC 是瞬时消息，只对"当时已在监听"的连接生效。两�
   客户端: OnRep(带旧值)差分 → 新增条目反投影重建 → 续跑
 ```
 
-技能快照不可变、已有连接的技能动态完全由显式 RPC 维护；BUFF 快照为无条件复制（低频变化），额外承担已重建客户端的层/级/到期持续同步。
+技能快照不可变、已有连接的技能动态完全由显式 RPC 维护；BUFF 快照与技能对齐（COND_InitialOnly），已有连接的增删由 MulticastAddBuff/MulticastRemoveBuff 维护，层/级/到期变化由 MulticastBuffStateChanged 维护。
 
 ### 11.3 数据结构
 
@@ -568,18 +569,19 @@ TArray<FBXSkillReplicatedState> RunningSkillStates;
 // DOREPLIFETIME_CONDITION(..., COND_InitialOnly)
 
 USTRUCT()
-struct FBXBuffReplicatedState          // 挂UBXBuffComponent,无条件复制
+struct FBXBuffReplicatedState          // 挂UBXBuffComponent,COND_InitialOnly(与技能对齐)
 {
     int64 BuffID; int32 BuffAssetID;
-    int32 Layer; int32 Level;          // 持续同步
+    int32 Layer; int32 Level;          // 变化经MulticastBuffStateChanged同步
     AActor* Instigator;
-    int64 SharedExpireServerTimestamp;         // BLL_Shared到期(服务器世界时间域ms,Add/刷新时写)
+    int64 SharedExpireServerTimestamp;         // BLL_Shared到期(服务器世界时间域ms,投影时按当前剩余换算)
     TArray<int64> LayerExpireServerTimestamps; // BLL_Independent各层到期
 };
 
 // UBXBuffComponent
 UPROPERTY(ReplicatedUsing=OnRep_RunningBuffStates)
 TArray<FBXBuffReplicatedState> RunningBuffStates;
+// DOREPLIFETIME_CONDITION(..., COND_InitialOnly)
 ```
 
 ### 11.4 服务器维护与显式中断广播
@@ -600,10 +602,11 @@ void UBXSkillComponent::PreReplication(IRepChangedPropertyTracker&)
 
 **MulticastStopSkill**：`UBXSkillManager::StopSkill` 在 `FR_Interrupt` 时经 Owner 的 SkillComponent 广播（覆盖 API 调用、Actor 死亡 EndPlay、条件强制中断）。自然结束/预测回滚不广播。
 
-**BUFF 快照（收束点维护）**：
-- `AddBuff` 成功 → 条目加入（到期时刻 = now + 剩余，Tick 不更新，带宽友好）
-- `InternalRemoveBuff` → 条目移除 + `MulticastRemoveBuff`（同收束点，覆盖手动/到期/层级耗尽）
-- `ChangeBuffLayer` / `ChangeBuffLevel` / `RefreshBuffLifetime` → 条目原地刷新（`FillBuffReplicatedState` 从运行数据统一反推）
+**BUFF 快照（与技能对齐：PreReplication 连接计数触发重建，无手动维护点）**：
+- 服务器 `PreReplication` 检测远程连接数增加时从 `OwnedBuffIDs` 全量重建快照（`FillBuffReplicatedState` 从运行数据统一反推，到期时刻 = now + 剩余，Tick 不更新）
+- 已有连接的动态由显式 RPC 维护：
+  - `MulticastAddBuff` / `MulticastRemoveBuff`（`InternalRemoveBuff` 收束，覆盖手动/到期/层级耗尽）
+  - `MulticastBuffStateChanged`（层/级/到期变化）：`ChangeBuffLayer` / `ChangeBuffLevel` / `RefreshBuffLifetime` / 独立层级到期层耗尽 / 手动按层移除 五个收束点广播最新投影状态，客户端 `ApplyBuffStateChange` 差分应用（层级变化走 Manager 接口触发 RebuildEffect）
 
 ### 11.5 客户端重建流程（OnRep 差分）
 
@@ -617,11 +620,13 @@ OnRep_RunningSkillStates(旧值)
   │     └─ 广播BXEvent.Skill.Released(本地可见)
   └─ 消失条目 → StopSkillIfNotPredicting(本地存在且非Predicting才停,兜底RPC与属性乱序)
 
-OnRep_RunningBuffStates(旧值)
+OnRep_RunningBuffStates(旧值)   [COND_InitialOnly,仅新连接初始同步]
   ├─ 新增条目 → AddBuffWithID(已有防重) + 到期时间戳回填计时
   │            (BLL_Shared: RunTime=Duration-剩余; BLL_Independent: LayerRunTimes[i]逐层回填)
-  ├─ 变化条目(层/级/到期字段diff) → ChangeBuffLayer/ChangeBuffLevel(触发RebuildEffect) + 计时对齐
   └─ 消失条目 → RemoveBuffIfLocalExists兜底(主通道MulticastRemoveBuff)
+
+MulticastBuffStateChanged(已有连接层/级/到期变化)
+  └─ ApplyBuffStateChange → ChangeBuffLayer/ChangeBuffLevel(触发RebuildEffect) + 计时对齐
 ```
 
 ### 11.6 进度对齐（核心：续跑即追赶）
@@ -643,7 +648,7 @@ OnRep_RunningBuffStates(旧值)
 | 重建时资产未加载 | LoadSynchronous 阻塞一次(冷启动)；后续可改异步+延迟重建 |
 | 新客户端连入(快照重建触发) | PreReplication检测ClientConnections计数增加→当帧重建(序列化前运行无窗口期);断线回落不重建(已发收不回) |
 | 断线重连 | 断开:计数回落仅同步记录值;重连:计数超记录值→正常触发重建 |
-| BUFF 层变化同步 | 层级变化仅经 RunningBuffStates 无条件复制同步（原 MulticastBuffLayerChanged RPC 已删除，与快照通道冗余），属性复制频率低于 RPC，瞬时层级变化感知略慢 |
+| BUFF 层变化同步 | 层/级/到期变化经 MulticastBuffStateChanged（Reliable）即时推送，客户端按最新投影状态差分应用（绝对值 diff，客户端本地先到期自减时 delta=0 不重复应用）；RunningBuffStates 快照仅承担新连接初始重建 |
 
 ### 11.8 验证用例与观测日志
 

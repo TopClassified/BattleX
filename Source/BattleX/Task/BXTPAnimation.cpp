@@ -3,7 +3,7 @@
 #include "BXTAnimation.h"
 #include "BXAnimInstance.h"
 #include "BXAnimationLibrary.h"
-#include "BXStateFunctionLibrary.h"
+#include "Behavior/BXBehaviorFunctionLibrary.h"
 
 
 
@@ -119,7 +119,7 @@ void UBXTPPlayAnimation::Update(FBXTLRunTimeData& InOutRTData, FBXTLSectionRTDat
 			continue;
 		}
 
-		if (!UBXStateFunctionLibrary::CheckActiveBehavior(Owner, PMovingTag))
+		if (!UBXBehaviorFunctionLibrary::CheckActiveBehavior(Owner, PMovingTag))
 		{
 			continue;
 		}

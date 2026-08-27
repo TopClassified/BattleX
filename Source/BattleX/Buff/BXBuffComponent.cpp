@@ -7,6 +7,7 @@
 #include "BXTLManager.h"
 #include "BXTLAsset.h"
 #include "Net/UnrealNetwork.h"
+#include "Engine/NetDriver.h"
 
 
 
@@ -19,7 +20,63 @@ void UBXBuffComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME(UBXBuffComponent, RunningBuffStates);
+	// 仅初始同步发送:新连接拿最新快照重建,已有连接零属性流量(动态由显式RPC维护)
+	DOREPLIFETIME_CONDITION(UBXBuffComponent, RunningBuffStates, COND_InitialOnly);
+}
+
+void UBXBuffComponent::PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker)
+{
+	Super::PreReplication(ChangedPropertyTracker);
+
+	// 服务器端、属性收集前每帧执行
+	AActor* Owner = GetOwner();
+	if (!Owner || Owner->GetLocalRole() != ENetRole::ROLE_Authority)
+	{
+		return;
+	}
+
+	// RunningBuffStates为COND_InitialOnly:仅新连接初始同步时发送,已有连接零流量
+	// 故仅当远程连接数增加(新客户端连入)时才重建快照,避免每帧每BUFF全量投影
+	// 时序:连接加入ClientConnections后才会在后续ServerReplicateActors打开通道并序列化初始状态,
+	// PreReplication在同一次flush的序列化前运行,当帧重建即被新连接消费,无窗口期
+	UNetDriver* NetDriver = GetWorld() ? GetWorld()->GetNetDriver() : nullptr;
+	if (!NetDriver)
+	{
+		return;
+	}
+
+	const int32 ConnectionCount = NetDriver->ClientConnections.Num();
+	if (ConnectionCount > LastProjectedConnectionCount)
+	{
+		RebuildRunningBuffStates();
+	}
+	// 断线回落仅同步计数不重建(InitialOnly已发收不回);不回落则"断N+连N"净计数不变会漏触发
+	LastProjectedConnectionCount = ConnectionCount;
+}
+
+static void FillBuffReplicatedState(FBXBuffReplicatedState& InOutState, const FBXBuffRuntimeData& InData);
+
+void UBXBuffComponent::RebuildRunningBuffStates()
+{
+	UBXBuffManager* Mgr = UBXBuffManager::Get(this);
+	if (!Mgr)
+	{
+		return;
+	}
+
+	RunningBuffStates.Reset();
+	for (int64 BuffID : OwnedBuffIDs)
+	{
+		// 双查入口(挂起区条目同样需投影),bEarlyFinish条目即将清理不投影
+		FBXBuffRuntimeData* Data = Mgr->GetBuffRuntimeDataByID(BuffID);
+		if (!Data || Data->bEarlyFinish)
+		{
+			continue;
+		}
+
+		FBXBuffReplicatedState& State = RunningBuffStates.AddDefaulted_GetRef();
+		FillBuffReplicatedState(State, *Data);
+	}
 }
 
 #pragma region API
@@ -310,6 +367,12 @@ void UBXBuffComponent::MulticastRemoveBuff_Implementation(int64 InBuffID, uint8 
 	OwnedBuffIDs.Remove(InBuffID);
 }
 
+void UBXBuffComponent::MulticastBuffStateChanged_Implementation(FBXBuffReplicatedState InState)
+{
+	// 服务器端已应用变化,ApplyBuffStateChange内部权威端守卫直接返回
+	ApplyBuffStateChange(InState);
+}
+
 #pragma endregion Sync
 
 
@@ -501,7 +564,7 @@ void UBXBuffComponent::InternalOnBuffFinished(int64 InBuffID)
 	OwnedBuffIDs.Remove(InBuffID);
 }
 
-void UBXBuffComponent::AddBuffReplicatedState(int64 InBuffID)
+void UBXBuffComponent::BroadcastBuffStateChanged(int64 InBuffID)
 {
 	AActor* Owner = GetOwner();
 	if (!Owner || Owner->GetLocalRole() != ENetRole::ROLE_Authority)
@@ -510,63 +573,15 @@ void UBXBuffComponent::AddBuffReplicatedState(int64 InBuffID)
 	}
 
 	UBXBuffManager* Mgr = UBXBuffManager::Get(this);
-	if (!Mgr)
-	{
-		return;
-	}
-
-	FBXBuffRuntimeData* Data = Mgr->GetBuffRuntimeDataByID(InBuffID);
+	FBXBuffRuntimeData* Data = Mgr ? Mgr->GetBuffRuntimeDataByID(InBuffID) : nullptr;
 	if (!Data)
 	{
 		return;
 	}
 
-	FBXBuffReplicatedState& State = RunningBuffStates.AddDefaulted_GetRef();
+	FBXBuffReplicatedState State;
 	FillBuffReplicatedState(State, *Data);
-}
-
-void UBXBuffComponent::UpdateBuffReplicatedState(int64 InBuffID)
-{
-	AActor* Owner = GetOwner();
-	if (!Owner || Owner->GetLocalRole() != ENetRole::ROLE_Authority)
-	{
-		return;
-	}
-
-	UBXBuffManager* Mgr = UBXBuffManager::Get(this);
-	if (!Mgr)
-	{
-		return;
-	}
-
-	FBXBuffRuntimeData* Data = Mgr->GetBuffRuntimeDataByID(InBuffID);
-	if (!Data)
-	{
-		return;
-	}
-
-	for (FBXBuffReplicatedState& State : RunningBuffStates)
-	{
-		if (State.BuffID == InBuffID)
-		{
-			FillBuffReplicatedState(State, *Data);
-			break;
-		}
-	}
-}
-
-void UBXBuffComponent::RemoveBuffReplicatedState(int64 InBuffID)
-{
-	AActor* Owner = GetOwner();
-	if (!Owner || Owner->GetLocalRole() != ENetRole::ROLE_Authority)
-	{
-		return;
-	}
-
-	RunningBuffStates.RemoveAll([InBuffID](const FBXBuffReplicatedState& Item)
-	{
-		return Item.BuffID == InBuffID;
-	});
+	MulticastBuffStateChanged(State);
 }
 
 void UBXBuffComponent::OnRep_RunningBuffStates(TArray<FBXBuffReplicatedState> InOldStates)
@@ -577,29 +592,22 @@ void UBXBuffComponent::OnRep_RunningBuffStates(TArray<FBXBuffReplicatedState> In
 		return;
 	}
 
+	// 新增条目:重建进行中的BUFF(已存在的ID在重建内部按去重跳过,幂等)
 	for (const FBXBuffReplicatedState& State : RunningBuffStates)
 	{
-		const FBXBuffReplicatedState* OldState = nullptr;
-		for (const FBXBuffReplicatedState& Candidate : InOldStates)
+		bool bExisted = false;
+		for (const FBXBuffReplicatedState& OldState : InOldStates)
 		{
-			if (Candidate.BuffID == State.BuffID)
+			if (OldState.BuffID == State.BuffID)
 			{
-				OldState = &Candidate;
+				bExisted = true;
 				break;
 			}
 		}
 
-		if (!OldState)
+		if (!bExisted)
 		{
-			// 新增条目:重建进行中的BUFF(新复制到本地的对象初始化)
 			RebuildBuffFromState(State);
-		}
-		else if (OldState->Layer != State.Layer || OldState->Level != State.Level
-			|| OldState->SharedExpireServerTimestamp != State.SharedExpireServerTimestamp
-			|| OldState->LayerExpireServerTimestamps != State.LayerExpireServerTimestamps)
-		{
-			// 变化条目:层/级/到期同步到已重建的本地实例
-			ApplyBuffStateChange(State);
 		}
 	}
 

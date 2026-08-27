@@ -6,6 +6,7 @@
 #include "BXDecisionTreeTemplate.h"
 #include "BeatenTree/BXBeatenTreeTemplate.h"
 #include "CombatTree/BXCombatTreeTemplate.h"
+#include "State/StateMachine/BXStateMachineAsset.h"
 
 
 
@@ -155,6 +156,55 @@ uint32 FBXCombatTreeAssetTypeActions::GetCategories()
 }
 
 void FBXCombatTreeAssetTypeActions::GetActions(const TArray<UObject*>& InObjects, FMenuBuilder& MenuBuilder)
+{
+
+}
+
+
+
+
+FBXStateMachineAssetTypeActions::FBXStateMachineAssetTypeActions(EAssetTypeCategories::Type InAssetCategory) : MyAssetCategory(InAssetCategory)
+{
+
+}
+
+FText FBXStateMachineAssetTypeActions::GetName() const
+{
+	return LOCTEXT("FBXStateMachineAssetTypeActions", "StateMachine");
+}
+
+FColor FBXStateMachineAssetTypeActions::GetTypeColor() const
+{
+	return FColor::Purple;
+}
+
+UClass* FBXStateMachineAssetTypeActions::GetSupportedClass() const
+{
+	return UBXStateMachineAsset::StaticClass();
+}
+
+void FBXStateMachineAssetTypeActions::OpenAssetEditor(const TArray<UObject*>& InObjects, TSharedPtr<class IToolkitHost> EditWithinLevelEditor)
+{
+	const EToolkitMode::Type Mode = EditWithinLevelEditor.IsValid() ? EToolkitMode::WorldCentric : EToolkitMode::Standalone;
+
+	for (auto ObjIt = InObjects.CreateConstIterator(); ObjIt; ++ObjIt)
+	{
+		if (UBXDecisionTreeTemplate* Template = Cast<UBXDecisionTreeTemplate>(*ObjIt))
+		{
+			TSharedRef<FBXDTEditor> NewEditor(new FBXDTEditor());
+			NewEditor->InitEditor(Mode, EditWithinLevelEditor, Template);
+		}
+	}
+}
+
+uint32 FBXStateMachineAssetTypeActions::GetCategories()
+{
+	MyAssetCategory = EAssetTypeCategories::Type::Gameplay;
+
+	return MyAssetCategory;
+}
+
+void FBXStateMachineAssetTypeActions::GetActions(const TArray<UObject*>& InObjects, FMenuBuilder& MenuBuilder)
 {
 
 }

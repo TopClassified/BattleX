@@ -4,7 +4,7 @@
 #include "BXGameplayTags.h"
 #include "BXEventStructs.h"
 #include "BXEventManager.h"
-#include "BXStateFunctionLibrary.h"
+#include "Behavior/BXBehaviorFunctionLibrary.h"
 #include "GameFramework/Character.h"
 #include "Components/SkeletalMeshComponent.h"
 
@@ -92,7 +92,7 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 	bool bVelocityOverMax = IsExceedingMaxSpeed(MaxSpeed);
 
 	// 禁止主动移动，将寻路和输入的加速度标记为零向量
-	if (UBXStateFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move))
+	if (UBXBehaviorFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move))
 	{
 		Acceleration = FVector::ZeroVector;
 		bZeroAcceleration = true;
@@ -152,7 +152,7 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 			{
 				bProactiveMoving = false;
 				// 通知到行为组件，停止主动移动
-				UBXStateFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move);
+				UBXBehaviorFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move);
 			}
 		}
 		else
@@ -161,7 +161,7 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 			{
 				bProactiveMoving = true;
 				// 通知到行为组件，开始主动移动
-				UBXStateFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move);
+				UBXBehaviorFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move);
 			}
 		}	
 	}
@@ -169,7 +169,7 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 
 FVector UBXCharacterMovementComponent::ComputeSlideVector(const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const
 {
-	if (UBXStateFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move))
+	if (UBXBehaviorFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move))
 	{
 		return Delta;
 	}
@@ -185,14 +185,14 @@ void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		return;
 	}
 	
-	if (!(bOrientRotationToMovement || bUseControllerDesiredRotation) || UBXStateFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate))
+	if (!(bOrientRotationToMovement || bUseControllerDesiredRotation) || UBXBehaviorFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate))
 	{
 		// 停止主动转向状态
 		if (bProactiveRotating)
 		{
 			bProactiveRotating = false;
 			// 通知到行为组件，停止主动转向
-			UBXStateFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
+			UBXBehaviorFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
 		}
 		
 		return;
@@ -205,7 +205,7 @@ void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		{
 			bProactiveRotating = false;
 			// 通知到行为组件，停止主动转向
-			UBXStateFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
+			UBXBehaviorFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
 		}
 		
 		return;
@@ -325,7 +325,7 @@ void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		{
 			bProactiveRotating = true;
 			// 通知到行为组件，开始主动转向
-			UBXStateFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
+			UBXBehaviorFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
 		}
 	}
 	else
@@ -335,7 +335,7 @@ void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		{
 			bProactiveRotating = false;
 			// 通知到行为组件，停止主动转向
-			UBXStateFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
+			UBXBehaviorFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
 		}
 	}
 }
@@ -364,14 +364,14 @@ void UBXCharacterMovementComponent::ProcessLanded(const FHitResult& Hit, float r
 	}
 
 	// 通知到行为组件，落地
-	UBXStateFunctionLibrary::StartBehaviorWithParameter<FHitResult>(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Landed, Hit);
+	UBXBehaviorFunctionLibrary::StartBehaviorWithParameter<FHitResult>(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Landed, Hit);
 	
 	StartNewPhysics(remainingTime, Iterations);
 }
 
 bool UBXCharacterMovementComponent::CanAttemptJump() const
 {
-	return !UBXStateFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Jump) && !bWantsToCrouch && IsMovingOnGround();
+	return !UBXBehaviorFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Jump) && !bWantsToCrouch && IsMovingOnGround();
 }
 
 bool UBXCharacterMovementComponent::DoJump(bool bReplayingMoves)
@@ -397,7 +397,7 @@ bool UBXCharacterMovementComponent::DoJump(bool bReplayingMoves)
 		SetMovementMode(MOVE_Falling);
 
 		// 通知到行为组件，跳跃
-		UBXStateFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Jump);
+		UBXBehaviorFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Jump);
 		
 		return true;
 	}

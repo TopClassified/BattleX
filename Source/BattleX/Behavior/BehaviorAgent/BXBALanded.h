@@ -14,8 +14,8 @@ class BATTLEX_API UBXBADefaultLanded : public UBXBehaviorAgent
 	GENERATED_BODY()
 	
 public:
-	bool NativeStartBehavior(const FInstancedStruct& InParameter);
-	
-	bool NativeCheckStartBehavior(const FInstancedStruct& InParameter);
+	virtual bool NativeStartBehavior(const FInstancedStruct& InParameter) override;
+
+	virtual bool NativeCheckStartBehavior(const FInstancedStruct& InParameter) override;
 	
 };

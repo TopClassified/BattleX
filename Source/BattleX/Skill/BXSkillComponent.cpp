@@ -9,6 +9,9 @@
 #include "BXTLManager.h"
 #include "BXTStructs.h"
 #include "BXNetStructs.h"
+#include "BXEventStructs.h"
+#include "BXEventManager.h"
+#include "Behavior/BXBehaviorComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Engine/NetDriver.h"
 
@@ -17,6 +20,9 @@
 UBXSkillComponent::UBXSkillComponent()
 {
 	SetIsReplicatedByDefault(true);
+
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
 void UBXSkillComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -225,6 +231,8 @@ int64 UBXSkillComponent::PlaySkillWithInputData(UBXSkillAsset* InAsset, TMap<FGa
 
 		OwnedSkillIDs.Add(Header.SkillID);
 		RecordCooldown(InAsset);
+		// 有技能运行→启用Tick(取消窗口边界管理)
+		SetComponentTickEnabled(true);
 		UE_LOG(BXMGR_Skill, Log, TEXT("UBXSkillComponent::PlaySkillWithInputData: Authority play. SkillID=%lld Asset=%s."), Header.SkillID, *InAsset->GetName());
 		MulticastPlaySkill(Header, Payload);
 		return Header.SkillID;
@@ -248,6 +256,8 @@ int64 UBXSkillComponent::PlaySkillWithInputData(UBXSkillAsset* InAsset, TMap<FGa
 
 		Header.Initiator = EBXSyncInitiator::Client;
 		OwnedSkillIDs.Add(Header.SkillID);
+		// 有技能运行→启用Tick(取消窗口边界管理)
+		SetComponentTickEnabled(true);
 
 		// 本地立即开始"假冷却"防止连点:服务器确认时转正为权威冷却,否认时移除
 		RecordCooldown(InAsset);
@@ -587,6 +597,12 @@ void UBXSkillComponent::InternalOnSkillFinished(int64 InSkillID)
 {
 	OwnedSkillIDs.Remove(InSkillID);
 
+	// 无运行技能→关闭Tick(取消窗口管理零开销)
+	if (OwnedSkillIDs.IsEmpty())
+	{
+		SetComponentTickEnabled(false);
+	}
+
 	// 技能结束时预测结果仍未到达(超时回滚):释放假冷却允许重试,迟到的结果因无登记直接跳过结算
 	int32 PendingAssetID = INDEX_NONE;
 	if (PendingCooldownSkills.RemoveAndCopyValue(InSkillID, PendingAssetID))
@@ -601,8 +617,36 @@ void UBXSkillComponent::InternalOnSkillFinished(int64 InSkillID)
 
 
 #pragma region Lifecycle
+void UBXSkillComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 技能互锁监听:姿态行为被挤出/挂起(Sign=本技能SkillID)→中断本技能
+	if (UBXEventManager* EventMgr = UBXEventManager::Get(this))
+	{
+		BehaviorExitCallbackHandle = EventMgr->RegisterNativeSingleEvent(
+			BXGameplayTags::BXEvent_Behavior_Exit,
+			GetOwner(),
+			this,
+			[this](void* InData)
+			{
+				if (const FBXEventBehaviorChanged* Parameter = static_cast<const FBXEventBehaviorChanged*>(InData))
+				{
+					// 聚合转成员(捕获this的lambda,组件生命周期内安全)
+					OnBehaviorExitEvent(*Parameter);
+				}
+			});
+	}
+}
+
 void UBXSkillComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	// 注销互锁监听
+	if (UBXEventManager* EventMgr = UBXEventManager::Get(this))
+	{
+		EventMgr->UnregisterNativeSingleEvent(BXGameplayTags::BXEvent_Behavior_Exit, GetOwner(), BehaviorExitCallbackHandle);
+	}
+
 	UBXSkillManager* SkillMgr = UBXSkillManager::Get(this);
 	if (SkillMgr)
 	{
@@ -613,8 +657,110 @@ void UBXSkillComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 
 	OwnedSkillIDs.Empty();
+	CancelWindowStates.Empty();
 
 	Super::EndPlay(EndPlayReason);
+}
+
+void UBXSkillComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	UpdateCancelWindows(DeltaTime);
+}
+
+void UBXSkillComponent::UpdateCancelWindows(float InDeltaTime)
+{
+	// 无运行中技能时零开销(未启用Tick时同样不进入)
+	if (OwnedSkillIDs.IsEmpty())
+	{
+		return;
+	}
+
+	UBXSkillManager* SkillMgr = UBXSkillManager::Get(this);
+	UBXBehaviorComponent* BehaviorComp = GetOwner() ? GetOwner()->FindComponentByClass<UBXBehaviorComponent>() : nullptr;
+	if (!SkillMgr || !BehaviorComp)
+	{
+		return;
+	}
+
+	// 快照遍历(窗口切换可能触发行为变更回调)
+	TArray<int64> SkillIDs;
+	SkillIDs.Reserve(OwnedSkillIDs.Num());
+	for (int64 SkillID : OwnedSkillIDs)
+	{
+		SkillIDs.Add(SkillID);
+	}
+
+	for (int64 SkillID : SkillIDs)
+	{
+		FBXSkillRuntimeData* Data = SkillMgr->GetSkillRuntimeDataByID(SkillID);
+		if (!Data || !Data->SkillAsset)
+		{
+			continue;
+		}
+
+		UBXSkillAsset* Asset = Data->SkillAsset;
+		if (!Asset->BehaviorTag.IsValid() || Asset->CancelWindows.IsEmpty() || !Asset->bProtectedBehavior)
+		{
+			continue;
+		}
+
+		// 窗口判定(技能时间轴当前时间)
+		const bool bInWindow = Asset->IsInCancelWindow(Data->TLRunTimeData.RunTime);
+
+		// 边界切换才写保护表(常规帧零开销)
+		bool* CachedState = CancelWindowStates.Find(SkillID);
+		if (!CachedState)
+		{
+			CachedState = &CancelWindowStates.Add(SkillID, false);
+		}
+
+		if (*CachedState != bInWindow)
+		{
+			*CachedState = bInWindow;
+			BehaviorComp->SetBehaviorProtection(Asset->BehaviorTag, SkillID, !bInWindow);
+		}
+	}
+
+	// 清理已结束技能的窗口缓存(CleanSkillTrash先移除OwnedSkillIDs条目)
+	TArray<int64> StaleIDs;
+	for (const TPair<int64, bool>& Pair : CancelWindowStates)
+	{
+		if (!OwnedSkillIDs.Contains(Pair.Key))
+		{
+			StaleIDs.Add(Pair.Key);
+		}
+	}
+	for (int64 SkillID : StaleIDs)
+	{
+		CancelWindowStates.Remove(SkillID);
+	}
+}
+
+void UBXSkillComponent::OnBehaviorExitEvent(const FBXEventBehaviorChanged& InParameter)
+{
+	// 互锁:本组件持有的技能姿态行为被挤出/挂起→技能中断(Q1任一语义)
+	if (!OwnedSkillIDs.Contains(InParameter.Sign))
+	{
+		return;
+	}
+
+	// 仅挤出/挂起触发互锁(手动停止/清空是技能结束自身收束,不回路中断)
+	if (InParameter.Reason != EBXBehaviorEndReason::BER_Expelled
+		&& InParameter.Reason != EBXBehaviorEndReason::BER_Suspended)
+	{
+		return;
+	}
+
+	UBXSkillManager* SkillMgr = UBXSkillManager::Get(this);
+	if (!SkillMgr)
+	{
+		return;
+	}
+
+	// 姿态行为中断→技能互锁中断(行为Exit事件在StopBehavior管线内,StopSkill标记延迟清理,调用栈安全)
+	SkillMgr->StopSkill(InParameter.Sign, EBXTLFinishReason::FR_Interrupt);
 }
 
 #pragma endregion Lifecycle

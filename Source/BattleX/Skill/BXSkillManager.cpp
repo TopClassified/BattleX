@@ -17,6 +17,8 @@
 #include "BXEventManager.h"
 #include "BXTStructs.h"
 #include "BXNetStructs.h"
+#include "Behavior/BXBehaviorComponent.h"
+#include "State/BXStateComponent.h"
 
 
 
@@ -195,6 +197,46 @@ void UBXSkillManager::CleanSkillTrash()
 		if (IsValid(TrashData.TLRunTimeData.Owner))
 		{
 			OwnerSkillMap.FindOrAdd(TrashData.TLRunTimeData.Owner).Remove(SkillID);
+
+			// ===== 技能-行为/状态收束(覆盖自然/中断/回滚全部FinishReason;回滚路径必须退出,否则客户端残留) =====
+			if (UBXSkillAsset* TrashAsset = Cast<UBXSkillAsset>(TrashData.SkillAsset))
+			{
+				AActor* TrashOwner = TrashData.TLRunTimeData.Owner;
+
+				if (UBXBehaviorComponent* BehaviorComp = TrashOwner->FindComponentByClass<UBXBehaviorComponent>())
+				{
+					// 姿态行为退出(全部来源中本技能的Sign)
+					if (TrashAsset->BehaviorTag.IsValid())
+					{
+						BehaviorComp->StopBehavior(TrashAsset->BehaviorTag, SkillID);
+					}
+
+					// 取消窗口保护记录移除
+					BehaviorComp->RemoveProtectionBySign(SkillID);
+				}
+
+				if (UBXStateComponent* StateComp = TrashOwner->FindComponentByClass<UBXStateComponent>())
+				{
+					// 退出原因映射(中断→被外部顶掉,预测失败→回滚,自然结束→手动)
+					EBXStateEndReason StateExitReason = EBXStateEndReason::SER_Manual;
+					switch (TrashData.FinishReason)
+					{
+					case EBXTLFinishReason::FR_Interrupt:
+						StateExitReason = EBXStateEndReason::SER_External;
+						break;
+					case EBXTLFinishReason::FR_PredictionFailure:
+						StateExitReason = EBXStateEndReason::SER_PredictRollback;
+						break;
+					default:
+						break;
+					}
+
+					for (const FBXSkillEnterState& StateEntry : TrashAsset->EnterStates)
+					{
+						StateComp->ExitState(StateEntry.StateTag, SkillID, StateExitReason);
+					}
+				}
+			}
 
 			// 通知组件清理本地登记(OwnedSkillIDs/预测假冷却),否则自然结束的技能ID永久残留
 			if (UBXSkillComponent* SkillComponent = TrashData.TLRunTimeData.Owner->FindComponentByClass<UBXSkillComponent>())
@@ -463,8 +505,71 @@ int64 UBXSkillManager::InternalPlaySkill(UBXSkillAsset* InAsset, AActor* InOwner
 		NewData->TLRunTimeData.DynamicDatas.Add(FBXTLDynamicDataSearchKey(-1, Entry.Tag), MoveTemp(Entry.Value));
 	}
 
+	// ===== 技能-行为集成(五步链:判定->清场->登记行为->首帧Task) =====
+	// 行为先行判决(CanStart只读无副作用:挂起/拒绝关系/Agent检查/挤出目标保护)
+	// 此后清场与登记理论上必过,原子性缺口闭合(失败路径零残留)
+	if (UBXBehaviorComponent* BehaviorComp = InOwner->FindComponentByClass<UBXBehaviorComponent>())
+	{
+		if (InAsset->BehaviorTag.IsValid())
+		{
+			FBXBehaviorStartCheck StartCheck;
+			if (!BehaviorComp->CanStartBehavior(InAsset->BehaviorTag, StartCheck))
+			{
+				UE_LOG(BXMGR_Skill, Warning, TEXT("UBXSkillManager::InternalPlaySkill: behavior rejected(%s). SkillID=%lld Tag=%s"), *StartCheck.FailReason, InSkillID, *InAsset->BehaviorTag.ToString());
+				return INDEX_NONE;
+			}
+
+			// 保护先置位再清场(清场目标不含自身;窗口内切换由SkillComponent边界管理)
+			if (InAsset->bProtectedBehavior)
+			{
+				BehaviorComp->SetBehaviorProtection(InAsset->BehaviorTag, InSkillID, true);
+			}
+
+			// ③ 清场:挤出与姿态行为互斥的活跃行为(受保护目标上面CanStart已拦,此处幂等防御)
+			if (!BehaviorComp->InterruptBehaviorsConflicting(InAsset->BehaviorTag))
+			{
+				UE_LOG(BXMGR_Skill, Warning, TEXT("UBXSkillManager::InternalPlaySkill: behavior conflict protected. SkillID=%lld Tag=%s"), InSkillID, *InAsset->BehaviorTag.ToString());
+				BehaviorComp->RemoveProtectionBySign(InSkillID);
+				return INDEX_NONE;
+			}
+
+			// ⑤a 登记姿态行为(先于首帧Task:首帧Task查询行为表时已含本条目,视图自洽)
+			if (!BehaviorComp->StartBehavior(InAsset->BehaviorTag, InSkillID))
+			{
+				UE_LOG(BXMGR_Skill, Warning, TEXT("UBXSkillManager::InternalPlaySkill: behavior start failed. SkillID=%lld Tag=%s"), InSkillID, *InAsset->BehaviorTag.ToString());
+				BehaviorComp->RemoveProtectionBySign(InSkillID);
+				return INDEX_NONE;
+			}
+		}
+	}
+
 	// 启动Task(初始化RunningSections并触发首帧KeyFrame)
 	StartSkillTasks(*NewData);
+
+	// ===== 技能-状态集成:EnterStates登记(Sign=SkillID,技能结束收束退出) =====
+	if (UBXStateComponent* StateComp = InOwner->FindComponentByClass<UBXStateComponent>())
+	{
+		for (const FBXSkillEnterState& StateEntry : InAsset->EnterStates)
+		{
+			// 进入失败(链深度超限/节点缺失)仅告警不中断释放:状态是技能的附加产物
+			if (!StateComp->EnterState(StateEntry.StateTag, InSkillID, StateEntry.Duration))
+			{
+				UE_LOG(BXMGR_Skill, Warning, TEXT("UBXSkillManager::InternalPlaySkill: enter state failed. SkillID=%lld State=%s"), InSkillID, *StateEntry.StateTag.ToString());
+			}
+		}
+
+		// 配置自检:技能进入的状态禁用了自身姿态行为(当帧互锁,通常为资产配置错误)
+		if (InAsset->BehaviorTag.IsValid() && !InAsset->EnterStates.IsEmpty())
+		{
+			if (UBXBehaviorComponent* BehaviorComp2 = InOwner->FindComponentByClass<UBXBehaviorComponent>())
+			{
+				if (BehaviorComp2->IsBehaviorSuspended(InAsset->BehaviorTag))
+				{
+					UE_LOG(BXMGR_Skill, Warning, TEXT("UBXSkillManager::InternalPlaySkill: skill behavior forbidden by its own EnterStates (config conflict). SkillID=%lld Tag=%s"), InSkillID, *InAsset->BehaviorTag.ToString());
+				}
+			}
+		}
+	}
 
 	if (bUpdatingSkill)
 	{

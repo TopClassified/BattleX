@@ -25,6 +25,7 @@ public class BattleX : ModuleRules
                 "BattleX/Unit",
                 "BattleX/Lock",
                 "BattleX/Gear",
+                "BattleX/Behavior",
                 "BattleX/State",
                 "BattleX/Event",
                 "BattleX/Movement",

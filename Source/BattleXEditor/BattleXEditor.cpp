@@ -21,6 +21,9 @@
 #include "ComponentVisualizers/BXShapeComponentVisualizer.h"
 #include "CustomLayout/BXBoneSelectorCustomization.h"
 #include "CustomLayout/BXFunctionSelectorCustomization.h"
+#include "CustomLayout/BXBehaviorMatrixCustomization.h"
+
+#include "Behavior/BXBehaviorSettings.h"
 
 
 
@@ -49,6 +52,8 @@ void FBattleXEditorModule::StartupModule()
 	AssetToolsModule.RegisterAssetTypeActions(MakeShareable(new FBXBeatenTreeAssetTypeActions(CurrentAssetCategory)));
 	// 注册出招表资源
 	AssetToolsModule.RegisterAssetTypeActions(MakeShareable(new FBXCombatTreeAssetTypeActions(CurrentAssetCategory)));
+	// 注册状态机资源
+	AssetToolsModule.RegisterAssetTypeActions(MakeShareable(new FBXStateMachineAssetTypeActions(CurrentAssetCategory)));
 
 	// 自定义缩略图
 	UThumbnailManager::Get().UnregisterCustomRenderer(UBXTLAsset::StaticClass());
@@ -60,6 +65,8 @@ void FBattleXEditorModule::StartupModule()
 	FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 	PropertyModule.RegisterCustomPropertyTypeLayout(FBXBoneSelector::StaticStruct()->GetFName(), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FBXBoneSelectorCustomization::MakeInstance));
 	PropertyModule.RegisterCustomPropertyTypeLayout(FBXFunctionSelector::StaticStruct()->GetFName(), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FBXFunctionSelectorCustomization::MakeInstance));
+	// 行为关系矩阵定制(UBXBehaviorSettings的关系字段渲染为矩阵网格)
+	PropertyModule.RegisterCustomClassLayout(UBXBehaviorSettings::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FBXBehaviorSettingsCustomization::MakeInstance));
 
 	// 初始化编辑器样式(原实现从未调用,StyleInstance恒为null,图标等样式整体失效)
 	FBXTLEditorStyle::Initialize();
@@ -81,6 +88,7 @@ void FBattleXEditorModule::ShutdownModule()
 		FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 		PropertyModule.UnregisterCustomPropertyTypeLayout(FBXBoneSelector::StaticStruct()->GetFName());
 		PropertyModule.UnregisterCustomPropertyTypeLayout(FBXFunctionSelector::StaticStruct()->GetFName());
+		PropertyModule.UnregisterCustomClassLayout(UBXBehaviorSettings::StaticClass()->GetFName());
 	}
 }
 

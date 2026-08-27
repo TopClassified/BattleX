@@ -3,6 +3,7 @@
 #include "BXDecisionTreeTemplate.h"
 #include "BeatenTree/BXBeatenTreeTemplate.h"
 #include "CombatTree/BXCombatTreeTemplate.h"
+#include "State/StateMachine/BXStateMachineAsset.h"
 
 #include "Modules/ModuleManager.h"
 #include "ClassViewerModule.h"
@@ -293,6 +294,36 @@ UObject* UBXCombatTreeAssetFactory::FactoryCreateNew(UClass* Class, UObject* InP
 }
 
 UObject* UBXCombatTreeAssetFactory::FactoryCreateNew(UClass* Class, UObject* InParent, FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
+{
+	return FactoryCreateNew(Class, InParent, Name, Flags, Context, Warn, NAME_None);
+}
+
+
+
+
+UBXStateMachineAssetFactory::UBXStateMachineAssetFactory(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
+{
+	bCreateNew = true;
+	bEditAfterNew = true;
+	SupportedClass = UBXStateMachineAsset::StaticClass();
+}
+
+UBXStateMachineAssetFactory::~UBXStateMachineAssetFactory()
+{
+
+}
+
+bool UBXStateMachineAssetFactory::ConfigureProperties()
+{
+	return true;
+};
+
+UObject* UBXStateMachineAssetFactory::FactoryCreateNew(UClass* Class, UObject* InParent, FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn, FName CallingContext)
+{
+	return NewObject<UBXStateMachineAsset>(InParent, Class, Name, Flags | RF_Transactional);
+}
+
+UObject* UBXStateMachineAssetFactory::FactoryCreateNew(UClass* Class, UObject* InParent, FName Name, EObjectFlags Flags, UObject* Context, FFeedbackContext* Warn)
 {
 	return FactoryCreateNew(Class, InParent, Name, Flags, Context, Warn, NAME_None);
 }

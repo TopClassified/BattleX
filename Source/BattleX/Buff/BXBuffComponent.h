@@ -96,12 +96,22 @@ public:
 
 
 
+#pragma region RPC MulticastBuffStateChanged
+public:
+	// 广播BUFF状态变化(层/级/到期;快照为COND_InitialOnly不持续同步,已有连接经此RPC维护)
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastBuffStateChanged(FBXBuffReplicatedState InState);
+
+#pragma endregion RPC MulticastBuffStateChanged
+
+
+
 #pragma region Internal
 public:
 	// 根据复制状态重建进行中的BUFF(新复制到本地的对象初始化用)
 	void RebuildBuffFromState(const FBXBuffReplicatedState& InState);
 
-	// 同步快照条目变化到已重建的本地实例(层/级/到期变化)
+	// 同步服务器状态变化到已重建的本地实例(层/级/到期,MulticastBuffStateChanged接收路径)
 	void ApplyBuffStateChange(const FBXBuffReplicatedState& InState);
 
 	// 移除本地存在的BUFF(快照条目消失的乱序兜底)
@@ -110,17 +120,14 @@ public:
 	// BUFF实例结束通知(Manager清理运行数据时调用):移除OwnedBuffIDs登记,否则自然到期的BUFF ID永久残留
 	void InternalOnBuffFinished(int64 InBuffID);
 
-	// 服务器维护快照条目:BUFF添加后加入
-	void AddBuffReplicatedState(int64 InBuffID);
+	// 服务器广播BUFF状态变化(层/级/时长刷新收束点调用):从运行数据投影最新状态并Multicast
+	void BroadcastBuffStateChanged(int64 InBuffID);
 
-	// 服务器维护快照条目:状态变化(层/级/时长刷新)后刷新
-	void UpdateBuffReplicatedState(int64 InBuffID);
-
-	// 服务器维护快照条目:BUFF移除后删除
-	void RemoveBuffReplicatedState(int64 InBuffID);
+	// 从OwnedBuffIDs重建RunningBuffStates快照(新客户端连入时调用)
+	void RebuildRunningBuffStates();
 
 protected:
-	// 复制快照OnRep(带旧值差分:新增条目重建,变化条目同步状态,消失条目兜底移除)
+	// 复制快照OnRep(COND_InitialOnly仅新连接初始同步;带旧值差分防御性保留:新增条目重建,消失条目兜底移除)
 	UFUNCTION()
 	void OnRep_RunningBuffStates(TArray<FBXBuffReplicatedState> InOldStates);
 
@@ -131,6 +138,10 @@ protected:
 #pragma region Lifecycle
 public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	// 服务器端、属性收集前每帧调用:从OwnedBuffIDs重建快照数组为最新运行数据投影
+	// (配合COND_InitialOnly:仅新连接初始同步发送,已有连接零属性流量)
+	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 
 	// 组件销毁时移除所有BUFF
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -145,9 +156,14 @@ protected:
 	UPROPERTY(Transient)
 	TArray<int64> OwnedBuffIDs;
 
-	// 运行中BUFF的复制快照(无条件复制:低频变化承担初始重建+层/级/到期持续同步)
+	// 运行中BUFF的复制快照(COND_InitialOnly:新复制到客户端的对象初始同步时重建用,
+	// 已有连接的BUFF动态由显式RPC维护(MulticastAddBuff/MulticastRemoveBuff/MulticastBuffStateChanged),
+	// 详见BXBuffReplicated.h文件头注释)
 	UPROPERTY(ReplicatedUsing=OnRep_RunningBuffStates)
 	TArray<FBXBuffReplicatedState> RunningBuffStates;
+
+	// 上次投影时的远程连接数(-1保证组件首个复制周期必建一次基线快照;连接数增加才重建快照)
+	int32 LastProjectedConnectionCount = -1;
 
 #pragma endregion Data
 };

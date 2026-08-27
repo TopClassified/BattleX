@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 
 #include "Timeline/BXTLAsset.h"
 #include "BXSkillEnums.h"
@@ -10,6 +11,48 @@
 
 
 class UBXTaskCondition;
+
+
+
+// 技能取消窗口(窗口内解除姿态行为保护,允许互斥行为挤出实现连招取消)
+USTRUCT(BlueprintType)
+struct FBXSkillCancelWindow
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	// 窗口起始时间(技能时间轴秒)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0"))
+	float StartTime = 0.0f;
+
+	// 窗口结束时间(技能时间轴秒)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0"))
+	float EndTime = 0.0f;
+
+	// 是否包含起点
+	bool Contains(float InTime) const
+	{
+		return InTime >= StartTime && InTime <= EndTime;
+	}
+};
+
+
+
+// 技能进入状态条目(数组序=进入序:族内互斥多状态按配置顺序顶掉,末位生效)
+USTRUCT(BlueprintType)
+struct FBXSkillEnterState
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	// 状态Tag
+	UPROPERTY(EditDefaultsOnly)
+	FGameplayTag StateTag;
+
+	// 持续时长(≤0用状态配置默认)
+	UPROPERTY(EditDefaultsOnly, meta = (ClampMin = "-1.0"))
+	float Duration = -1.0f;
+};
 
 
 
@@ -34,5 +77,30 @@ public:
 	EBXSkillLockType LockType = EBXSkillLockType::None;
 
 #pragma endregion Release
+
+
+
+#pragma region BehaviorState
+public:
+	// 技能对应的行为Tag(1:1映射,技能姿态行为;空代表无行为纯技能)
+	UPROPERTY(EditDefaultsOnly, Category = "Behavior")
+	FGameplayTag BehaviorTag;
+
+	// 姿态行为是否默认受保护(取消窗口外不可被矩阵挤出,霸体语义)
+	UPROPERTY(EditDefaultsOnly, Category = "Behavior")
+	bool bProtectedBehavior = true;
+
+	// 技能开始时进入的状态列表(按序进入;Sign=SkillID,技能结束收束退出)
+	UPROPERTY(EditDefaultsOnly, Category = "State")
+	TArray<FBXSkillEnterState> EnterStates;
+
+	// 取消窗口列表(窗口内姿态行为保护解除)
+	UPROPERTY(EditDefaultsOnly, Category = "Behavior")
+	TArray<FBXSkillCancelWindow> CancelWindows;
+
+	// 查询指定时间点是否处于取消窗口内
+	bool IsInCancelWindow(float InTimelineTime) const;
+
+#pragma endregion BehaviorState
 
 };

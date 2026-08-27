@@ -74,3 +74,27 @@ private:
 	EAssetTypeCategories::Type MyAssetCategory;
 
 };
+
+
+
+
+// 状态机资产入口(打开决策树编辑器,节点/边类型由UBXStateMachineType限定)
+class FBXStateMachineAssetTypeActions : public FAssetTypeActions_Base
+{
+public:
+	FBXStateMachineAssetTypeActions(EAssetTypeCategories::Type InAssetCategory);
+
+	// IAssetTypeActions interface
+	virtual FText GetName() const override;
+	virtual FColor GetTypeColor() const override;
+	virtual UClass* GetSupportedClass() const override;
+	virtual bool HasActions(const TArray<UObject*>& InObjects) const override { return true; }
+	virtual void GetActions(const TArray<UObject*>& InObjects, FMenuBuilder& MenuBuilder) override;
+	virtual void OpenAssetEditor(const TArray<UObject*>& InObjects, TSharedPtr<class IToolkitHost> EditWithinLevelEditor = TSharedPtr<IToolkitHost>()) override;
+	virtual uint32 GetCategories() override;
+	// End of IAssetTypeActions interface
+
+private:
+	EAssetTypeCategories::Type MyAssetCategory;
+
+};

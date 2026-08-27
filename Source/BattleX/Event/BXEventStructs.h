@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
 
+#include "BXBehaviorEnums.h"
 #include "BXStateEnums.h"
 
 #include "BXEventStructs.generated.h"
@@ -19,43 +20,60 @@ struct FBXEventEmpty
 
 
 
-// 行为禁止事件参数
+// 行为事件参数(进入/退出)
 USTRUCT(BlueprintType)
-struct FBXEventForbiddenBehavior
+struct FBXEventBehaviorChanged
 {
 	GENERATED_USTRUCT_BODY()
 
 public:
-	FBXEventForbiddenBehavior() {}
-	FBXEventForbiddenBehavior(FGameplayTag InBehavior, bool InForbidden): BehaviorTag(InBehavior), bForbidden(InForbidden) {}
-	FBXEventForbiddenBehavior(FGameplayTag InBehavior, bool InForbidden, EBXForbiddenBehaviorReason InReason): BehaviorTag(InBehavior), bForbidden(InForbidden), Reason(InReason) {}
-	
-public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	FGameplayTag BehaviorTag;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	bool bForbidden = false;
+	FBXEventBehaviorChanged() {}
+	FBXEventBehaviorChanged(FGameplayTag InBehaviorTag, int64 InSign, EBXBehaviorEndReason InReason)
+		: BehaviorTag(InBehaviorTag), Sign(InSign), Reason(InReason) {}
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	EBXForbiddenBehaviorReason Reason = EBXForbiddenBehaviorReason::FB_OtherBehavior;
+public:
+	// 行为Tag
+	UPROPERTY(Transient, BlueprintReadWrite)
+	FGameplayTag BehaviorTag;
+
+	// 来源签名(技能SkillID/时间轴TLID/0系统常驻)
+	UPROPERTY(Transient, BlueprintReadWrite)
+	int64 Sign = 0;
+
+	// 原因(Exit事件:结束原因;Enter事件:BER_TMax=新进入/BER_Resumed=挂起恢复)
+	UPROPERTY(Transient, BlueprintReadWrite)
+	EBXBehaviorEndReason Reason = EBXBehaviorEndReason::BER_TMax;
 
 };
 
 
 
-// 行为事件默认参数
+// 状态事件参数(进入/退出)
 USTRUCT(BlueprintType)
-struct FBXEventBehaviorDefault
+struct FBXEventStateChanged
 {
 	GENERATED_USTRUCT_BODY()
 
 public:
-	FBXEventBehaviorDefault() {}
-	FBXEventBehaviorDefault(bool InActive): bActive(InActive) {}
-	
+	FBXEventStateChanged() {}
+	FBXEventStateChanged(FGameplayTag InStateTag, int64 InSign, float InDuration, EBXStateEndReason InReason)
+		: StateTag(InStateTag), Sign(InSign), Duration(InDuration), Reason(InReason) {}
+
 public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	bool bActive = false;
+	// 状态Tag
+	UPROPERTY(Transient, BlueprintReadWrite)
+	FGameplayTag StateTag;
+
+	// 来源签名
+	UPROPERTY(Transient, BlueprintReadWrite)
+	int64 Sign = 0;
+
+	// 进入时长(≤0无限,仅Enter事件有效)
+	UPROPERTY(Transient, BlueprintReadWrite)
+	float Duration = -1.0f;
+
+	// 结束原因(仅Exit事件有效)
+	UPROPERTY(Transient, BlueprintReadWrite)
+	EBXStateEndReason Reason = EBXStateEndReason::SER_TMax;
 
 };

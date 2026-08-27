@@ -2,6 +2,8 @@
 
 #include "BXFunctionLibrary.h"
 
+// 位标志快捷判断(BehaviorFunctions为int32位组合,与EBXBehaviorAgentFunction一一对应)
+#define BX_HAS_AGENT_FLAG(FlagName) (EnumHasAllFlags(static_cast<EBXBehaviorAgentFunction>(BehaviorFunctions), EBXBehaviorAgentFunction::FlagName))
 
 
 int64 UBXBehaviorAgent::GetUniqueKey() const
@@ -22,15 +24,15 @@ AActor* UBXBehaviorAgent::GetOwner() const
 bool UBXBehaviorAgent::Initialize()
 {
 	UniqueKey = UBXFunctionLibrary::GetUniqueID();
-	
+
 	bool bResult1 = true;
-	if ((BehaviorFunctions & 1) > 0)
+	if (BX_HAS_AGENT_FLAG(BAF_NativeInitialize))
 	{
 		bResult1 = NativeInitialize();
 	}
 
 	bool bResult2 = true;
-	if ((BehaviorFunctions & 2) > 0)
+	if (BX_HAS_AGENT_FLAG(BAF_BPInitialize))
 	{
 		bResult2 = ScriptInitialize();
 	}
@@ -47,13 +49,13 @@ bool UBXBehaviorAgent::NativeInitialize()
 bool UBXBehaviorAgent::Deinitialize()
 {
 	bool bResult1 = true;
-	if ((BehaviorFunctions & 4) > 0)
+	if (BX_HAS_AGENT_FLAG(BAF_NativeCleanup))
 	{
 		bResult1 = NativeDeinitialize();
 	}
 
 	bool bResult2 = true;
-	if ((BehaviorFunctions & 8) > 0)
+	if (BX_HAS_AGENT_FLAG(BAF_BPCleanup))
 	{
 		bResult2 = ScriptDeinitialize();
 	}
@@ -69,13 +71,13 @@ bool UBXBehaviorAgent::NativeDeinitialize()
 bool UBXBehaviorAgent::StartBehavior(const FInstancedStruct& InParameter)
 {
 	bool bResult1 = true;
-	if ((BehaviorFunctions & 16) > 0)
+	if (BX_HAS_AGENT_FLAG(BAF_NativeStartBehavior))
 	{
 		bResult1 = NativeStartBehavior(InParameter);
 	}
 
 	bool bResult2 = true;
-	if ((BehaviorFunctions & 32) > 0)
+	if (BX_HAS_AGENT_FLAG(BAF_BPStartBehavior))
 	{
 		bResult2 = ScriptStartBehavior(InParameter);
 	}
@@ -91,13 +93,13 @@ bool UBXBehaviorAgent::NativeStartBehavior(const FInstancedStruct& InParameter)
 bool UBXBehaviorAgent::StopBehavior(const FInstancedStruct& InParameter)
 {
 	bool bResult1 = true;
-	if ((BehaviorFunctions & 64) > 0)
+	if (BX_HAS_AGENT_FLAG(BAF_NativeStopBehavior))
 	{
 		bResult1 = NativeStopBehavior(InParameter);
 	}
 
 	bool bResult2 = true;
-	if ((BehaviorFunctions & 128) > 0)
+	if (BX_HAS_AGENT_FLAG(BAF_BPStopBehavior))
 	{
 		bResult2 = ScriptStopBehavior(InParameter);
 	}
@@ -113,13 +115,13 @@ bool UBXBehaviorAgent::NativeStopBehavior(const FInstancedStruct& InParameter)
 bool UBXBehaviorAgent::CheckStartBehavior(const FInstancedStruct& InParameter)
 {
 	bool bResult1 = true;
-	if ((BehaviorFunctions & 256) > 0)
+	if (BX_HAS_AGENT_FLAG(BAF_NativeCheckStartBehavior))
 	{
 		bResult1 = NativeCheckStartBehavior(InParameter);
 	}
 
 	bool bResult2 = true;
-	if ((BehaviorFunctions & 512) > 0)
+	if (BX_HAS_AGENT_FLAG(BAF_BPCheckStartBehavior))
 	{
 		bResult2 = ScriptCheckStartBehavior(InParameter);
 	}
