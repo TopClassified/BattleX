@@ -69,6 +69,22 @@ public:
 	UPROPERTY(Config, EditDefaultsOnly, Category = "Sync", meta = (ClampMin = "0"))
 	int32 SkillRequestMaxAgeMs = 500;
 
+	// 行为预测最长时长(秒,客户端预测启动行为后超时未确认即回滚)
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Sync", meta = (ClampMin = "0.05"))
+	float BehaviorPredictMaxDuration = 0.3f;
+
+	// 状态预测最长时长(秒,客户端预测进入状态后超时未确认即回滚)
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Sync", meta = (ClampMin = "0.05"))
+	float StatePredictMaxDuration = 0.3f;
+
+	// 服务器校验行为请求的最大年龄(服务器世界时间域毫秒)
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Sync", meta = (ClampMin = "0"))
+	int32 BehaviorRequestMaxAgeMs = 500;
+
+	// 服务器校验状态请求的最大年龄(服务器世界时间域毫秒)
+	UPROPERTY(Config, EditDefaultsOnly, Category = "Sync", meta = (ClampMin = "0"))
+	int32 StateRequestMaxAgeMs = 500;
+
 
 #pragma region Projectile
 public:

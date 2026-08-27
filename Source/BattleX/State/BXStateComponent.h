@@ -8,12 +8,13 @@
 #include "BXStateStructs.h"
 #include "StateMachine/BXStateMachineAsset.h"
 #include "StateMachine/BXStateMachineInstance.h"
+#include "Net/BXStateBehaviorReplicated.h"
 
 #include "BXStateComponent.generated.h"
 
 
 // 状态系统组件(唯一事实表+状态机实例管理+到期快照+禁用行为门控+表现触发)
-// 服务器权威:状态机转移评估仅服务器执行,客户端经多播跟随(首期本地单机语义,网络通道P5接入)
+// 服务器权威:状态机转移评估仅服务器执行,客户端经多播跟随(同步模型见StateBehaviorSystemDesign.md §5.7)
 UCLASS(ClassGroup = "BattleX", meta = (BlueprintSpawnableComponent))
 class BATTLEX_API UBXStateComponent : public UActorComponent
 {
@@ -26,6 +27,12 @@ public:
 	virtual void BeginPlay() override;
 
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	// 服务器端、属性收集前每帧调用:远程连接数增加(新客户端连入)时从ActiveStates重建快照
+	// (配合COND_InitialOnly仅初始同步发送,已有连接零属性流量)
+	virtual void PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker) override;
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
@@ -52,6 +59,17 @@ protected:
 
 	// 进入链深度守卫
 	int32 EnterChainDepth = 0;
+
+	// 运行中状态的复制快照(COND_InitialOnly:新复制到客户端的对象初始同步时LateJoin重建用,
+	// 已有连接的状态动态由显式RPC维护,详见BXStateBehaviorReplicated.h文件头注释)
+	UPROPERTY(ReplicatedUsing = OnRep_RunningStateStates)
+	TArray<FBXStateReplicatedState> RunningStateStates;
+
+	// 上次投影时的远程连接数(-1保证组件首个复制周期必建一次基线快照;连接数增加才重建快照)
+	int32 LastProjectedConnectionCount = -1;
+
+	// 预测缓冲(AutonomousProxy本地已执行待服务器结算;权威端恒空)
+	TArray<FBXPredictedState> PredictedStates;
 
 #pragma endregion Important
 
@@ -136,4 +154,91 @@ protected:
 	bool GetStateDurationAndForbidden(const FGameplayTag& InStateTag, float& OutDuration, FGameplayTagContainer& OutForbidden) const;
 
 #pragma endregion Internal
+
+
+
+#pragma region API Net
+public:
+	// 网络入口:进入状态(显式网络分流——权威端直接执行;AutonomousProxy本地执行+预测缓冲+ServerEnterState上报,
+	// 超时/拒绝回滚;SimulatedProxy拒绝。InSign非Client签名时自动生成ClientSyncID并返回生效Sign,失败返回-1;
+	// 族内SM状态仅权威驱动,客户端请求在服务器侧拒绝);
+	// 技能链路使用本地API(EnterState系列,Sign=SkillID随技能预测携带不走独立RPC),勿切此入口
+	UFUNCTION(BlueprintCallable, Category = "BattleX|State")
+	int64 EnterStateNet(const FGameplayTag& InStateTag, float InDuration = -1.0f);
+
+	// 网络入口:退出状态(仅允许退出Client签名来源——EnterStateNet返回的生效Sign;Server/系统Sign归权威管线,双端均拒绝)
+	UFUNCTION(BlueprintCallable, Category = "BattleX|State")
+	bool ExitStateNet(const FGameplayTag& InStateTag, int64 InSign);
+
+#pragma endregion API Net
+
+
+#pragma region RPC StateSync
+public:
+	// 客户端请求进入状态(AutonomousProxy预测通道;技能链路Sign=SkillID随技能预测携带不走此RPC)
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerEnterState(FGameplayTag InStateTag, int64 InSign, float InDuration, int64 InClientTimestamp);
+
+	// 客户端请求退出状态
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerExitState(FGameplayTag InStateTag, int64 InSign);
+
+	// 请求被拒回滚通知(发起端收到即本地回滚)
+	UFUNCTION(Client, Reliable)
+	void ClientRejectState(FGameplayTag InStateTag, int64 InSign);
+
+	// 广播状态进入(Reliable:事实动态主通道;多播到达即预测确认)
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastStateEnter(FGameplayTag InStateTag, int64 InSign, float InDuration);
+
+	// 广播状态退出(InReason透传)
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastStateExit(FGameplayTag InStateTag, int64 InSign, uint8 InReason);
+
+	// 广播状态表现触发(转移边表现/裸状态进出场表现的跟随端载体:权威端TriggerPresentation收束点发出,
+	// 接收端本播——各端本地语义与单机一致,不随网络延迟缩水)
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastStatePresentation(FGameplayTag InStateTag, FBXStatePresentation InPresentation);
+
+#pragma endregion RPC StateSync
+
+
+#pragma region Internal Net
+protected:
+	// 预测缓冲条目(AutonomousProxy:本地已执行待服务器确认/拒绝/超时)
+	struct FBXPredictedState
+	{
+		FGameplayTag Tag;
+		int64 Sign = 0;
+		float ElapsedTime = 0.0f;
+	};
+
+	// 登记预测条目(去重;超过上限仅告警不再登记——本地执行与上报不受影响,失去自动回滚保护)
+	void RegisterPredictedState(const FGameplayTag& InStateTag, int64 InSign);
+
+	// 注销匹配预测条目(服务器确认/主动退出时调用,返回是否命中)
+	bool UnregisterPredictedState(const FGameplayTag& InStateTag, int64 InSign);
+
+	// 预测超时扫描(Tick末尾客户端调用;快照收集后逐条回滚,回调中增删缓冲安全)
+	void UpdatePredictedStateTimeouts(float InDeltaTime);
+
+	// 从ActiveStates重建RunningStateStates快照(新客户端连入时PreReplication调用;来源投影为剩余时长)
+	void RebuildRunningStateStates();
+
+	// 多播接收:跟随进入(建事实条目+本地事件;门控与转移评估均不执行——权威事实镜像;
+	// 转移边/裸状态表现不在此通道,由MulticastStatePresentation专用多播在各端本播)
+	void HandleClientStateEnter(const FGameplayTag& InStateTag, int64 InSign, float InDuration);
+
+	// 多播接收:跟随退出(裸状态退场表现各端本播;移除匹配预测条目=退出确认)
+	void HandleClientStateExit(const FGameplayTag& InStateTag, int64 InSign, EBXStateEndReason InReason);
+
+	// Late Join重建单个状态(OnRep新增条目;静默填表+SM CurrentNode由条目Tag反查恢复,不触发表现/事件/门控)
+	void RebuildStateFromState(const FBXStateReplicatedState& InState);
+
+protected:
+	// 复制快照OnRep(COND_InitialOnly仅新连接初始同步;带旧值差分:新增条目LateJoin重建,消失条目兜底清理)
+	UFUNCTION()
+	void OnRep_RunningStateStates(TArray<FBXStateReplicatedState> InOldStates);
+
+#pragma endregion Internal Net
 };

@@ -46,6 +46,16 @@
 - P2 状态复制重建（Late Join）：新复制到客户端的对象经复制快照重建进行中的技能/BUFF。**UE5.4 已移除 FastArray 虚回调机制（FFastArraySerializer 非多态）且无服务器端发送前钩子，不可用 FastArray 回调方案**。技能侧：`RunningSkillStates` 为普通 TArray + COND_InitialOnly（仅新连接初始同步发送，已有连接零属性流量，技能动态由显式 RPC 维护），服务器在组件 PreReplication 检测远程连接数增加（新客户端连入）时从 SkillRTDatas 重建快照（常规帧零投影开销，详见 BXSkillComponent::LastProjectedConnectionCount），客户端 OnRep(带旧值)差分重建/兜底停止。BUFF 侧与技能对齐：`RunningBuffStates` 普通 TArray + COND_InitialOnly（仅新连接初始同步发送，已有连接零属性流量），服务器在组件 PreReplication 检测远程连接数增加时从 OwnedBuffIDs 全量重建快照（无增量维护点）；已有连接的 BUFF 动态由显式 RPC 维护——增删走 MulticastAddBuff/MulticastRemoveBuff，层/级/到期变化走 MulticastBuffStateChanged（服务器在 ChangeBuffLayer/ChangeBuffLevel/RefreshBuffLifetime/独立层级到期/手动按层移除收束点广播，客户端 ApplyBuffStateChange 差分应用）。运行数据投影结构见 BXTLReplicated.h（Timeline/Task 指针→ID/Index，按 Task.NetTypes 过滤只保留模拟端位 Task）；重建入口 UBXSkillManager::RebuildSkillFromProjection（反投影恢复 Task 指针后跳过 StartTimelineSections 直接入 SkillRTDatas 续跑）。
 - 组件启用复制用 `SetIsReplicatedByDefault(true)`（UE5.4+ 的 bReplicates 是 private，5.8 已验证仍如此）；网络时间戳客户端侧用 `AGameStateBase::GetServerWorldTimeSeconds()`（Base 即有，勿用不存在的 GetServerWorldTimeDelta）。
 
+## 行为/状态网络同步要点（P5，详见 StateBehaviorSystemDesign.md §4.6/§5.7/§11）
+- 双组件同步与技能/BUFF 同模型：`RunningBehaviorStates` / `RunningStateStates` 普通 TArray + COND_InitialOnly（PreReplication 远程连接数增加才投影快照），已有连接动态走 Reliable 显式 RPC；OnRep(带旧值) 差分做 Late Join 静默重建 + 消失条目兜底清理。条目结构见 Net/BXStateBehaviorReplicated.h（状态来源投影为剩余时长，重建以接收时刻为计时零点）。
+- **预测只走显式 Net 入口**：`StartBehaviorNet/StopBehaviorNet`、`EnterStateNet/ExitStateNet`——权威端直执行、AutonomousProxy 本地执行+预测缓冲+Server RPC、SimulatedProxy 拒绝（纯多播跟随）。非 Client 签名自动生成全新 ClientSyncID 并返回生效 Sign（Sign=0 无法定位回滚）。**CMC 高频路径（FunctionLibrary→StartBehavior）与技能链路（BXSkillManager 调公开本地 API）绝不能切 Net 入口**：技能链路 Sign=SkillID 随技能预测携带无独立 RPC（文档 Q2）。启动参数不上传 RPC，Agent 从基层组件现场取参。
+- 确认=多播匹配（MulticastBehaviorEnter 到达即从预测缓冲移除）；拒绝=`ClientReject*` 单独回包回滚；超时=`BehaviorPredictMaxDuration/StatePredictMaxDuration`（0.3s）Tick 快照收集回滚；请求年龄=`BehaviorRequestMaxAgeMs/StateRequestMaxAgeMs`（服务器世界时间域毫秒）。防重：同(Tag,Sign)已存在静默忽略不回 Reject（避免误删已确认条目）。缓冲上限 32 条仅告警。
+- **挂起/恢复不走通用 Enter/Exit 多播**：Suspended/Resumed 事件在通用多播的权威门被剔除，由 Tag 粒度控制包 `MulticastControlBehavior(Op)` 精确镜像服务器"Agent 单次停转/重启"操作粒度，接收端重放 Agent 动作+逐来源本地事件流并登记 MirroredSuspensions（客户端无遮蔽表，镜像集合是门控下推依据）。Late Join 挂起终态编码于快条目 Flags(bit0)。
+- 表现跟随通道：`TriggerPresentation` 是表现触发唯一收束点，权威端转发 `MulticastStatePresentation(StateTag, FBXStatePresentation)` 跟随端本播（转移边/裸状态进出场全部三通道自动覆盖）；族内 SM 服务器评估转移（Tick 权威门控），SimulatedProxy 不评估边。
+- 族内 SM 状态拒绝客户端自主请求（ServerEnterState 内拒绝回 Reject）：族内互斥/转移必须权威驱动，防伪造硬直等处境作弊。
+- 广播多播收束点两组件各一处：BroadcastBehaviorEvent / BroadcastStateEvent 内按 ROLE_Authority 门转发，BER_Cleared/SER_Cleared 排除（EndPlay 销毁场景），Suspended/Resumed 由控制包通道负责（行为侧）。
+- 多播 _Implementation 一律首行 Authority 早退（服务器发起 Multicast 时 UE 会本地回环执行实现，早退同时兼作跟随处理器重入防护）。
+
 ## 工程经验
 - 事件系统（BXEventManager）使用 TSet 替代 TArray 存储 GlobalTargetMap/SingleKeyMap/SingleTargetMap，提升注册/注销性能。
 - UFunction 查找结果以 (Class, FunctionName) 为键缓存，减少反射开销。

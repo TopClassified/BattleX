@@ -64,12 +64,12 @@
 | 1 | 行为并行、禁用、中断 | 并行=表内多条目；禁用=矩阵拒绝 + 状态禁用；中断=矩阵挤出 | Behavior |
 | 2 | 状态并存、互斥 | 并存=跨族天然；族内互斥=状态机图结构（单当前节点） | State |
 | 3 | 技能/BUFF 决定进出行为 | SkillAsset.EnterBehaviors（Sign=SkillID），结束收束退出 | 驱动层 |
-| 4 | 状态结束触发表现（含行为） | 状态机转移 / 裸状态到期 → Entry/ExitPresentation（可配技能/时间轴/动画；技能本身可为行为） | State |
+| 4 | 状态结束触发表现（含行为） | 状态机转移 → 边 TransitionPresentation；裸状态到期 → StateConfig.ExitPresentation（可配技能/时间轴/动画；技能本身可为行为） | State |
 | 5 | 状态时长（≤0 无限） | 节点 Duration / 外部携带，来源独立计时 | State |
 | 6 | 技能状态集 | SkillAsset.EnterStates（Tag→时长，Sign=SkillID） | 驱动层 |
 | 7 | 技能时间段解除互斥（取消窗口） | CancelWindows：默认保护技能行为不被矩阵挤出，窗口内解除 → 互斥行为挤出 → 行为 Exit(Sign=SkillID) → 技能互锁中断 | 双方 |
 | 8 | 状态自动切换 | 状态机资产：节点+条件边，服务器评估 | State |
-| 9 | 状态跳转表现 | 节点 Entry/ExitPresentation + 边可覆盖（技能/时间轴/纯动画三通道） | State |
+| 9 | 状态跳转表现 | 转移边 TransitionPresentation 唯一入口（状态节点不配表现——节点进出场与边过渡冗余；技能/时间轴/纯动画三通道，详情面板按 Type 显隐对应资产） | State |
 | 10 | 状态Task | BXT_EnterState（时长+可回退）/ BXT_ExitState（可控表现） | 驱动层 |
 | 11 | 状态、行为同步 + 预测回滚 | 双组件各自：COND_InitialOnly 快照 + Enter/Exit 多播 + 统一预测 + 拒绝/超时回滚 | 双方 |
 | 12 | 出招表 | UBXComboComponent：输入缓冲 + 双触发查询 + 招式图数据资产 | Combo |
@@ -305,7 +305,7 @@ TMap<FGameplayTag, FBXSuspendMask> SuspendMasks;
 | 状态机实例管理 | 按资产创建实例，服务器评估转移 |
 | 时长与到期 | 来源独立计时、先到先退；到期触发转移评估（族内）/自然退出（裸状态） |
 | 禁用行为门控 | 进入/退出状态时向 BehaviorComponent 挂起/恢复（唯一跨系统调用） |
-| 表现触发 | Entry/ExitPresentation 三通道 |
+| 表现触发 | 族内：转移边 TransitionPresentation；裸状态：StateConfig 进出场表现——共用三通道 |
 | 复制与预测 | §5.7 |
 
 ### 5.2 数据结构
@@ -340,15 +340,15 @@ struct FBXStateRuntimeData
 	UPROPERTY(Transient, BlueprintReadOnly) TArray<FBXStateSource> Sources;
 };
 
-// 表现（进/出场共用，三通道）
+// 表现（转移边/裸状态进出场共用，三通道；详情面板按 Type 显隐对应资产——EditConditionHides）
 USTRUCT(BlueprintType)
 struct FBXStatePresentation
 {
 	GENERATED_USTRUCT_BODY()
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) EBXPresentationType Type = PT_Timeline;  // PT_Skill/PT_Timeline/PT_Animation
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) TSoftObjectPtr<UBXSkillAsset> SkillAsset;     // 自带同步体系
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) TSoftObjectPtr<UBXTLAsset> TimelineAsset;     // 不同步的技能(纯表现)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) TSoftObjectPtr<UAnimMontage> MontageAsset;    // 纯动画
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) EBXPresentationType Type = PT_None;  // PT_None/PT_Skill/PT_Timeline/PT_Animation
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) TSoftObjectPtr<UBXSkillAsset> SkillAsset;     // 自带同步体系（Type==PT_Skill 显示）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) TSoftObjectPtr<UBXTLAsset> TimelineAsset;     // 不同步的技能(纯表现)（Type==PT_Timeline 显示）
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) TSoftObjectPtr<UAnimMontage> MontageAsset;    // 纯动画（Type==PT_Animation 显示）
 };
 
 // 裸状态配置（非族状态：Buff/标记类——无状态机，Detail 面板配置）
@@ -387,7 +387,7 @@ public:
 	TMap<FGameplayTag, int32> StateNodeIndex;
 };
 
-// 状态节点
+// 状态节点（表现统一由转移边承载——节点进出场与边过渡冗余，已删除）
 UCLASS(BlueprintType)
 class UBXSMStateNode : public UBXDecisionTreeNode
 {
@@ -396,8 +396,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) FGameplayTag StateTag;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) float Duration = -1.0f;                    // 驻留时长(≤0无限)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) FGameplayTagContainer ForbiddenBehaviors;  // 存续期禁用
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) FBXStatePresentation EntryPresentation;    // 进入表现
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) FBXStatePresentation ExitPresentation;     // 退出表现
 };
 
 // 转移边（条件=决策树 Instanced Condition：属性阈值/事件/到期）
@@ -406,7 +404,7 @@ class UBXSMTransitionEdge : public UBXDecisionTreeEdge
 {
 	GENERATED_BODY()
 public:
-	// 边表现覆盖（空=用目标节点 EntryPresentation）
+	// 转移表现（状态间过渡表现的唯一配置入口；未配置则无表现）
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) FBXStatePresentation TransitionPresentation;
 	// 触发时机：TE_OnExpired(时长耗尽评估) / TE_OnTick(每帧评估,物理驱动) / TE_OnEvent(事件驱动,预留)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly) EBXTransitionEvaluate EvaluateType = TE_OnExpired;
@@ -421,9 +419,9 @@ public:
   2. 帧驱动：评估 TE_OnTick 边（浮空连招 SM 看速度/高度请求转移——CheckCondition
      复用决策树条件机制，参数为 FBXSMTransitionContext{Owner, FromTag, ServerTime}）
   3. 首个 CheckCondition 通过的边命中 → 执行转移（自环除外）：
-     ExecuteTransition = ExitStateAllSourcesInternal(当前, SER_Transition, 抑制Exit表现, **延迟禁用解除**)
-     → InternalEnterState(目标, 节点时长, Sign=0, 抑制Entry表现)
-     → 解除旧状态禁用登记 → 各自多播 → 各端表现（边覆盖优先）
+     ExecuteTransition = ExitStateAllSourcesInternal(当前, SER_Transition, 抑制表现, **延迟禁用解除**)
+     → InternalEnterState(目标, 节点时长, Sign=0)（族内进入无内置表现，不涉及抑制）
+     → 解除旧状态禁用登记 → 各自多播 → 转移边 TransitionPresentation 触发（未配置则无表现）
      *延迟禁用解除*：退出时不解除禁用遮蔽，待新状态登记遮蔽后再解除旧登记——
      新旧共享禁用 Tag 经遮蔽 ByStates 多重登记保持挂起（无 Resume→Suspend 抖动），
      独占 Tag 解除恢复；进入失败同样解除（禁用不残留）
@@ -450,7 +448,7 @@ InternalEnterState(族内Tag, 外部时长, Sign):
   2. SM 有当前节点且 ≠ 目标 → InternalExitState(当前, SER_External)（族内单活，顶掉）
   3. SM.CurrentNodeIndex = 目标节点；状态条目建立
   4. **不评估出边**——进入由外部决策，离开只走边评估（受击链：外部进、边出）
-  5. 表现：目标节点 EntryPresentation
+  5. 表现：无内置表现（表现唯一入口是转移边，外部进入不走边；需要表现由驱动方技能自带）
 ```
 
 **规则二：外部携带时长优先**。外部进入带时长（技能 EnterStates 配置的受击时长）用携带值；未带（-1）用节点默认。同 AutoTransition 语义，规则统一。
@@ -473,13 +471,13 @@ InternalEnterState(Tag, Duration, Sign, bExternal):
   2. 时长解析（规则二：携带优先，-1 用节点/配置默认）
   3. 表更新（同 Sign 刷新 / 新 Sign 追加）
   4. 禁用门控：ForbiddenBehaviors → BehaviorComponent 挂起
-  5. EntryPresentation 触发（各端本地；PredictRollback 路径除外）
+  5. 裸状态：StateConfig.EntryPresentation 触发（族内无内置表现，由转移边在 ExecuteTransition 统一触发；各端本地，PredictRollback 路径除外）
   6. 广播 BXEvent.State.Enter {Tag, Sign, Duration}
   7. 服务器：MulticastStateEnter；连接数变化投影快照
 
 InternalExitState(Tag, Sign, Reason):
   1. 查无该 Sign → false；移除来源；仍有其他来源 → true（先到先退）
-  2. 移除条目；ExitPresentation 触发（SER_PredictRollback 除外）
+  2. 移除条目；裸状态：StateConfig.ExitPresentation 触发（SER_PredictRollback 除外；族内无内置退场表现）
   3. 禁用解除判定 → BehaviorComponent 恢复（§4.5）
      （bDeferForbiddenRelease=true 时延迟：转移路径由 ExecuteTransition 在新状态登记后统一解除）
   4. 广播 BXEvent.State.Exit {Tag, Sign, Reason}
@@ -704,12 +702,10 @@ BXEvent                                // 事件根（沿用 BXEvent.* 惯例）
 
 SM_Stun 资产（状态机图，决策树编辑器产出）：
   [Knockback 节点] Duration=1.0  Forbidden=[BXBehavior.Locomotion]
-      │ 边(TE_OnExpired, 无条件) → [Knockdown]
+      │ 边(TE_OnExpired, 无条件, TransitionPresentation=Montage(AM_KnockdownLoop)) → [Knockdown]
   [Knockdown 节点] Duration=2.0  Forbidden=[BXBehavior.Locomotion, BXBehavior.Attack]
-      EntryPresentation=TT_Animation(AM_KnockdownLoop)
-      │ 边(TE_OnExpired) → [Recover]
+      │ 边(TE_OnExpired, TransitionPresentation=Montage(AM_GetUp)) → [Recover]
   [Recover 节点] Duration=1.5  Forbidden=[BXBehavior.Locomotion]
-      EdgePresentation=TT_Animation(AM_GetUp)
       │ 边(TE_OnExpired) → 无出边 → 自然退出(SM空转)
 
 攻击技能资产（SlashA）：
@@ -738,7 +734,7 @@ SM_Stun 资产（状态机图，决策树编辑器产出）：
 | P2 状态系统 | ✅ 完成 | UBXStateComponent 重写：事实表/时长到期/裸状态配置/禁用门控对接/表现三通道 | State/ 新目录：BXStateComponent.h/cpp、BXStateStructs.h、BXStateEnums.h |
 | P3 状态机资产 | ✅ 完成 | UBXStateMachineAsset/SMStateNode/SMTransitionEdge（决策树派生）+ 实例管理 + 转移评估（OnTick/OnExpired）+ 外部进入整合（族内单活顶掉） | State/StateMachine/ 三件套；决策树编辑器复用（BXStateMachineType 注册节点/边类型） |
 | P4 状态Task | ⬜ 未实施 | BXT_EnterState / BXT_ExitState + 蓝图派生 + ini 注册 | Task/ 新增；Config/DefaultBattleX.ini |
-| P5 网络 | ⬜ 未实施 | 双组件 COND_InitialOnly 投影/多播/OnRep 差分/预测缓冲/Server·Client RPC/超时回滚 | 两组件 + UBXSettings |
+| P5 网络 | ✅ 完成（代码侧） | 双组件 COND_InitialOnly 投影（PreReplication 连接数检测）/ Enter·Exit 多播 / OnRep 差分 LateJoin / 预测缓冲 + Server·Client RPC + 超时回滚。实现注记：① CMC 高频路径与技能链路保持本地 API 不入网，预测走显式 `StartBehaviorNet/StopBehaviorNet`、`EnterStateNet/ExitStateNet`（非 Client 签名自动生成 ClientSyncID 并返回生效 Sign）；② 挂起/恢复以 Tag 粒度控制包 `MulticastControlBehavior` 镜像服务器 Agent 单次停转/重启，Suspended/Resumed 事件流在控制包处理器内本地重放，通用 Enter/Exit 多播剔除这两类原因防 Agent 双停双启；③ 表现三通道经 `TriggerPresentation` 唯一收束点权威转发 `MulticastStatePresentation` 跟随端本播；④ 族内 SM 状态拒绝客户端自主请求（仅权威驱动）；⑤ 客户端无遮蔽表，挂起终态由快照 Flags + 镜像集合编码，配合运动门控下推 | 两组件 + UBXSettings + Net/BXStateBehaviorReplicated.h |
 | P6 技能集成 | ✅ 完成 | 五步链（CanStart判定→保护→清场→登记→首帧Task）/EnterStates 收束/CancelWindows 保护切换/互锁监听(Behavior.Exit 按Reason过滤)/CleanSkillTrash 收束 | BXSkillAsset.h、BXSkillManager.cpp、BXSkillComponent.cpp |
 | P7 出招表 | ⏸ 暂缓 | UBXComboComponent/UBXComboAsset + 输入缓冲 + 双触发 + 服务器宽限校验（决议：出招组件后置，CanPlayNextSkill 归 ComboComponent） | Combo/ 新增 |
 | P8 迁移清理 | ✅ 完成（代码侧） | 删旧 BXSMStun/旧状态机类、FunctionLibrary/CMC 适配；Tag 树：BXBehavior.* 族已建，BXStunState_* 等旧 Tag 保留，随资产制作批量迁移（§9） | State/StateMachine 清理、BXGameplayTags.h/cpp |

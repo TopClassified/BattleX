@@ -4,18 +4,84 @@
 #include "BXEventStructs.h"
 #include "BXEventManager.h"
 #include "BXBehaviorSettings.h"
+#include "BXSettings.h"
+#include "BXFunctionLibrary.h"
+#include "BXNetStructs.h"
 
 #include "State/BXStateComponent.h"
+#include "Net/UnrealNetwork.h"
+#include "Engine/NetDriver.h"
 
 DEFINE_LOG_CATEGORY(BXBEHAVIOR);
 
 constexpr int32 BX_BEHAVIOR_ENTER_CHAIN_MAX = 8;
 
+// 行为控制包操作码(MulticastControlBehavior.InOp)
+#define BX_NET_BEHAVIOR_OP_SUSPEND 0
+#define BX_NET_BEHAVIOR_OP_RESUME  1
+
+// 单端预测缓冲上限(防异常调用堆积;超限后仅失去自动回滚保护)
+constexpr int32 BX_NET_PREDICT_MAX = 32;
+
 
 
 UBXBehaviorComponent::UBXBehaviorComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	SetIsReplicatedByDefault(true);
+
+	PrimaryComponentTick.bCanEverTick = true;
+}
+
+void UBXBehaviorComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// 仅初始同步发送:新连接拿最新快照LateJoin重建,已有连接零属性流量(动态由显式RPC维护)
+	DOREPLIFETIME_CONDITION(UBXBehaviorComponent, RunningBehaviorStates, COND_InitialOnly);
+}
+
+void UBXBehaviorComponent::PreReplication(IRepChangedPropertyTracker& ChangedPropertyTracker)
+{
+	Super::PreReplication(ChangedPropertyTracker);
+
+	// 服务器端、属性收集前每帧执行
+	AActor* Owner = GetOwner();
+	if (!Owner || Owner->GetLocalRole() != ENetRole::ROLE_Authority)
+	{
+		return;
+	}
+
+	// RunningBehaviorStates为COND_InitialOnly:仅新连接初始同步时发送,已有连接零流量
+	// 故仅当远程连接数增加(新客户端连入)时才重建快照
+	// 时序:PreReplication在同一次flush的序列化前运行,当帧重建即被新连接消费,无窗口期
+	UNetDriver* NetDriver = GetWorld() ? GetWorld()->GetNetDriver() : nullptr;
+	if (!NetDriver)
+	{
+		return;
+	}
+
+	const int32 ConnectionCount = NetDriver->ClientConnections.Num();
+	if (ConnectionCount > LastProjectedConnectionCount)
+	{
+		RebuildRunningBehaviorStates();
+	}
+	// 断线回落仅同步计数不重建(InitialOnly已发收不回);不回落则"断N+连N"净计数不变会漏触发
+	LastProjectedConnectionCount = ConnectionCount;
+}
+
+void UBXBehaviorComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// 预测超时回滚(仅客户端且存在待结算条目;权威端缓冲恒空)
+	if (!PredictedBehaviors.IsEmpty())
+	{
+		AActor* Owner = GetOwner();
+		if (Owner && Owner->GetLocalRole() != ENetRole::ROLE_Authority)
+		{
+			UpdatePredictedBehaviorTimeouts(DeltaTime);
+		}
+	}
 }
 
 void UBXBehaviorComponent::BeginPlay()
@@ -76,6 +142,7 @@ void UBXBehaviorComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	SuspendMasks.Empty();
 	ProtectionEntries.Empty();
+	PredictedBehaviors.Empty();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -350,6 +417,9 @@ void UBXBehaviorComponent::SuspendByForbiddenTag(const FGameplayTag& InForbidden
 		// 快照来源(Agent停止/事件回调可能同步移除来源或条目,指针不可跨回调解引用)
 		const TArray<FBXBehaviorSource> Sources = BehaviorData->Sources;
 
+		// 控制包广播(Tag粒度精确镜像服务器Agent停转;接收端配合本地每来源事件流重建表现)
+		MulticastControlBehavior(Tag, BX_NET_BEHAVIOR_OP_SUSPEND);
+
 		// Agent停止
 		if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(Tag))
 		{
@@ -423,6 +493,9 @@ void UBXBehaviorComponent::ResumeByForbiddenTag(const FGameplayTag& InForbiddenT
 		const FInstancedStruct ResumeParameter = BehaviorData->LastStartParameter;
 		const TArray<FBXBehaviorSource> Sources = BehaviorData->Sources;
 
+		// 控制包广播(Tag粒度精确镜像服务器Agent重启;接收端以最近启动参数回放)
+		MulticastControlBehavior(Tag, BX_NET_BEHAVIOR_OP_RESUME);
+
 		// Agent重启(回放最近启动参数,来源所有权不变,Sign原样)
 		if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(Tag))
 		{
@@ -481,6 +554,204 @@ bool UBXBehaviorComponent::CheckForbiddenBehavior(const FGameplayTag& InBehavior
 }
 
 #pragma endregion API
+
+
+
+#pragma region API Net
+int64 UBXBehaviorComponent::StartBehaviorNet(const FGameplayTag& InBehaviorTag, FInstancedStruct InParameter, int64 InSign)
+{
+	AActor* Owner = GetOwner();
+	const ENetRole OwnerRole = Owner ? Owner->GetLocalRole() : ROLE_None;
+
+	// 权威端(含Standalone/ListenServer主机):直接本地执行
+	if (OwnerRole == ENetRole::ROLE_Authority)
+	{
+		return StartBehaviorWithParameter(InBehaviorTag, MoveTemp(InParameter), InSign) ? InSign : -1;
+	}
+
+	// AutonomousProxy:统一预测——本地完整执行+登记缓冲+服务器上报,确认靠Multicast匹配,拒绝/超时回滚
+	// 预测Sign必须可定位:非Client签名时生成全新ClientSyncID(否则服务器无法防重/客户端无法定位回滚)
+	if (OwnerRole == ENetRole::ROLE_AutonomousProxy)
+	{
+		const int64 PredictSign = (BXGetSyncIDInitiator(InSign) == EBXSyncInitiator::Client && InSign != 0)
+			? InSign
+			: BXMakeSyncID(UBXFunctionLibrary::GetUniqueID(), EBXSyncInitiator::Client);
+
+		FBXBehaviorStartCheck Check;
+		if (!CanStartBehaviorInternal(InBehaviorTag, InParameter, Check))
+		{
+			UE_LOG(BXBEHAVIOR, Warning, TEXT("UBXBehaviorComponent::StartBehaviorNet: rejected(%s). Tag=%s Sign=%lld"), *Check.FailReason, *InBehaviorTag.ToString(), PredictSign);
+			return -1;
+		}
+
+		++EnterChainDepth;
+		const bool bResult = InternalStartBehavior(InBehaviorTag, MoveTemp(InParameter), PredictSign);
+		--EnterChainDepth;
+
+		if (!bResult)
+		{
+			return -1;
+		}
+
+		RegisterPredictedBehavior(InBehaviorTag, PredictSign);
+		ServerEnterBehavior(InBehaviorTag, PredictSign, UBXFunctionLibrary::GetServerWorldTimeMilliseconds(this));
+		return PredictSign;
+	}
+
+	UE_LOG(BXBEHAVIOR, Warning, TEXT("UBXBehaviorComponent::StartBehaviorNet: simulated proxy follows multicast only. Tag=%s"), *InBehaviorTag.ToString());
+	return -1;
+}
+
+bool UBXBehaviorComponent::StopBehaviorNet(const FGameplayTag& InBehaviorTag, int64 InSign)
+{
+	AActor* Owner = GetOwner();
+	const ENetRole OwnerRole = Owner ? Owner->GetLocalRole() : ROLE_None;
+
+	// 权威端:直接本地执行
+	if (OwnerRole == ENetRole::ROLE_Authority)
+	{
+		return StopBehavior(InBehaviorTag, InSign);
+	}
+
+	// AutonomousProxy:本地执行+上报(退出可能早于确认到达,一并无条件注销预测条目);
+	// 仅允许退出Client签名来源(Server/系统Sign的生命周期归权威管线,上报也会被服务器拒绝,提前拦截防双端漂移)
+	if (OwnerRole == ENetRole::ROLE_AutonomousProxy)
+	{
+		if (BXGetSyncIDInitiator(InSign) != EBXSyncInitiator::Client || InSign == 0)
+		{
+			UE_LOG(BXBEHAVIOR, Warning, TEXT("UBXBehaviorComponent::StopBehaviorNet: non-client sign rejected. Tag=%s Sign=%lld"), *InBehaviorTag.ToString(), InSign);
+			return false;
+		}
+
+		const bool bResult = InternalStopBehavior(InBehaviorTag, FInstancedStruct(), InSign, EBXBehaviorEndReason::BER_Manual);
+		UnregisterPredictedBehavior(InBehaviorTag, InSign);
+		ServerExitBehavior(InBehaviorTag, InSign);
+		return bResult;
+	}
+
+	return false;
+}
+
+#pragma endregion API Net
+
+
+#pragma region RPC BehaviorSync
+bool UBXBehaviorComponent::ServerEnterBehavior_Validate(FGameplayTag InBehaviorTag, int64 InSign, int64 InClientTimestamp)
+{
+	return BXGetSyncIDInitiator(InSign) == EBXSyncInitiator::Client;
+}
+
+void UBXBehaviorComponent::ServerEnterBehavior_Implementation(FGameplayTag InBehaviorTag, int64 InSign, int64 InClientTimestamp)
+{
+	// 防重:同(Tag,Sign)已在事实表→静默忽略(Reliable不会重传到应用层,防御 packet 层异常重放;不回Reject避免误删已确认条目)
+	if (const FBXBehaviorRuntimeData* Data = ActiveBehaviors.Find(InBehaviorTag))
+	{
+		if (Data->HasSource(InSign))
+		{
+			return;
+		}
+	}
+
+	// 请求年龄校验(服务器世界时间域;客户端经引擎校时上传时间戳,过老请求视为重放/迟滞攻击面拒绝)
+	const int64 AgeMs = UBXFunctionLibrary::GetServerWorldTimeMilliseconds(this) - InClientTimestamp;
+	if (AgeMs > GetDefault<UBXSettings>()->BehaviorRequestMaxAgeMs)
+	{
+		UE_LOG(BXBEHAVIOR, Log, TEXT("UBXBehaviorComponent::ServerEnterBehavior: stale request rejected. Tag=%s Sign=%lld Age=%lldms"), *InBehaviorTag.ToString(), InSign, AgeMs);
+		ClientRejectBehavior(InBehaviorTag, InSign);
+		return;
+	}
+
+	// 权威裁决走同一本地管线(矩阵/挂起/Agent检查);失败回滚通知发起端
+	FBXBehaviorStartCheck Check;
+	if (!CanStartBehaviorInternal(InBehaviorTag, FInstancedStruct(), Check))
+	{
+		UE_LOG(BXBEHAVIOR, Log, TEXT("UBXBehaviorComponent::ServerEnterBehavior: server rejected(%s). Tag=%s Sign=%lld"), *Check.FailReason, *InBehaviorTag.ToString(), InSign);
+		ClientRejectBehavior(InBehaviorTag, InSign);
+		return;
+	}
+
+	// 条目已存在时管线内不走 Enter广播(bNewEntry=false),事件门不会发出多播——
+	// 此处前置记录,来源追加成功后显式补发确认多播,否则发起端预测缓冲超时误回滚造成双端漂移
+	const bool bEntryExisted = ActiveBehaviors.Contains(InBehaviorTag);
+
+	++EnterChainDepth;
+	InternalStartBehavior(InBehaviorTag, FInstancedStruct(), InSign);
+	--EnterChainDepth;
+
+	if (bEntryExisted)
+	{
+		MulticastBehaviorEnter(InBehaviorTag, InSign);
+	}
+	// 条目新建场景的多播已由BroadcastBehaviorEvent权威门收束发出(Multicast到达=预测确认)
+}
+
+bool UBXBehaviorComponent::ServerExitBehavior_Validate(FGameplayTag InBehaviorTag, int64 InSign)
+{
+	return true;
+}
+
+void UBXBehaviorComponent::ServerExitBehavior_Implementation(FGameplayTag InBehaviorTag, int64 InSign)
+{
+	// 发起方校验:仅允许退出Client签名来源(Server/系统Sign=SkillID/0常驻等来源的生命周期归权威管线,
+	// 由技能收束/矩阵挤出/状态挂起驱动;客户端伪造上报一律忽略)
+	if (BXGetSyncIDInitiator(InSign) != EBXSyncInitiator::Client || InSign == 0)
+	{
+		UE_LOG(BXBEHAVIOR, Warning, TEXT("UBXBehaviorComponent::ServerExitBehavior: invalid initiator rejected. Tag=%s Sign=%lld"), *InBehaviorTag.ToString(), InSign);
+		return;
+	}
+
+	// 幂等:查无即忽略;上报不可自定Reason,固定Manual语义由服务器裁决
+	InternalStopBehavior(InBehaviorTag, FInstancedStruct(), InSign, EBXBehaviorEndReason::BER_Manual);
+}
+
+void UBXBehaviorComponent::ClientRejectBehavior_Implementation(FGameplayTag InBehaviorTag, int64 InSign)
+{
+	// 回滚=本地移除该来源(不含表现);移除缓冲在HandleClientBehaviorExit路径同型处理,此处显式双保险
+	UnregisterPredictedBehavior(InBehaviorTag, InSign);
+	InternalStopBehavior(InBehaviorTag, FInstancedStruct(), InSign, EBXBehaviorEndReason::BER_PredictRollback);
+}
+
+void UBXBehaviorComponent::MulticastBehaviorEnter_Implementation(FGameplayTag InBehaviorTag, int64 InSign)
+{
+	AActor* Owner = GetOwner();
+	if (!Owner || Owner->GetLocalRole() == ENetRole::ROLE_Authority)
+	{
+		return;
+	}
+
+	HandleClientBehaviorEnter(InBehaviorTag, InSign);
+}
+
+void UBXBehaviorComponent::MulticastBehaviorExit_Implementation(FGameplayTag InBehaviorTag, int64 InSign, uint8 InReason)
+{
+	AActor* Owner = GetOwner();
+	if (!Owner || Owner->GetLocalRole() == ENetRole::ROLE_Authority)
+	{
+		return;
+	}
+
+	// 挂起事件流由控制包按Tag粒度镜像(精确对齐服务器Agent单次停转),此处防意外混入造成Agent双停
+	const EBXBehaviorEndReason Reason = static_cast<EBXBehaviorEndReason>(InReason);
+	if (Reason == EBXBehaviorEndReason::BER_Suspended || Reason == EBXBehaviorEndReason::BER_Resumed)
+	{
+		return;
+	}
+
+	HandleClientBehaviorExit(InBehaviorTag, InSign, Reason);
+}
+
+void UBXBehaviorComponent::MulticastControlBehavior_Implementation(FGameplayTag InBehaviorTag, uint8 InOp)
+{
+	AActor* Owner = GetOwner();
+	if (!Owner || Owner->GetLocalRole() == ENetRole::ROLE_Authority)
+	{
+		return;
+	}
+
+	HandleClientControlBehavior(InBehaviorTag, InOp == BX_NET_BEHAVIOR_OP_RESUME);
+}
+
+#pragma endregion RPC BehaviorSync
 
 
 
@@ -676,6 +947,283 @@ void UBXBehaviorComponent::BroadcastBehaviorEvent(bool bEnter, const FGameplayTa
 		EventMgr->BroadcastSingleEvent<FBXEventBehaviorChanged>(BXGameplayTags::BXEvent_Behavior_Exit, GetOwner(), Parameter);
 		EventMgr->BroadcastGlobalEvent<FBXEventBehaviorChanged>(BXGameplayTags::BXEvent_Behavior_Exit, Parameter);
 	}
+
+	// 权威端同步多播(已有连接行为动态的主通道;挂起/恢复事件流由控制包按Tag粒度镜像防Agent双停双启,
+	// 清场随Actor销毁广播无意义;回滚仅发生于客户端,权威门自动排除)
+	AActor* Owner = GetOwner();
+	if (Owner && Owner->GetLocalRole() == ENetRole::ROLE_Authority
+		&& InReason != EBXBehaviorEndReason::BER_Suspended
+		&& InReason != EBXBehaviorEndReason::BER_Resumed
+		&& InReason != EBXBehaviorEndReason::BER_Cleared)
+	{
+		if (bEnter)
+		{
+			MulticastBehaviorEnter(InBehaviorTag, InSign);
+		}
+		else
+		{
+			MulticastBehaviorExit(InBehaviorTag, InSign, (uint8)InReason);
+		}
+	}
 }
 
 #pragma endregion Internal
+
+
+
+#pragma region Internal Net
+void UBXBehaviorComponent::RegisterPredictedBehavior(const FGameplayTag& InBehaviorTag, int64 InSign)
+{
+	// 去重(同Tag同Sign重复登记无意义)
+	for (const FBXPredictedBehavior& Entry : PredictedBehaviors)
+	{
+		if (Entry.Tag == InBehaviorTag && Entry.Sign == InSign)
+		{
+			return;
+		}
+	}
+
+	if (PredictedBehaviors.Num() >= BX_NET_PREDICT_MAX)
+	{
+		UE_LOG(BXBEHAVIOR, Warning, TEXT("UBXBehaviorComponent::RegisterPredictedBehavior: buffer full (%d). Tag=%s Sign=%lld loses auto-rollback protection."), PredictedBehaviors.Num(), *InBehaviorTag.ToString(), InSign);
+		return;
+	}
+
+	FBXPredictedBehavior Entry;
+	Entry.Tag = InBehaviorTag;
+	Entry.Sign = InSign;
+	Entry.ElapsedTime = 0.0f;
+	PredictedBehaviors.Add(Entry);
+}
+
+bool UBXBehaviorComponent::UnregisterPredictedBehavior(const FGameplayTag& InBehaviorTag, int64 InSign)
+{
+	const int32 RemovedNum = PredictedBehaviors.RemoveAll([InBehaviorTag, InSign](const FBXPredictedBehavior& Entry) { return Entry.Tag == InBehaviorTag && Entry.Sign == InSign; });
+	return RemovedNum > 0;
+}
+
+void UBXBehaviorComponent::UpdatePredictedBehaviorTimeouts(float InDeltaTime)
+{
+	const float MaxDuration = GetDefault<UBXSettings>()->BehaviorPredictMaxDuration;
+
+	// 快照收集后逐条结算(TArray索引式遍历,移除自当前推进位安全;回调可能同步增删缓冲)
+	for (int32 i = 0; i < PredictedBehaviors.Num(); )
+	{
+		PredictedBehaviors[i].ElapsedTime += InDeltaTime;
+		if (PredictedBehaviors[i].ElapsedTime < MaxDuration)
+		{
+			++i;
+			continue;
+		}
+
+		const FBXPredictedBehavior Entry = PredictedBehaviors[i];
+		PredictedBehaviors.RemoveAt(i);
+
+		UE_LOG(BXBEHAVIOR, Log, TEXT("UBXBehaviorComponent::UpdatePredictedBehaviorTimeouts: rollback. Tag=%s Sign=%lld"), *Entry.Tag.ToString(), Entry.Sign);
+		InternalStopBehavior(Entry.Tag, FInstancedStruct(), Entry.Sign, EBXBehaviorEndReason::BER_PredictRollback);
+	}
+}
+
+void UBXBehaviorComponent::RebuildRunningBehaviorStates()
+{
+	RunningBehaviorStates.Reset();
+
+	for (const TPair<FGameplayTag, FBXBehaviorRuntimeData>& Pair : ActiveBehaviors)
+	{
+		FBXBehaviorReplicatedState State;
+		State.BehaviorTag = Pair.Key;
+
+		uint8 Flags = 0;
+		for (const FBXBehaviorSource& Source : Pair.Value.Sources)
+		{
+			State.Signs.Add(Source.Sign);
+		}
+
+		// 挂起条目一并投影(LateJoin重建时仅建事实表不停转——Agent从未启动,等待控制包恢复)
+		if (IsBehaviorSuspended(Pair.Key))
+		{
+			Flags |= BX_SYNC_FLAG_BEHAVIOR_SUSPENDED;
+		}
+
+		State.Flags = Flags;
+		RunningBehaviorStates.Add(State);
+	}
+}
+
+void UBXBehaviorComponent::OnRep_RunningBehaviorStates(TArray<FBXBehaviorReplicatedState> InOldStates)
+{
+	AActor* Owner = GetOwner();
+	if (!Owner || Owner->GetLocalRole() == ENetRole::ROLE_Authority)
+	{
+		return;
+	}
+
+	// 新增条目:LateJoin重建(已存在Tag在重建内部幂等跳过)
+	for (const FBXBehaviorReplicatedState& State : RunningBehaviorStates)
+	{
+		bool bExisted = false;
+		for (const FBXBehaviorReplicatedState& OldState : InOldStates)
+		{
+			if (OldState.BehaviorTag == State.BehaviorTag)
+			{
+				bExisted = true;
+				break;
+			}
+		}
+
+		if (!bExisted)
+		{
+			RebuildBehaviorFromState(State);
+		}
+	}
+
+	// 消失条目:兜底清理(主通道MulticastBehaviorExit,仅处理RPC与属性乱序竞态;静默移除不广播)
+	for (const FBXBehaviorReplicatedState& OldState : InOldStates)
+	{
+		bool bStillExists = false;
+		for (const FBXBehaviorReplicatedState& State : RunningBehaviorStates)
+		{
+			if (State.BehaviorTag == OldState.BehaviorTag)
+			{
+				bStillExists = true;
+				break;
+			}
+		}
+
+		if (!bStillExists && ActiveBehaviors.Contains(OldState.BehaviorTag))
+		{
+			UE_LOG(BXBEHAVIOR, Log, TEXT("UBXBehaviorComponent::OnRep_RunningBehaviorStates: entry vanished, fallback stop. Tag=%s"), *OldState.BehaviorTag.ToString());
+
+			// Agent停转+静默摘表(乱序竞态防御路径,不走管线防误广播)
+			if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(OldState.BehaviorTag))
+			{
+				UBXBehaviorAgent* Agent = *FindResult;
+				if (IsValid(Agent))
+				{
+					FInstancedStruct EmptyParam;
+					Agent->StopBehavior(EmptyParam);
+				}
+			}
+			ActiveBehaviors.Remove(OldState.BehaviorTag);
+		}
+	}
+}
+
+void UBXBehaviorComponent::HandleClientBehaviorEnter(const FGameplayTag& InBehaviorTag, int64 InSign)
+{
+	// 幂等:已存在来源(重复到达)与预测确认合一处理;先注销缓冲再短路
+	UnregisterPredictedBehavior(InBehaviorTag, InSign);
+
+	if (const FBXBehaviorRuntimeData* Data = ActiveBehaviors.Find(InBehaviorTag))
+	{
+		if (Data->HasSource(InSign))
+		{
+			return;
+		}
+	}
+
+	// 新建事实条目(SimulatedProxy跟随;启动参数为空,Agent从基层组件现场取参)
+	FBXBehaviorRuntimeData& Data = ActiveBehaviors.FindOrAdd(InBehaviorTag);
+	Data.Tag = InBehaviorTag;
+	if (!Data.HasSource(InSign))
+	{
+		Data.Sources.Add(FBXBehaviorSource(InSign));
+	}
+
+	// Agent启动+本地事件(表现层各端本地运行;权威门收束点非权威端不再转发多播)
+	if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(InBehaviorTag))
+	{
+		UBXBehaviorAgent* Agent = *FindResult;
+		if (IsValid(Agent))
+		{
+			FInstancedStruct EmptyParam;
+			Agent->StartBehavior(EmptyParam);
+		}
+	}
+	BroadcastBehaviorEvent(true, InBehaviorTag, InSign, EBXBehaviorEndReason::BER_TMax);
+}
+
+void UBXBehaviorComponent::HandleClientBehaviorExit(const FGameplayTag& InBehaviorTag, int64 InSign, EBXBehaviorEndReason InReason)
+{
+	// 查无该来源(RPC早于快照或重复到达):仅做预测确认注销后返回
+	UnregisterPredictedBehavior(InBehaviorTag, InSign);
+	const FBXBehaviorRuntimeData* Data = ActiveBehaviors.Find(InBehaviorTag);
+	if (!Data || !Data->HasSource(InSign))
+	{
+		return;
+	}
+
+	// 跟随退出走同一管线(条目移除+Agent停+本地事件;管线内挂起原因不转发多播的门控对非权威端天然无效)
+	InternalStopBehavior(InBehaviorTag, FInstancedStruct(), InSign, InReason);
+}
+
+void UBXBehaviorComponent::HandleClientControlBehavior(const FGameplayTag& InBehaviorTag, bool bResume)
+{
+	FBXBehaviorRuntimeData* Data = ActiveBehaviors.Find(InBehaviorTag);
+	if (!Data)
+	{
+		UE_LOG(BXBEHAVIOR, Warning, TEXT("UBXBehaviorComponent::HandleClientControlBehavior: entry missing. Tag=%s Op=%d"), *InBehaviorTag.ToString(), bResume ? 1 : 0);
+		return;
+	}
+
+	// 快照参数与来源(Agent回调可能同步修改条目,指针不可跨回调解引用)
+	const FInstancedStruct ResumeParameter = Data->LastStartParameter;
+	const TArray<FBXBehaviorSource> Sources = Data->Sources;
+
+	// Tag粒度精确镜像服务器Agent操作:挂起=单次停转,恢复=单次以最近启动参数重启(来源所有权不变)
+	if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(InBehaviorTag))
+	{
+		UBXBehaviorAgent* Agent = *FindResult;
+		if (IsValid(Agent))
+		{
+			FInstancedStruct EmptyParam;
+			if (bResume)
+			{
+				Agent->StartBehavior(ResumeParameter);
+			}
+			else
+			{
+				Agent->StopBehavior(EmptyParam);
+			}
+		}
+	}
+
+	// 每来源本地事件流(表现层语义与服务器端SuspendByForbiddenTag/ResumeByForbiddenTag一致)
+	for (const FBXBehaviorSource& Source : Sources)
+	{
+		BroadcastBehaviorEvent(bResume, InBehaviorTag, Source.Sign, bResume ? EBXBehaviorEndReason::BER_Resumed : EBXBehaviorEndReason::BER_Suspended);
+	}
+}
+
+void UBXBehaviorComponent::RebuildBehaviorFromState(const FBXBehaviorReplicatedState& InState)
+{
+	// Late Join静默重建(仅事实表+Agent启动;不发事件不触表现——时机与监听者就绪次序不定,
+	// 与技能侧RebuildSkillFromProjection一致;下一个启停/转移事件自然接管表现)
+	if (ActiveBehaviors.Contains(InState.BehaviorTag))
+	{
+		return;
+	}
+
+	FBXBehaviorRuntimeData& Data = ActiveBehaviors.Add(InState.BehaviorTag);
+	Data.Tag = InState.BehaviorTag;
+	for (int64 Sign : InState.Signs)
+	{
+		Data.Sources.Add(FBXBehaviorSource(Sign));
+	}
+
+	// 挂起条目不启Agent(等待控制包恢复);标志缺省视为活跃直接重建
+	if (!(InState.Flags & BX_SYNC_FLAG_BEHAVIOR_SUSPENDED))
+	{
+		if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(InState.BehaviorTag))
+		{
+			UBXBehaviorAgent* Agent = *FindResult;
+			if (IsValid(Agent))
+			{
+				FInstancedStruct EmptyParam;
+				Agent->StartBehavior(EmptyParam);
+			}
+		}
+	}
+}
+
+#pragma endregion Internal Net
