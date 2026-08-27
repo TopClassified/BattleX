@@ -12,7 +12,6 @@
 
 
 class AActor;
-class UAnimMontage;
 
 
 
@@ -65,7 +64,7 @@ public:
 
 
 
-// 状态节点(节点=状态:Tag+时长+禁用+表现)
+// 状态节点(节点=状态:Tag+时长+禁用;表现统一由转移边承载)
 UCLASS()
 class BATTLEX_API UBXSMStateNode : public UBXDecisionTreeNode
 {
@@ -91,14 +90,6 @@ public:
 	UPROPERTY(EditDefaultsOnly)
 	FGameplayTagContainer ForbiddenBehaviors;
 
-	// 进入表现
-	UPROPERTY(EditDefaultsOnly)
-	FBXStatePresentation EntryPresentation;
-
-	// 退出表现
-	UPROPERTY(EditDefaultsOnly)
-	FBXStatePresentation ExitPresentation;
-
 #if WITH_EDITOR
 public:
 	void RefreshNodeTitle() override;
@@ -123,7 +114,7 @@ public:
 	UPROPERTY(EditDefaultsOnly)
 	EBXTransitionEvaluate EvaluateType = EBXTransitionEvaluate::TE_OnExpired;
 
-	// 转移表现(空=用目标节点EntryPresentation)
+	// 转移表现(状态间过渡表现的唯一配置入口)
 	UPROPERTY(EditDefaultsOnly)
 	FBXStatePresentation TransitionPresentation;
 

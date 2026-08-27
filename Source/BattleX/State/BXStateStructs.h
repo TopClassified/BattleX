@@ -117,7 +117,7 @@ public:
 
 
 
-// 状态表现(进/出场三通道)
+// 状态表现(三通道,详情面板按Type显隐对应资产属性)
 USTRUCT(BlueprintType)
 struct FBXStatePresentation
 {
@@ -141,20 +141,20 @@ public:
 	}
 
 public:
-	// 表现通道
+	// 表现通道(仅选中通道对应的资产属性在详情面板显示)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	EBXPresentationType Type = EBXPresentationType::PT_None;
 
 	// 技能资源(自带同步体系)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "Type==EBXPresentationType::PT_Skill", EditConditionHides))
 	TSoftObjectPtr<class UBXSkillAsset> SkillAsset;
 
 	// 时间轴资源(不同步的技能,纯表现)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "Type==EBXPresentationType::PT_Timeline", EditConditionHides))
 	TSoftObjectPtr<class UBXTLAsset> TimelineAsset;
 
 	// 纯动画Montage
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "Type==EBXPresentationType::PT_Animation", EditConditionHides))
 	TSoftObjectPtr<class UAnimMontage> MontageAsset;
 };
 

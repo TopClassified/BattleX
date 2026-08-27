@@ -96,8 +96,8 @@ public:
 
 #pragma region Internal
 protected:
-	// 内部进入状态(管线:族内定位/表更新/禁用门控/表现/事件;转移路径抑制内置Entry表现,由调用方边表现统一触发)
-	bool InternalEnterState(const FGameplayTag& InStateTag, int64 InSign, float InDuration, EBXStateEndReason InExternalReason, bool bSuppressEntryPresentation = false);
+	// 内部进入状态(管线:族内定位/表更新/禁用门控/表现/事件;族内表现由转移边统一触发,此处仅裸状态触发配置的进入表现)
+	bool InternalEnterState(const FGameplayTag& InStateTag, int64 InSign, float InDuration, EBXStateEndReason InExternalReason);
 
 	// 内部退出状态(管线:表更新/表现/禁用解除/事件,全部退出路径收束于此;bDeferForbiddenRelease=延迟禁用解除,转移路径用)
 	bool InternalExitState(const FGameplayTag& InStateTag, int64 InSign, EBXStateEndReason InReason, bool bSuppressPresentation, bool bDeferForbiddenRelease = false);
@@ -114,8 +114,8 @@ protected:
 	// 退出状态全部来源(内部版:转移路径延迟禁用解除,由调用方在新状态登记后统一解除)
 	bool ExitStateAllSourcesInternal(const FGameplayTag& InStateTag, EBXStateEndReason InReason, bool bSuppressPresentation, bool bDeferForbiddenRelease);
 
-	// 触发状态表现(各端本地)
-	void TriggerPresentation(const FBXStatePresentation& InPresentation, bool bIsEntry, const FGameplayTag& InStateTag);
+	// 触发状态表现(各端本地;入口=转移边表现/裸状态进入退出表现)
+	void TriggerPresentation(const FBXStatePresentation& InPresentation, const FGameplayTag& InStateTag);
 
 	// 状态禁用门控:进入时挂起行为
 	void ApplyForbiddenBehaviors(const FGameplayTagContainer& InForbiddenBehaviors, const FGameplayTag& InByState);

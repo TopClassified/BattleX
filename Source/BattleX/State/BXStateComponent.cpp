@@ -256,7 +256,7 @@ bool UBXStateComponent::RefreshStateDuration(const FGameplayTag& InStateTag, int
 
 
 #pragma region Internal
-bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64 InSign, float InDuration, EBXStateEndReason InExternalReason, bool bSuppressEntryPresentation)
+bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64 InSign, float InDuration, EBXStateEndReason InExternalReason)
 {
 	if (!InStateTag.IsValid())
 	{
@@ -329,16 +329,12 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 	{
 		ApplyForbiddenBehaviors(ForbiddenBehaviors, InStateTag);
 
-		// 转移路径抑制内置Entry表现:由ExecuteTransition按边表现/目标Entry统一触发,避免双触发
-		if (!bSuppressEntryPresentation)
+		// 族内进入表现由ExecuteTransition按转移边统一触发,此处仅裸状态触发配置的进入表现
+		if (!Machine)
 		{
-			if (Machine && Machine->CurrentNode)
+			if (const FBXStateConfig* Config = StateConfigs.Find(InStateTag))
 			{
-				TriggerPresentation(Machine->CurrentNode->EntryPresentation, true, InStateTag);
-			}
-			else if (const FBXStateConfig* Config = StateConfigs.Find(InStateTag))
-			{
-				TriggerPresentation(Config->EntryPresentation, true, InStateTag);
+				TriggerPresentation(Config->EntryPresentation, InStateTag);
 			}
 		}
 
@@ -376,7 +372,6 @@ bool UBXStateComponent::InternalExitState(const FGameplayTag& InStateTag, int64 
 
 	// 静态配置查询(表现与禁用解除共用)
 	FGameplayTagContainer ForbiddenBehaviors;
-	const FBXStatePresentation* ExitPresentation = nullptr;
 	UBXStateMachineInstance* Machine = FindMachineByStateTag(InStateTag);
 	if (Machine)
 	{
@@ -385,7 +380,6 @@ bool UBXStateComponent::InternalExitState(const FGameplayTag& InStateTag, int64 
 			if (const UBXSMStateNode* Node = Machine->Asset->FindStateNode(InStateTag))
 			{
 				ForbiddenBehaviors = Node->ForbiddenBehaviors;
-				ExitPresentation = &Node->ExitPresentation;
 			}
 		}
 
@@ -398,13 +392,15 @@ bool UBXStateComponent::InternalExitState(const FGameplayTag& InStateTag, int64 
 	else if (const FBXStateConfig* Config = StateConfigs.Find(InStateTag))
 	{
 		ForbiddenBehaviors = Config->ForbiddenBehaviors;
-		ExitPresentation = &Config->ExitPresentation;
 	}
 
-	// 表现(预测回滚强制不触发)
-	if (!bSuppressPresentation && InReason != EBXStateEndReason::SER_PredictRollback && ExitPresentation)
+	// 表现(预测回滚强制不触发;仅裸状态触发配置的退出表现)
+	if (!bSuppressPresentation && InReason != EBXStateEndReason::SER_PredictRollback && !Machine)
 	{
-		TriggerPresentation(*ExitPresentation, false, InStateTag);
+		if (const FBXStateConfig* Config = StateConfigs.Find(InStateTag))
+		{
+			TriggerPresentation(Config->ExitPresentation, InStateTag);
+		}
 	}
 
 	// 禁用解除判定→行为恢复(表现抑制时门控仍需解除;转移路径延迟到新状态登记后由调用方统一解除)
@@ -640,25 +636,22 @@ bool UBXStateComponent::ExecuteTransition(UBXStateMachineInstance* InMachine, UB
 	// 退出当前(全部来源;抑制Exit表现;禁用解除延迟到新状态登记后:共享禁用Tag经遮蔽多重登记保持挂起,独占Tag解除恢复,消除Resume→Suspend抖动)
 	ExitStateAllSourcesInternal(CurrentTag, InReason, true, true);
 
-	// 进入目标(节点默认时长,Sign=0状态机自身;抑制内置Entry表现,下方边表现统一触发)
-	bool bResult = InternalEnterState(InTargetNode->StateTag, 0, InTargetNode->Duration, InReason, true);
+	// 进入目标(节点默认时长,Sign=0状态机自身)
+	bool bResult = InternalEnterState(InTargetNode->StateTag, 0, InTargetNode->Duration, InReason);
 
 	// 解除旧状态禁用登记(新状态已登记:共享Tag的遮蔽仍持新状态登记不会被解除,行为不抖动;进入失败同样解除,禁用不残留)
 	ReleaseForbiddenBehaviors(OldForbidden, CurrentTag);
 
-	// 转移表现(边覆盖优先,空用目标节点EntryPresentation)
-	if (bResult)
+	// 转移表现(唯一入口=边上的TransitionPresentation,未配置则无表现)
+	if (bResult && TransitionEdge)
 	{
-		const FBXStatePresentation& Presentation = (TransitionEdge && TransitionEdge->TransitionPresentation.IsValid())
-			? TransitionEdge->TransitionPresentation
-			: InTargetNode->EntryPresentation;
-		TriggerPresentation(Presentation, true, InTargetNode->StateTag);
+		TriggerPresentation(TransitionEdge->TransitionPresentation, InTargetNode->StateTag);
 	}
 
 	return bResult;
 }
 
-void UBXStateComponent::TriggerPresentation(const FBXStatePresentation& InPresentation, bool bIsEntry, const FGameplayTag& InStateTag)
+void UBXStateComponent::TriggerPresentation(const FBXStatePresentation& InPresentation, const FGameplayTag& InStateTag)
 {
 	if (!GetOwner())
 	{
