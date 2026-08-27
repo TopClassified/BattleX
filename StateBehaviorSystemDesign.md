@@ -265,20 +265,22 @@ TMap<FGameplayTag, FBXSuspendMask> SuspendMasks;
 **同步通道（COND_InitialOnly + 显式RPC，同 RunningSkillStates 形态）**：
 
 - `RunningBehaviorStates`：TArray + COND_InitialOnly——仅新客户端连入初始重建（PreReplication 连接数检测投影，LastProjectedConnectionCount 模式），已有连接零属性流量；
-- 已有连接动态：`MulticastBehaviorEnter(Tag, Sign)` / `MulticastBehaviorExit(Tag, Sign, Reason)`（Reliable，按值传参）；挂起/恢复复用 Exit/Enter 多播（Reason 区分）；
-- Late Join：OnRep(带旧值) 差分重建（Agent Start + 通知，跳过矩阵）。
+- 已有连接动态：`MulticastBehaviorEnter(Tag, Sign)` / `MulticastBehaviorExit(Tag, Sign, Reason)`（Reliable，按值传参）；**挂起/恢复不走这两条通用多播**——以 Tag 粒度控制包 `MulticastControlBehavior(Tag, Op)` 精确镜像服务器"Agent 单次停转/重启"操作（接收端重放 Agent 动作 + 逐来源本地 Suspended/Resumed 事件流；通用多播权威门剔除这两类原因，防 Agent 双停双启）；
+- Late Join：OnRep(带旧值) 差分重建（静默：仅事实表 + Agent 启动，不发事件不触表现——时机与监听者就绪次序不定；挂起终态编码于条目 Flags(bit0)，挂起条目不启 Agent 等控制包恢复）。
 
-**统一预测（AutonomousProxy）**：
+**统一预测（AutonomousProxy，显式 Net 入口 `StartBehaviorNet`/`StopBehaviorNet`）**：
 
 ```
 本地启动:
   1. 本地走完整 InternalStartBehavior（矩阵/挂起用本地判定——全局ini+多播到达的状态,安全域内）
-  2. PredictedBehaviors.Add({Tag, Sign(ClientSyncID), 时间})
-  3. ServerEnterBehaviors RPC（仅直接调用类；技能链路 Sign=SkillID 随技能预测携带，无独立RPC）
+  2. PredictedBehaviors.Add({Tag, Sign(ClientSyncID), 时间})（非Client签名自动生成全新ClientSyncID并返回生效Sign）
+  3. ServerEnterBehavior RPC（仅直接调用类；技能链路 Sign=SkillID 随技能预测携带，无独立RPC）
 
-服务器 ServerEnterBehaviors:
-  校验 Initiator=Client + Sign 未存在（防重防伪造）+ 请求年龄<=StateRequestMaxAgeMs（服务器世界时间域）
-  → 权威裁决 → InternalStartBehavior + Multicast 确认 / ClientRejectBehaviors 拒绝回包
+服务器 ServerEnterBehavior:
+  校验 Initiator=Client + Sign 未存在（防重防伪造）+ 请求年龄<=BehaviorRequestMaxAgeMs（服务器世界时间域）
+  → 权威裁决 → InternalStartBehavior + Multicast 确认 / ClientRejectBehavior 拒绝回包
+  * 来源级新增补发确认：条目已存在时管线内不走Enter广播（bNewEntry=false），须显式补发MulticastBehaviorEnter，
+    否则发起端预测缓冲超时误回滚造成双端漂移
 ```
 
 **回滚——确认与回滚触发严格分离**：
@@ -286,11 +288,11 @@ TMap<FGameplayTag, FBXSuspendMask> SuspendMasks;
 | 事件 | 动作 |
 |------|------|
 | MulticastBehaviorEnter 匹配 (Tag,Sign) | **确认**：移出预测缓冲（幂等：已存在仅视为确认） |
-| ClientRejectBehaviors | **回滚**：InternalStop(Tag, Sign, BER_PredictRollback) |
-| 预测超时（BehaviorPredictMaxDuration=0.3s，UBXSettings） | **回滚**（Tick 快照收集） |
+| ClientRejectBehavior | **回滚**：InternalStop(Tag, Sign, BER_PredictRollback) |
+| 预测超时（BehaviorPredictMaxDuration=0.3s，UBXSettings） | **回滚**（Tick 快照收集；回滚后迟到的确认多播经跟随路径重建条目，自愈） |
 | 驱动方先行退出 | 移除预测条目（回滚即完成） |
 
-- 本地退出预测：`StopBehavior` 本地执行 + `ServerExitBehaviors` RPC 上报（服务器权威退出 + 多播）；
+- 本地退出预测：`StopBehaviorNet` 本地执行 + `ServerExitBehavior` RPC 上报（服务器权威退出 + 多播）；**仅允许退出 Client 签名来源**——Server/系统 Sign（SkillID/0常驻）的生命周期归权威管线，客户端伪造上报与 Net 入口误用双端均拒绝；
 - SimulatedProxy 纯多播跟随；Agent 各端本地运行（表现层）；Listen Server/Standalone 单事实源；
 - **Move 行为实现注记**：位移事实已由 CMC 复制（移动模式/SavedMove），Agent 只同步行为开关语义（启停/挂起状态），禁止与 CMC 重复同步位移数据；
 - 流量注记：若高频行为场景实测超标，可切常规复制（RunningBuffStates 形态）——仅换传输通道。
@@ -491,10 +493,11 @@ InternalExitState(Tag, Sign, Reason):
 
 同 §4.6 模型（组件独立一套）：
 
-- `RunningStateStates` COND_InitialOnly + `MulticastStateEnter(Tag, Sign, Duration, EnterServerTime)` / `MulticastStateExit(Tag, Sign, Reason)`；
-- 预测：`PredictedStates` + `ServerEnterStates`/`ServerExitStates`/`ClientRejectStates`；技能链路（EnterStates / 预测技能时间轴内 BXT_EnterState）Sign=SkillID 随技能预测携带，服务器时间轴执行到同一 Task 处进入，经多播确认（确认延迟 ≈1.5×RTT，超时预算覆盖）；
-- SM 转移不预测（服务器权威，多播到达跟随）；
-- Late Join OnRep 差分重建（条目 + Agent 无关 + SM CurrentNode 由条目 Tag 反查资产索引恢复）。
+- `RunningStateStates` COND_InitialOnly + `MulticastStateEnter(Tag, Sign, Duration)` / `MulticastStateExit(Tag, Sign, Reason)`；来源级新增补发确认同 §4.6 注记；
+- 表现专用通道：`TriggerPresentation` 唯一收束点权威转发 `MulticastStatePresentation(StateTag, FBXStatePresentation)` 跟随端本播（转移边/裸状态进出场三通道全覆盖，不依赖 Enter 包携带来源边）；
+- 预测：`PredictedStates` + `ServerEnterState`/`ServerExitState`/`ClientRejectState`（显式 Net 入口 `EnterStateNet`/`ExitStateNet`，语义与 §4.6 对称：仅 Client 签名可退出、非 Client 签名自动生成）；技能链路（EnterStates / 预测技能时间轴内 BXT_EnterState）Sign=SkillID 随技能预测携带，服务器时间轴执行到同一 Task 处进入，经多播确认（确认延迟 ≈1.5×RTT，超时预算覆盖）；
+- SM 转移不预测（服务器权威，多播到达跟随）；族内 SM 状态拒绝客户端自主请求（`ServerEnterState` 内拒绝回 Reject）；
+- Late Join OnRep 差分重建（条目 + SM CurrentNode 由条目 Tag 反查资产恢复；多播跟随进入路径同样镜像 CurrentNode，与服务器 `InternalEnterState` 置节点语义对齐）。
 
 ## 6. 驱动层集成
 
@@ -734,7 +737,7 @@ SM_Stun 资产（状态机图，决策树编辑器产出）：
 | P2 状态系统 | ✅ 完成 | UBXStateComponent 重写：事实表/时长到期/裸状态配置/禁用门控对接/表现三通道 | State/ 新目录：BXStateComponent.h/cpp、BXStateStructs.h、BXStateEnums.h |
 | P3 状态机资产 | ✅ 完成 | UBXStateMachineAsset/SMStateNode/SMTransitionEdge（决策树派生）+ 实例管理 + 转移评估（OnTick/OnExpired）+ 外部进入整合（族内单活顶掉） | State/StateMachine/ 三件套；决策树编辑器复用（BXStateMachineType 注册节点/边类型） |
 | P4 状态Task | ⬜ 未实施 | BXT_EnterState / BXT_ExitState + 蓝图派生 + ini 注册 | Task/ 新增；Config/DefaultBattleX.ini |
-| P5 网络 | ✅ 完成（代码侧） | 双组件 COND_InitialOnly 投影（PreReplication 连接数检测）/ Enter·Exit 多播 / OnRep 差分 LateJoin / 预测缓冲 + Server·Client RPC + 超时回滚。实现注记：① CMC 高频路径与技能链路保持本地 API 不入网，预测走显式 `StartBehaviorNet/StopBehaviorNet`、`EnterStateNet/ExitStateNet`（非 Client 签名自动生成 ClientSyncID 并返回生效 Sign）；② 挂起/恢复以 Tag 粒度控制包 `MulticastControlBehavior` 镜像服务器 Agent 单次停转/重启，Suspended/Resumed 事件流在控制包处理器内本地重放，通用 Enter/Exit 多播剔除这两类原因防 Agent 双停双启；③ 表现三通道经 `TriggerPresentation` 唯一收束点权威转发 `MulticastStatePresentation` 跟随端本播；④ 族内 SM 状态拒绝客户端自主请求（仅权威驱动）；⑤ 客户端无遮蔽表，挂起终态由快照 Flags + 镜像集合编码，配合运动门控下推 | 两组件 + UBXSettings + Net/BXStateBehaviorReplicated.h |
+| P5 网络 | ✅ 完成（代码侧，三轮审查通过） | 双组件 COND_InitialOnly 投影（PreReplication 连接数检测）/ Enter·Exit 多播 / OnRep 差分 LateJoin / 预测缓冲 + Server·Client RPC + 超时回滚。实现注记：① CMC 高频路径与技能链路保持本地 API 不入网，预测走显式 `StartBehaviorNet/StopBehaviorNet`、`EnterStateNet/ExitStateNet`（非 Client 签名自动生成 ClientSyncID 并返回生效 Sign；退出仅允许 Client 签名来源，Server/系统 Sign 双端拒绝防伪造退出与双端漂移）；② 挂起/恢复以 Tag 粒度控制包 `MulticastControlBehavior` 镜像服务器 Agent 单次停转/重启，Suspended/Resumed 事件流在控制包处理器内本地重放，通用 Enter/Exit 多播剔除这两类原因防 Agent 双停双启；③ 表现三通道经 `TriggerPresentation` 唯一收束点权威转发 `MulticastStatePresentation` 跟随端本播；④ 族内 SM 状态拒绝客户端自主请求（仅权威驱动）；⑤ 条目已存在时来源级新增须补发 Enter 多播作预测确认（事件门只在条目新建时广播）；⑥ 跟随端 SM CurrentNode 双路径镜像（多播进入 + LateJoin 重建），与服务器置节点语义对齐；⑦ 乱序自愈：超时回滚后迟到的确认经跟随路径重建、控制包与快照 Flags 两序收敛 | 两组件 + UBXSettings + Net/BXStateBehaviorReplicated.h |
 | P6 技能集成 | ✅ 完成 | 五步链（CanStart判定→保护→清场→登记→首帧Task）/EnterStates 收束/CancelWindows 保护切换/互锁监听(Behavior.Exit 按Reason过滤)/CleanSkillTrash 收束 | BXSkillAsset.h、BXSkillManager.cpp、BXSkillComponent.cpp |
 | P7 出招表 | ⏸ 暂缓 | UBXComboComponent/UBXComboAsset + 输入缓冲 + 双触发 + 服务器宽限校验（决议：出招组件后置，CanPlayNextSkill 归 ComboComponent） | Combo/ 新增 |
 | P8 迁移清理 | ✅ 完成（代码侧） | 删旧 BXSMStun/旧状态机类、FunctionLibrary/CMC 适配；Tag 树：BXBehavior.* 族已建，BXStunState_* 等旧 Tag 保留，随资产制作批量迁移（§9） | State/StateMachine 清理、BXGameplayTags.h/cpp |
