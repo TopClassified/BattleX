@@ -2,7 +2,7 @@
 
 > 版本：v4.1（双系统分立：行为组件统筹基层组件 + 状态组件驱动可视化自动状态机；状态单向禁用行为；状态机资产化复用决策树编辑器。v4.1 增补：§13 行为代理升级 Agent→Proxy——门控下推 CMC 本地开关、权限/活动双轴命令模型、默认启用配置，已完成（代码侧））
 > 范围：`Source/BattleX/State/**` 重写（BehaviorComponent / StateComponent 双组件）+ 决策树派生状态机资产 + 技能/Task/出招表集成 + 网络同步
-> 复用既有：UBXDecisionTree*（图框架）、BXBAMove/Rotate/Jump/Landed（行为Agent，包装 CharacterMovement）、技能系统同步/预测模型（SyncID/防重/超时/服务器世界时间）
+> 复用既有：UBXDecisionTree*（图框架）、UBXProxyMove/Rotate/Jump/Landed（行为代理，统筹 CharacterMovement）、技能系统同步/预测模型（SyncID/防重/超时/服务器世界时间）
 > 关联模块：UBXSkillComponent / UBXTLManager / UBXTask / UBXEventManager / UBXGameplayTags
 
 ---
@@ -16,7 +16,7 @@
 | **行为系统** | UBXBehaviorComponent | "角色正在**做**什么"（移动/旋转/攻击…） | 驱动方控制（技能/输入/AI 启停），**无时长概念** |
 | **状态系统** | UBXStateComponent | "角色处于**什么处境**"（硬直/浮空/灼烧…） | 时长驱动（≤0 无限）+ 状态机自动转移 |
 
-**行为 = 中间层统筹者**：每个行为挂一个 Agent（`UBXBehaviorAgent`），包装基层组件（CharacterMovement / 输入 / 动画接口）——行为被启动时开启基层能力，被停止/挂起时关闭。现有 `BXBAMove/BXBARotate/BXBAJump/BXBALanded` 即此类，全部保留复用。
+**行为 = 中间层统筹者**：每个行为域挂一个代理（`UBXBehaviorProxy`，v4.1 由 Agent 升格），以双轴命令接管基层组件（CharacterMovement / 输入 / 动画接口）——Enable/Disable 为权限轴（持有基层开关，门控下推），Start/Stop 为活动轴（事实与姿态）。现有 `UBXProxyMove/Rotate/Jump/Landed` 即此类。
 
 **状态 = 处境标记 + 自动状态机**：状态条目有时长、有进出场表现、可禁用行为；同族状态由可视化状态机资产（决策树派生）编排自动跳转。
 
@@ -25,9 +25,9 @@
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ UBXBehaviorComponent（行为系统）                                │
-│   ActiveBehaviors: Tag → {Agent, Sources(Sign)}               │
+│   ActiveBehaviors: Tag → {Sources(Sign), LastStartParameter}  │
 │   行为关系矩阵（并行/挤出/拒绝）          ← 行为间自动权衡        │
-│   Agent 统筹基层组件                    ← 中间层定位            │
+│   代理门控下推（挂起位/拒绝位→差分命令）  ← 中间层定位            │
 └───────────────▲──────────────────────────────────────────────┘
                 │ 唯一交互：禁用（单向，立即中断 + 挂起恢复）
 ┌───────────────┴──────────────────────────────────────────────┐
@@ -92,18 +92,18 @@
 │ ActiveBehaviors(事实)     │  │ ActiveStates(事实)                  │
 │ 行为矩阵(全局ini)          │  │ StateMachines(资产实例,族内转移)     │
 │ ProtectionEntries(取消窗) │◄─│ StateConfigs(裸状态配置)             │
-│ SuspendedBehaviors(挂起区)│  │ 禁用门控:ForbiddenBehaviors→挂起      │
-│ BehaviorAgents(预建)      │  │ Tick:服务器转移评估+到期快照          │
+│ SuspendMasks+ProxyGateStates│  │ 禁用门控:ForbiddenBehaviors→挂起    │
+│ BehaviorProxies(预建)     │  │ Tick:服务器转移评估+到期快照          │
 │ 复制+预测(§4.6)           │  │ 复制+预测(§5.7)                     │
 └──────────┬───────────────┘  └───────────────┬────────────────────┘
            │ Start/Stop(指令)                  │ Enter/Exit/Presentation(通知)
            ▼                                  ▼
-   UBXBehaviorAgent(执行体)           UBXStateMachineAsset(数据,决策树派生)
-   BXBAMove 包装CMC…                  SM_Stun:节点图+条件边
+   UBXBehaviorProxy(总代理,门控下推)   UBXStateMachineAsset(数据,决策树派生)
+   UBXProxyMove 推CMC开关…             SM_Stun:节点图+条件边
                                       (服务器评估,客户端跟随)
 ```
 
-**调用方向**：驱动层 → 两组件公开 API；BehaviorComponent → Agent（Start/Stop）；StateComponent → 状态机资产（转移评估，纯数据）；StateComponent → BehaviorComponent（禁用/恢复，唯一跨系统调用）。Agent/状态机资产不反向持有事实，全部现查。
+**调用方向**：驱动层 → 两组件公开 API；BehaviorComponent → Proxy（Enable/Disable/Start/Stop 命令，Proxy 推基层开关）；StateComponent → 状态机资产（转移评估，纯数据）；StateComponent → BehaviorComponent（禁用/恢复，唯一跨系统调用）。Proxy/状态机资产不反向持有事实，全部现查。
 
 ## 4. 行为系统：UBXBehaviorComponent
 
@@ -111,10 +111,10 @@
 
 | 职责 | 说明 |
 |------|------|
-| 唯一行为事实表 | ActiveBehaviors：Tag → Sources(Sign) + Agent |
-| 进入裁决 | 矩阵拒绝、状态禁用拒绝、Agent CheckStart、保护检查 + 挤出 |
+| 唯一行为事实表 | ActiveBehaviors：Tag → Sources(Sign) + LastStartParameter |
+| 进入裁决 | 矩阵拒绝、状态禁用拒绝、代理权限与 CheckStart、保护检查 + 挤出 |
 | 停止裁决 | 驱动方 Stop（Sign 匹配）、矩阵挤出、状态挂起、回滚 |
-| Agent 管理 | BeginPlay 预建（现有 BXBAMove 等机制不变） |
+| 代理管理 | BeginPlay 预建（BehaviorProxyConfigs：常驻门控代理默认启用，事件型随管线隐式启停）；门控差分命令（§4.5/§13.3） |
 | 取消窗口保护 | ProtectionEntries（技能驱动，§6.1） |
 | 挂起/恢复 | 状态禁用的中断与自动恢复（§4.5） |
 | 复制与预测 | §4.6 |
@@ -153,8 +153,10 @@ struct FBXBehaviorRuntimeData
 // UBXBehaviorComponent（重写）：
 TMap<FGameplayTag, FBXBehaviorRuntimeData> ActiveBehaviors;          // 唯一事实
 TMap<FGameplayTag, TArray<FBXProtectionRecord>> ProtectionEntries;   // 取消窗口保护
-TMap<FGameplayTag, FBXSuspendedBehavior> SuspendedBehaviors;         // 挂起区(§4.5)
-TMap<FGameplayTag, UBXBehaviorAgent*> BehaviorAgents;                // BeginPlay预建复用
+TMap<FGameplayTag, FBXSuspendMask> SuspendMasks;                     // 挂起遮蔽(§4.5,服务器端)
+TMap<FGameplayTag, FBXBehaviorProxyConfig> BehaviorProxyConfigs;     // 代理配置(类+是否默认启用)
+TMap<FGameplayTag, UBXBehaviorProxy*> BehaviorProxies;               // 代理实例(BeginPlay预建复用)
+TMap<FGameplayTag, FBXProxyGateState> ProxyGateStates;               // 代理门控状态(挂起位+最后命令值,§13.3)
 ```
 
 ### 4.3 行为关系矩阵（全局，可视化配置）
@@ -176,7 +178,7 @@ class UBXBehaviorSettings : public UDeveloperSettings
 | 单元格 | 语义 | 行为 |
 |--------|------|------|
 | 并存（默认空） | 互不干扰 | 双活（移动+瞄准并行） |
-| 挤出 | 行踢掉列 | 进入时 InternalStop(列, BER_Expelled)，Agent 正常 Stop（需求1中断） |
+| 挤出 | 行踢掉列 | 进入时 InternalStop(列, BER_Expelled)，代理正常 Stop（需求1中断） |
 | 拒绝 | 列挡住行 | 进入失败（需求1禁用） |
 
 - 行=想要进入，列=已存在；非对称是特性：(A,B)/(B,A) 独立配置；
@@ -190,20 +192,23 @@ class UBXBehaviorSettings : public UDeveloperSettings
 InternalStartBehavior(Tag, Sign, Param):
   0. 链深守卫（>8 阻断 + Warning）
   1. 挂起检查：SuspendedBehaviors 含 Tag（仍被状态禁用）→ false
+  1a. 代理权限检查：常驻门控代理被禁用（挂起位镜像/事件型未隐式启用不拦）→ false
   2. 矩阵拒绝：RejectRelations[Tag] 命中任一活跃行为 → false
-  3. Agent->CheckStart(Param) 失败 → false
+  3. Proxy->CheckStart(Param) 失败 → false
   4. 保护检查 + 挤出：活跃行为命中 ExpelRelations[Tag] 且存在
      bProtected=true 记录 → 激活拒绝（霸体/取消窗口外）
      否则逐个 InternalStop(该条目, BER_Expelled)
-  5. 表更新（新 Sign 追加 / 同 Sign 刷新）；Agent->Start(Param)
+  5. 表更新（新 Sign 追加 / 同 Sign 刷新）；事件型代理隐式 EnableProxy + Proxy->Start(Param)
   6. 广播 BXEvent.Behavior.Enter {Tag, Sign}
   7. 服务器：MulticastBehaviorEnter；连接数变化时投影快照
+  8. 尾部 RefreshProxyGates 归一化命令值
 
 InternalStopBehavior(Tag, Sign, Reason, Param):
   1. 查无该 Sign → false；移除来源；仍有其他来源 → true（先停先退）
-  2. Agent->Stop(Param)；移除条目
+  2. Proxy->Stop(Param)；移除条目
   3. 广播 BXEvent.Behavior.Exit {Tag, Sign, Reason}   ← 技能互锁监听点
-  4. 服务器：MulticastBehaviorExit
+  4. 尾部 RefreshProxyGates（事件型代理最后来源退出→隐式 Disable）
+  5. 服务器：MulticastBehaviorExit
 ```
 
 ```cpp
@@ -211,10 +216,10 @@ InternalStopBehavior(Tag, Sign, Reason, Param):
 bool StartBehavior(const FGameplayTag& Tag, int64 Sign = 0, const FInstancedStruct& Param = {});
 bool StopBehavior(const FGameplayTag& Tag, int64 Sign = 0, const FInstancedStruct& Param = {});
 bool StopBehaviorAllSources(const FGameplayTag& Tag, ...);            // 全来源退出
-// 重复 Start = Agent 重启 + 来源刷新；Agent 主动结束（动画完/位移到位）→ StopBehavior(Tag, AgentKey)
+// 重复 Start = 代理重启 + 来源刷新；代理主动结束（动画完/位移到位）→ StopBehavior(Tag, ProxyKey)
 ```
 
-**所有停止路径（手动/挤出/挂起/回滚/清空）都走 InternalStopBehavior**——Agent Stop、事件一个不漏（机制性根治 Stop 链路失效类问题）。
+**所有停止路径（手动/挤出/挂起/回滚/清空）都走 InternalStopBehavior**——代理 Stop、事件一个不漏（机制性根治 Stop 链路失效类问题）。
 
 ### 4.5 挂起/恢复（状态禁用通道，规则落地）
 
@@ -233,11 +238,15 @@ TMap<FGameplayTag, FBXSuspendMask> SuspendMasks;
 
 ```
 状态进入（携带 ForbiddenBehaviors，§5.5 门控）→ SuspendByForbiddenTag(禁用Tag, 状态Tag):
-  遮蔽键已存在 → 仅 ByStates 追加状态（遮蔽已生效，无重复处理）
-  新遮蔽生效:
-    匹配该 Tag 且未被其他遮蔽键覆盖的活跃行为：
-      Agent->Stop（条目留在 ActiveBehaviors，事实保留）
-      每来源广播 BXEvent.Behavior.Exit {Reason=BER_Suspended}   ← 技能互锁同样触发（受击中断攻击）
+  遮蔽键已存在 → 仅 ByStates 追加状态（遮蔽已生效，无重复处理代理）
+  新遮蔽生效（先收集后入表——本遮蔽键自身会使遮蔽查询恒真）:
+    收集被该 Tag 覆盖的已配置代理（含无活跃条目的常驻门控代理——挂起不依赖条目存在；
+    已被其他遮蔽键覆盖的不重复处理）
+    每代理控制包广播（客户端置挂起位+差分禁用代理+活跃条目本地事件流重放）
+    挂起位置位 → RefreshProxyGates 差分命令 DisableProxy
+    （代理收停基层能力并武装恢复重放；条目留在 ActiveBehaviors，事实保留）
+    复查遮蔽仍生效（代理回调竞态防御）→ 每来源广播 BXEvent.Behavior.Exit {Reason=BER_Suspended}
+                                        ← 技能互锁同样触发（受击中断攻击）
     登记遮蔽键
 
 状态退出 → ResumeByForbiddenTag(禁用Tag, 状态Tag):
@@ -246,13 +255,15 @@ TMap<FGameplayTag, FBXSuspendMask> SuspendMasks;
   EnterStates 重入自身）→ 跳过解除（登记仍有效，活跃状态的禁用不被误清）
   从遮蔽键 ByStates 移除该状态；集合非空 → 遮蔽保持（多状态叠加禁用最后一个退出才解除）
   遮蔽解除:
-    匹配该 Tag 且不再被任何活跃遮蔽键覆盖的活跃行为：
-      Agent->Start（来源 Sign 原样，所有权不变）
-      广播 BXEvent.Behavior.Enter
+    收集本次解除覆盖且不再被任何遮蔽键覆盖的代理
+    每代理控制包广播 + 清挂起位 → 门控差分命令 EnableProxy
+    （代理按快照参数重放 Start，来源 Sign 原样，所有权不变）
+    复查未被重新遮蔽 → 每来源广播 BXEvent.Behavior.Enter
 
 查询遮蔽 IsBehaviorSuspended:
   任一活跃遮蔽键为该 Tag 的祖先或自身 → 挂起（族 Tag 遮蔽整族）
-  CanStartBehavior 的挂起检查走此判定 → 挂起期间 StartBehavior 该 Tag → 拒绝
+  CanStartBehavior 的挂起检查走此判定 → 挂起期间 StartBehavior 该 Tag → 拒绝；
+  客户端无遮蔽表，代理挂起位由 CanStart 的代理权限检查（ProxyDisabled）等价拦截
 ```
 
 - 条目不移表 → ActiveBehaviors 始终是"活跃行为全集"，挂起态由查询遮蔽表达（CheckActiveBehavior 不受影响，GetActiveBehaviors 含挂起行为）；
@@ -265,8 +276,8 @@ TMap<FGameplayTag, FBXSuspendMask> SuspendMasks;
 **同步通道（COND_InitialOnly + 显式RPC，同 RunningSkillStates 形态）**：
 
 - `RunningBehaviorStates`：TArray + COND_InitialOnly——仅新客户端连入初始重建（PreReplication 连接数检测投影，LastProjectedConnectionCount 模式），已有连接零属性流量；
-- 已有连接动态：`MulticastBehaviorEnter(Tag, Sign)` / `MulticastBehaviorExit(Tag, Sign, Reason)`（Reliable，按值传参）；**挂起/恢复不走这两条通用多播**——以 Tag 粒度控制包 `MulticastControlBehavior(Tag, Op)` 精确镜像服务器"Agent 单次停转/重启"操作（接收端重放 Agent 动作 + 逐来源本地 Suspended/Resumed 事件流；通用多播权威门剔除这两类原因，防 Agent 双停双启）；
-- Late Join：OnRep(带旧值) 差分重建（静默：仅事实表 + Agent 启动，不发事件不触表现——时机与监听者就绪次序不定；挂起终态编码于条目 Flags(bit0)，挂起条目不启 Agent 等控制包恢复）。
+- 已有连接动态：`MulticastBehaviorEnter(Tag, Sign)` / `MulticastBehaviorExit(Tag, Sign, Reason)`（Reliable，按值传参）；**挂起/恢复不走这两条通用多播**——以代理粒度控制包 `MulticastControlBehavior(Tag, Op)` 承载（v4.1 P9 升格：从"镜像条目停转"升格为"代理命令"——接收端置/清挂起位+差分禁用/启用代理+活跃条目本地 Suspended/Resumed 事件流重放；通用多播权威门剔除这两类原因，防代理双停双启；常驻门控代理无活跃条目时同样生效，客户端挂起事实的唯一来源）；
+- Late Join：OnRep(带旧值) 差分重建（静默：仅事实表 + 代理启用启动，不发事件不触表现——时机与监听者就绪次序不定；挂起终态编码于条目 Flags(bit0)，挂起条目置挂起位禁用代理，等控制包恢复；OnRep 兜底清理配对清挂起位防镜像残留永久禁挡）。
 
 **统一预测（AutonomousProxy，显式 Net 入口 `StartBehaviorNet`/`StopBehaviorNet`）**：
 
@@ -293,8 +304,8 @@ TMap<FGameplayTag, FBXSuspendMask> SuspendMasks;
 | 驱动方先行退出 | 移除预测条目（回滚即完成） |
 
 - 本地退出预测：`StopBehaviorNet` 本地执行 + `ServerExitBehavior` RPC 上报（服务器权威退出 + 多播）；**仅允许退出 Client 签名来源**——Server/系统 Sign（SkillID/0常驻）的生命周期归权威管线，客户端伪造上报与 Net 入口误用双端均拒绝；
-- SimulatedProxy 纯多播跟随；Agent 各端本地运行（表现层）；Listen Server/Standalone 单事实源；
-- **Move 行为实现注记**：位移事实已由 CMC 复制（移动模式/SavedMove），Agent 只同步行为开关语义（启停/挂起状态），禁止与 CMC 重复同步位移数据；
+- SimulatedProxy 纯多播跟随；代理各端本地运行（表现层）；Listen Server/Standalone 单事实源；
+- **Move 行为实现注记**：位移事实已由 CMC 复制（移动模式/SavedMove），代理只同步行为开关语义（启停/挂起状态），禁止与 CMC 重复同步位移数据；
 - 流量注记：若高频行为场景实测超标，可切常规复制（RunningBuffStates 形态）——仅换传输通道。
 
 ## 5. 状态系统：UBXStateComponent
@@ -656,7 +667,7 @@ bool IsBehaviorProtected(const AActor* Target, const FGameplayTag& Tag);
 TArray<FBXPredictedEntry> GetPredictedEntries(const AActor* Target);            // 调试
 ```
 
-日志：正常流程 Verbose；保护拒绝/链守卫/挂起冲突/Agent 失败/预测回滚 → `BXCOMP_Behavior` / `BXCOMP_State` Warning（仅异常诊断）。
+日志：正常流程 Verbose；保护拒绝/链守卫/挂起冲突/代理失败/预测回滚 → `BXCOMP_Behavior` / `BXCOMP_State` Warning（仅异常诊断）。
 
 ## 9. Tag 树整理（Q6，双树）
 
@@ -724,7 +735,7 @@ SM_Stun 资产（状态机图，决策树编辑器产出）：
   SlashA 节点: [输入 Light, 窗口内] → SlashB
 ```
 
-**执行链（受击）**：受击技能命中 → EnterState(Knockback, 1.0s, SkillID) → 外部转移进 SM_Stun → 挂起移动族（移动 Agent Stop）→ 1s 到期 → 服务器评估 OnExpired 边 → 转移 Knockdown（顶掉式退出+进入，各端多播跟随，倒地循环动画）→ 2s 到期 → 转移 Recover（起身动画）→ 1.5s 自然退出 → 移动族恢复（Agent Start）→ SM 空转。
+**执行链（受击）**：受击技能命中 → EnterState(Knockback, 1.0s, SkillID) → 外部转移进 SM_Stun → 挂起移动族（覆盖代理置挂起位→门控命令 DisableProxy→CMC 开关刹车）→ 1s 到期 → 服务器评估 OnExpired 边 → 转移 Knockdown（顶掉式退出+进入，各端多播跟随，倒地循环动画）→ 2s 到期 → 转移 Recover（起身动画）→ 1.5s 自然退出 → 移动族恢复（清挂起位→EnableProxy→开关放行）→ SM 空转。
 
 **执行链（取消连招）**：SlashA 播放中（Attack.SlashA 行为受保护）→ 前摇期敌方击退到达 → 矩阵(击退,SlashA)=挤出但保护中 → 拒绝（霸体）→ 0.4~0.6s 窗口 → 玩家按 Light → 缓冲+窗口查询通过 → PlaySkill(SlashB) → SlashB 挤出 SlashA → 技能互锁中断 A → B 开始。
 
@@ -765,7 +776,7 @@ SM_Stun 资产（状态机图，决策树编辑器产出）：
 | R1 外部进入整合 | 外部进入=外部转移：SM 跳节点、重置时长、**不评估出边**；离开只走边评估 |
 | R2 时长归属 | 同 Q4（规则二） |
 | R3 禁用配置面 | SM 节点 + 裸状态 StateConfig 的 ForbiddenBehaviors；Tag 层级缓解配置量（禁根=全禁） |
-| R4 Agent 定位 | 行为中间层执行体（统筹基层组件，现有 BXBAMove 等保留）；战斗编排走技能时间轴（技能即执行体），不挂 Agent |
+| R4 Agent 定位 | 行为中间层执行体（统筹基层组件，现有 BXBAMove 等保留）；战斗编排走技能时间轴（技能即执行体），不挂 Agent——**v4.1 P9 升格为 Proxy 双轴命令模型，见 §13** |
 | R5 Normal 语义 | "无硬直"=无状态条目（SM 空转），BXStunState_Normal 废弃 |
 | R6 子状态回收 | 删除所有权传播机制：技能 EnterStates 退出由 CleanSkillTrash 按 Sign 逐条收束 |
 

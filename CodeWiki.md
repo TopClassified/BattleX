@@ -1,7 +1,7 @@
 # BattleX Code Wiki
 
 > 高性能动作游戏技能系统 · Unreal Engine 5 插件
-> 仓库根：`BattleX/`  ·  版本：1.5 (Beta)  ·  引擎版本：UE 5.8  ·  文档更新日期：2026-08-27
+> 仓库根：`BattleX/`  ·  版本：1.6 (Beta)  ·  引擎版本：UE 5.8  ·  文档更新日期：2026-08-28
 
 ---
 
@@ -47,8 +47,8 @@
 |---|---|
 | **高性能** | 单点 `UBXTLManager` 集中 Tick；任务处理器实例缓存；InstancedStruct 零拷贝传递动态数据；按 Bitmask 选择性启用 C++/BP 执行路径 |
 | **数据驱动** | 技能 = `UBXTLAsset` 资产；任务 = `UBXTask` 内联实例；决策树 = `UBXDecisionTreeTemplate` 资产 |
-| **可扩展** | Task / Processor / BehaviorAgent / StateMachine / Condition 均为 `Abstract + Blueprintable + EditInlineNew`，支持 C++ 与蓝图双轨扩展 |
-| **网络友好** | Skill/Buff 客户端预测 + 服务器权威校验 + Reliable 广播 + 加速弥补；Task 通过 `EBXTNetType` Bitmask 区分权威端/自主端/模拟端执行；`COND_InitialOnly` 快照支持 Late Join 重建；服务器可关闭碰撞检测改为客户端上报 |
+| **可扩展** | Task / Processor / BehaviorProxy / StateMachine / Condition 均为 `Abstract + Blueprintable + EditInlineNew`，支持 C++ 与蓝图双轨扩展 |
+| **网络友好** | Skill/Buff/State/Behavior 客户端预测 + 服务器权威校验 + Reliable 广播 + 加速弥补；Task 通过 `EBXTNetType` Bitmask 区分权威端/自主端/模拟端执行；`COND_InitialOnly` 快照支持 Late Join 重建；服务器可关闭碰撞检测改为客户端上报 |
 | **编辑器集成** | 自定义资产类型 + 工作流应用 (WorkflowOrientedApp) 编辑器 + 自绘时间轴控件 + 图编辑器 |
 
 ### 插件清单（`BattleX.uplugin`）
@@ -145,7 +145,7 @@ BattleX/
     │   ├── Projectile/          # 子弹系统（资产、管理器、求解器、RPC组件，无Actor化）
     │   ├── Skill/               # 技能系统（资产、管理器、组件、枚举、结构，复用Timeline/Task）
     │   ├── State/               # 状态系统（状态组件、状态机资产/实例、状态枚举/结构）
-    │   ├── Behavior/            # 行为系统（行为组件、关系矩阵设置、遮蔽表、行为代理、函数库）
+    │   ├── Behavior/            # 行为系统（行为组件、关系矩阵设置、遮蔽表、行为代理Proxy体系、门控下推、函数库）
     │   ├── Task/                # 任务系统（Task + Processor + 具体任务 + FlowControl + Task系列条件）
     │   ├── Timeline/            # 时间轴系统（资产、管理器、组件、复制投影）
     │   └── Unit/                # 单位实体体系（占位；投射物功能已由 Projectile/ 模块实现）
@@ -190,6 +190,8 @@ BattleX/
 | `bServerCollisionCheck` | 服务器是否做碰撞检测（默认关，由 Autonomous 客户端上报） |
 | `CollisionTaskServerExtraLife` | 服务器等待客户端碰撞结果的额外延迟销毁时长（秒，默认 0.15） |
 | `SkillRequestMaxAgeMs` | 释放请求最大年龄（服务器世界时间域毫秒，默认 500，双向校验防重放/伪造） |
+| `BehaviorPredictMaxDuration` / `StatePredictMaxDuration` | 行为/状态客户端预测最长时长（秒，默认 0.3，超时自动回滚） |
+| `BehaviorRequestMaxAgeMs` / `StateRequestMaxAgeMs` | 行为/状态进入请求最大年龄（服务器世界时间域毫秒，默认 500） |
 
 配置文件为插件自带的 `Config/DefaultBattleX.ini`（`Config=BattleX`），示例：`TaskProcessorMap` 注册蓝图 Task（`BP_BXT_PlayAnimation` → `BXTPPlayAnimation` 等）、`TaskCustomDataMap` 注册对应上下文结构（`BXTPPlayAnimationContext` 等）。
 
@@ -197,8 +199,8 @@ BattleX/
 
 使用 `UE_DECLARE_GAMEPLAY_TAG_EXTERN` 声明的原生 GameplayTag 命名空间，是整个系统的" vocabulary"。主要包括：
 
-- **事件**：`BXEvent_TimelineStarted/Closing`、`BXEvent_ChangeForbiddenBehavior`、`BXEvent_Behavior_Move/Rotate/Jump/Landed`
-- **行为**：`BXBehavior_Locomotion_Move/Rotate`、`BXBehavior_PlayMontage_Default`、`BXImmBehavior_Locomotion_Jump/Landed`
+- **事件**：`BXEvent.Behavior.Enter/Exit`（行为进退，技能互锁监听点）、`BXEvent.State.Enter/Exit`（状态进退）、`BXEvent_TimelineStarted/Closing`、`BXEvent_ChangeForbiddenBehavior`
+- **行为族**：`BXBehavior_Root/Locomotion/Attack`（族根）、`BXBehavior_Locomotion_Move/Rotate`、`BXBehavior_PlayMontage_Default`、`BXImmBehavior_Locomotion_Jump/Landed`
 - **硬直状态**：Normal / Knockback / Knockdown / Prone / Ascending / Falling / Floating / Execution
 - **攻击类型**：Light / KnockBack / KnockDown / Launch / Uppercut / AirKnockdown / Drag
 - **攻击力度**：`BXAttackForce_0` ~ `BXAttackForce_5`
@@ -267,7 +269,10 @@ Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `Battle
 | `ReleaseConditions` | `TArray<UBXTaskCondition*>` | 释放条件列表（服务器校验用，复用 TaskCondition 体系） |
 | `Cooldown` | `float` | 默认冷却时长（秒，-1 代表无冷却） |
 | `LockType` | `EBXSkillLockType` | 锁定类型（None/Target/Location/Direction，决定释放时附带的数据） |
+| `BehaviorTag` | `FGameplayTag` | 技能姿态行为 Tag（1:1 映射；空代表无行为纯技能）——五步链接入行为系统（CanStart 判定→保护→清场→登记→互锁，见 [4.4](#44-state--behavior-状态与行为系统)） |
+| `bProtectedBehavior` | `bool` | 姿态行为是否默认受保护（取消窗口外不可被矩阵挤出，霸体语义） |
 | `EnterStates` | `TArray<FBXSkillEnterState>` | 技能进入时写入的状态列表（数组序=进入序；StateTag + Duration，-1 用状态默认时长）——驱动行为禁用与状态机进入，三层互锁闭环入口（见 [4.4](#44-state--behavior-状态与行为系统)） |
+| `CancelWindows` | `TArray<FBXSkillCancelWindow>` | 取消窗口列表（窗口内姿态行为保护解除，出招表连招判据） |
 
 运行时由 `UBXSkillManager` 驱动（见 [4.14](#414-skill--net-网络同步系统客户端预测与服务器权威)）。
 
@@ -477,52 +482,68 @@ Task 的显示名和分类使用引擎自带的蓝图元数据字段，**不使�
 
 ### 4.4 State / Behavior 状态与行为系统
 
-状态与行为**分目录、分组件**：`UBXStateComponent`（State/）管理状态事实与状态机；`UBXBehaviorComponent`（Behavior/）管理行为事实表与遮蔽。核心设计：**状态驱动行为禁用（遮蔽表方案），行为事件驱动技能互锁，技能 EnterStates 驱动状态进入**——三层互锁闭环。
+状态与行为**分目录、分组件**：`UBXStateComponent`（State/）管理状态事实与状态机；`UBXBehaviorComponent`（Behavior/）管理行为事实表、关系矩阵裁决与行为代理门控。核心设计：**状态驱动行为禁用（服务器遮蔽表 + 客户端挂起位），行为代理（Proxy）持有基层开关并向移动组件下推门控，行为事件驱动技能互锁，技能 EnterStates 驱动状态进入**——三层互锁闭环。双组件均已网络化（COND_InitialOnly 快照 + 显式 RPC + 统一预测回滚，见本节末"网络同步"）。
 
 #### `UBXBehaviorComponent` ([BXBehaviorComponent.h](Source/BattleX/Behavior/BXBehaviorComponent.h))
 
 行为管理组件，通过 GameplayTag 标识行为（如 `BXBehavior.Locomotion.Move`）。
 
-**三大数据结构**：
+**核心数据结构**：
 - `ActiveBehaviors`：行为事实表 `TMap<Tag, FBXBehaviorRuntimeData>`（来源数组 + `LastStartParameter` 启动参数缓存，挂起态行为条目不移表）
-- `SuspendMasks`：**遮蔽表**（状态禁用的核心）——`TMap<禁用Tag, FBXSuspendMask{ByStates}>`。挂起 = 查询层遮蔽而非条目搬运：状态进入登记遮蔽键（幂等追加 ByStates），状态退出移除登记，**最后一个禁用状态退出才解除遮蔽恢复行为**（Agent 重启 + 回放 `LastStartParameter` + 广播 BER_Resumed）
-- `BehaviorAgents`：行为代理实例表 `TMap<Tag, UBXBehaviorAgent*>`
+- `BehaviorProxyConfigs`：代理配置 `TMap<Tag, FBXBehaviorProxyConfig{ProxyClass, bEnabledByDefault}>`——**常驻门控代理**（Move/Rotate/Jump）默认启用；**事件型代理**（Attack 姿态/Landed）默认禁用，管线 Start 隐式启用、最后来源退出隐式禁用
+- `BehaviorProxies`：代理实例表 `TMap<Tag, UBXBehaviorProxy*>`（BeginPlay 预建复用）
+- `SuspendMasks`：**遮蔽表**（服务器端状态禁用）——`TMap<禁用Tag, FBXSuspendMask{ByStates}>`。挂起 = 查询层遮蔽而非条目搬运：状态进入登记遮蔽键（幂等追加 ByStates），状态退出移除登记，**最后一个禁用状态退出才解除遮蔽**。客户端无遮蔽表，挂起事实由控制包 `MulticastControlBehavior` 按代理粒度置/清挂起位承载（**无活跃条目的常驻门控同样生效**——静止时被眩晕同样禁走）
+- `ProxyGateStates`：每代理门控状态（挂起位 + 最后命令值）；拒绝关系求值即算不落盘
+
+**门控下推（CMC 解耦，P9）**：`RefreshProxyGates()` 在事实表/遮蔽表/挂起位每次变更收尾统一执行——目标启用态 = 非挂起 ∧（常驻型：非拒绝关系 / 事件型：条目存在），与最后命令值**差分**后命令 `Proxy->EnableProxy/DisableProxy`；Proxy 原生实现推 `UBXCharacterMovementComponent::SetBehaviorMoveBlocked/RotateBlocked/JumpBlocked` 本地开关。移动组件只读开关执行物理刹车（加速度清零/停转向/挡跳跃），**不反查行为组件**；主动事实上报（Start/Stop）方向保留。静止不抖动：Move 事实上报 Stop 不影响代理启用态。
 
 **关系矩阵**（[BXBehaviorSettings.h](Source/BattleX/Behavior/BXBehaviorSettings.h)）：项目级 DeveloperSettings 配置拒绝关系（列存在挡行）与挤出目标（霸体/取消窗口保护），编辑器侧由 [BXBehaviorMatrixCustomization.cpp](Source/BattleXEditor/CustomLayout/BXBehaviorMatrixCustomization.cpp) 渲染为可勾选矩阵。
 
-**API**：`CheckActiveBehavior`（族 Tag 语义）/ `CheckForbiddenBehavior` / `CanStartBehavior`（纯查询，出招表预检）/ `StartBehavior` / `StartBehaviorWithParameter`（按值收参 + MoveTemp，对齐 PlaySkillWithInputData 惯例）/ `StopBehavior` / `StopBehaviorAllSources` / `SuspendByForbiddenTag` / `ResumeByForbiddenTag` / `SetBehaviorProtection`（取消窗口保护，SkillComponent 互锁用）。
+**API**：`CheckActiveBehavior`（族 Tag 语义）/ `CheckForbiddenBehavior` / `CanStartBehavior`（纯查询：挂起/代理权限/拒绝关系/挤出目标保护，出招表预检）/ `StartBehavior` / `StartBehaviorWithParameter`（按值收参 + MoveTemp，对齐 PlaySkillWithInputData 惯例）/ `StopBehavior` / `StopBehaviorAllSources` / `SuspendByForbiddenTag` / `ResumeByForbiddenTag` / `SetBehaviorProtection`（取消窗口保护，SkillComponent 互锁用）；网络入口 `StartBehaviorNet` / `StopBehaviorNet`（仅预测路径显式使用，CMC 高频路径与技能链路走本地 API）。
 
-**安全机制**：`EnterChainDepth` 链深度守卫（防事件监听环）；Agent Stop/Start 回调后复查遮蔽状态（蓝图 Agent 可能在回调中改变遮蔽，防误广播）；快照遍历纪律（回调可能同步增删表）。
+**安全机制**：`EnterChainDepth` 链深度守卫（防事件监听环）；代理禁用/启用回调后复查遮蔽与挂起位（蓝图回调可能在回调中改变禁用状态，防误广播）；快照遍历纪律（回调可能同步增删表）。
 
-#### `UBXBehaviorAgent` ([BXBehaviorAgent.h](Source/BattleX/Behavior/BehaviorAgent/BXBehaviorAgent.h))
+#### `UBXBehaviorProxy` ([BXBehaviorProxy.h](Source/BattleX/Behavior/BehaviorProxy/BXBehaviorProxy.h))
 
-行为代理基类。`Abstract, Blueprintable`。生命周期：`Initialize` → `StartBehavior` ↔ `StopBehavior`（挂起/恢复可反复）→ `Deinitialize`，并有 `CheckStartBehavior` 前置检查（支持参数依赖型判定，如 Move 带方向查地形）。每对方法 Native/Script 双版本，由 `BehaviorFunctions` Bitmask 控制（枚举 `EBXBehaviorAgentFunction` 为 `1<<n` 位值；>8 个标志需 uint32 基类型，故不带 BlueprintType——UHT 限制 BlueprintType 枚举仅支持 uint8，枚举仅作 BitmaskEnum 元数据无暴露损失）。
+行为代理（原 `UBXBehaviorAgent` 升格，P9）。**一个行为域的总代理：组件是唯一命令源，代理不自治、不持有禁用来源逻辑**。双轴命令模型：
 
-**具体代理**：`UBXBAMove` / `UBXBARotate`（移动/旋转）、`UBXBAJump` / `UBXBALanded`（跳跃/着陆）。
+| 命令 | 轴 | 说明 |
+|---|---|---|
+| `EnableProxy` / `DisableProxy` | 权限 | 持有基层开关；禁用时活动中先收停并武装恢复重放（`bArmedResume`），启用时按快照参数自动重放 Start |
+| `StartBehavior` / `StopBehavior` | 活动 | 事实上报/技能姿态语义；未启用时代理拒绝 Start（事件型由管线隐式启用后再 Start） |
+| `UpdateProxy(DeltaTime)` | 帧驱动 | `bWantsProxyUpdate=true` 且已启用时由组件 Tick 转发 |
+
+权限/活动簿记（`bEnabled`/`bStarted`/`bArmedResume`）在基类统一处理，派生类只重写 Native/Script 执行槽位；每对方法由 `BehaviorFunctions` Bitmask 控制（枚举 `EBXBehaviorProxyFunction` 为 `1<<n` 位值，默认 5461 = C++ 五件套 + 启用/禁用；>8 位标志需 uint32 基类型故不带 BlueprintType——UHT 限制，枚举仅作 BitmaskEnum 元数据无暴露损失）。
+
+**具体代理**：`UBXProxyMove` / `UBXProxyRotate` / `UBXProxyJump`（常驻门控，Enable/Disable 推移动组件三开关）、`UBXProxyLanded`（事件型瞬时事，Hit 参数经 InstancedStruct 传递给监听方）。
 
 #### `UBXStateComponent` ([BXStateComponent.h](Source/BattleX/State/BXStateComponent.h))
 
 状态管理组件。**状态 = 带时长的表条目**（非状态机独占）：`ActiveStates`（`TMap<Tag, FBXStateRuntimeData>`，来源数组独立计时，来源退出仅移除到期 Sign）；族内状态（状态机管辖）与裸状态（`StateConfigs` 配置）共存。
 
-**状态机实例**（[BXStateMachineInstance.h](Source/BattleX/State/StateMachine/BXStateMachineInstance.h)）：`BeginPlay` 按资产创建实例，`CurrentNode` 为空 = SM 空转。资产（[BXStateMachineAsset.h](Source/BattleX/State/StateMachine/BXStateMachineAsset.h)，派生决策树模板）内含 `UBXSMStateNode`（StateTag / Duration / ForbiddenBehaviors / Entry/ExitPresentation / bIsDefaultNode）与 `UBXSMTransitionEdge`（TE_OnTick / TE_OnExpired 评估时机 + 条件）。
+**状态机实例**（[BXStateMachineInstance.h](Source/BattleX/State/StateMachine/BXStateMachineInstance.h)）：`BeginPlay` 按资产创建实例，`CurrentNode` 为空 = SM 空转。资产（[BXStateMachineAsset.h](Source/BattleX/State/StateMachine/BXStateMachineAsset.h)，派生决策树模板）内含 `UBXSMStateNode`（StateTag / Duration / ForbiddenBehaviors / bIsDefaultNode）与 `UBXSMTransitionEdge`（TE_OnTick / TE_OnExpired 评估时机 + 条件 + TransitionPresentation——**状态间过渡表现的唯一配置入口**，节点不配表现）。
 
 **Tick 驱动**（`UpdateExpiredStates` → `UpdateStateMachines`）：
 - 到期处理：族内状态到期→评估 OnExpired 边；裸状态→逐 Sign 自然退出
 - 空转回退：曾激活（`bActivatedOnce`）后节点为空→自动进入 `bIsDefaultNode` 标记的默认节点（经 EnterState 走链深度守卫）
 - 自环边 = 驻留刷新（重置有限来源计时，不触发表现/事件）
-- 转移 `ExecuteTransition`：**延迟禁用解除**——退出旧状态不解除遮蔽，新状态登记遮蔽后再解除旧登记，共享禁用 Tag 经 ByStates 多重登记保持挂起（消除 Resume→Suspend 抖动）；Exit/Entry 内置表现均抑制，边表现（空则回退目标 Entry）统一单次触发
+- 转移 `ExecuteTransition`：**延迟禁用解除**——退出旧状态不解除遮蔽，新状态登记遮蔽后再解除旧登记，共享禁用 Tag 经 ByStates 多重登记保持挂起（消除 Resume→Suspend 抖动）；Exit/Entry 内置表现均抑制，转移边表现统一单次触发（未配置则无表现）
 
-**表现三通道** `FBXStatePresentation`：PT_Skill（技能组件）/ PT_Timeline（TL 组件）/ PT_Animation（Montage），`IsValid` 按通道校验资产路径，加载失败显式告警。
+**表现三通道** `FBXStatePresentation`：PT_Skill（技能组件）/ PT_Timeline（TL 组件）/ PT_Animation（Montage），`IsValid` 按通道校验资产路径，加载失败显式告警。触发唯一收束点 `TriggerPresentation`：权威端转发 `MulticastStatePresentation` 跟随端本播（转移边/裸状态进出场全覆盖）。
 
 **禁用解除重入保护**：`ReleaseForbiddenBehaviors` 先查 `ActiveStates.Contains(状态Tag)`——解除窗口内状态被重入（延迟解除窗口的监听者重入 / Exit 表现触发的技能 EnterStates 重入自身）时跳过解除，登记仍有效。
 
-**API**：`EnterState` / `ExitState` / `ExitStateAllSources` / `CheckStateActive`（族 Tag 语义）/ `GetStateRemainingSeconds`（多来源取最小；**含无限来源返回浮点最大值**，无条目返回 -1）。
+**API**：`EnterState` / `ExitState` / `ExitStateAllSources` / `RefreshStateDuration` / `CheckStateActive`（族 Tag 语义）/ `GetStateRemainingSeconds`（多来源取最小；**含无限来源返回浮点最大值**，无条目返回 -1）；网络入口 `EnterStateNet` / `ExitStateNet`。族内 SM 状态拒绝客户端自主请求（`ServerEnterState` 权威拒绝）——族内互斥/转移必须权威驱动。
+
+#### 状态/行为网络同步（P5/P9，详见 StateBehaviorSystemDesign.md §4.6/§5.7）
+
+双组件同模型（与技能侧一致）：`RunningBehaviorStates` / `RunningStateStates` **COND_InitialOnly** 快照（服务器 `PreReplication` 检测远程连接数增加才投影，已有连接零属性流量）+ OnRep(带旧值) 差分做 Late Join 静默重建与消失条目兜底清理。已有连接动态走 Reliable 显式 RPC：`MulticastBehaviorEnter/Exit`、`MulticastStateEnter/Exit`（多播到达即预测确认）；**挂起/恢复不走通用多播**，由代理粒度控制包 `MulticastControlBehavior(Op)` 承载（Suspended/Resumed 事件流在接收端本地重放，防代理双停双启）。统一预测走显式 Net 入口（`StartBehaviorNet/StopBehaviorNet`、`EnterStateNet/ExitStateNet`）：权威端直执行、AutonomousProxy 本地执行+预测缓冲+Server RPC（非 Client 签名自动生成 ClientSyncID；Exit 上报仅允许 Client 签名来源，防伪造退出）、SimulatedProxy 拒绝；防重（同 Tag+Sign 静默忽略）、请求年龄校验（服务器世界时间域）、超时回滚（0.3s Tick 快照收集，迟到确认经跟随路径重建自愈）。技能链路 Sign=SkillID 随技能预测携带，无独立 RPC。
 
 #### 枚举速查（[BXStateEnums.h](Source/BattleX/State/BXStateEnums.h) / [BXBehaviorEnums.h](Source/BattleX/Behavior/BXBehaviorEnums.h)）
 
 - `EBXStateEndReason`：SER_Transition / SER_Expired / SER_External / SER_PredictRollback（回滚强制不触发表现）/ SER_Cleared / SER_TMax
-- `EBXBehaviorEndReason`：BER_TMax / BER_Manual / BER_Suspended / BER_Resumed / BER_Interrupted
-- 事件：`BXEvent.State.Enter/Exit`（FBXEventStateChanged）、`BXEvent.Behavior.Enter/Exit`（FBXEventBehaviorChanged）
+- `EBXBehaviorEndReason`：BER_Manual / BER_Expelled（被矩阵挤出）/ BER_Suspended（被状态挂起）/ BER_Resumed（挂起恢复，仅 Enter 事件携带）/ BER_PredictRollback / BER_Cleared / BER_TMax
+- 事件：`BXEvent.State.Enter/Exit`（FBXEventStateChanged）、`BXEvent.Behavior.Enter/Exit`（FBXEventBehaviorChanged，含 Sign 与 Reason——技能互锁监听点）
 
 ---
 
@@ -614,7 +635,8 @@ Bitflags 枚举：`EBXEquipGearFunction`、`EBXUseGearFunction`、`EBXChangeGear
 #### `UBXCharacterMovementComponent` ([BXCharacterMovementComponent.h](Source/BattleX/Movement/BXCharacterMovementComponent.h))
 
 继承 `UCharacterMovementComponent`。新增：
-- `bProactiveMoving` / `bProactiveRotating`：主动移动/旋转标志
+- `bProactiveMoving` / `bProactiveRotating`：主动移动/旋转标志（事实上报：加速度有无驱动向行为组件 Start/Stop 上报 `BXBehavior.Locomotion.Move/Rotate`）
+- **行为门控本地开关**：`bBehaviorMoveBlocked` / `bBehaviorRotateBlocked` / `bBehaviorJumpBlocked`——由行为代理（`UBXProxyMove/Rotate/Jump` 的 Enable/Disable）**下推**，`CalcVelocity`（加速度清零）/ `ComputeSlideVector`（跳过滑动修正）/ `PhysicsRotation`（停转向）/ `CanAttemptJump`（挡跳跃）四处只读本地开关执行物理刹车；**本组件不反查行为组件**（P9 门控下推架构，事实经 `UBXBehaviorFunctionLibrary::Start/StopBehavior` 单向上报保留）
 - **轨迹历史缓冲**：`TrajectoryPoints`（默认记录 20s），`RecordTime`，`CleanInterval`/`CleanTimer` 周期清理
 - `GetHistoryTransformByTime(InTime)`：按时间查询历史 Transform（供 `UBXTProcessor::GetTargetTransformByWorldTime` 使用）
 
@@ -1325,6 +1347,7 @@ Projectile (子弹系统) ──复用──> Net (同步ID/时间域) / Collisi
 Gear (装备) ──依赖──> Collision (形状组件)
 Movement ──被依赖──< Task (RootMotion 任务)
             └──被依赖──< BXFunctionLibrary (历史轨迹查询)
+Behavior ──门控下推──> Movement (Proxy 推送 Move/Rotate/Jump 开关;CMC 事实上报单向上行)
 
 基础设施 (Manager/SubSystem/Settings/Tags/Func) <──所有系统依赖
 ```
@@ -1782,7 +1805,7 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 #### 9.3.1 代码规范
 
 **建议**：
-- **统一 Bitmask 默认值文档化**：`ExecuteFunctions=85`、`BehaviorFunctions=341` 等魔法数字应在注释中说明哪些位被启用（如 341 = 1|4|16|64|256 = NativeInit|NativeCleanup|NativeStart|NativeStop|NativeCheckStart，即 C++ 五件套）。
+- **统一 Bitmask 默认值文档化**：`ExecuteFunctions=85`、`BehaviorFunctions=5461` 等魔法数字应在注释中说明哪些位被启用（如 5461 = 1|4|16|64|256|1024|4096 = NativeInit|NativeCleanup|NativeStart|NativeStop|NativeCheckStart|NativeEnable|NativeDisable）。
 - **`UBXFunctionLibrary::GetUniqueID` 实现**：当前被广泛用于 ID 生成，应确认其线程安全性（若 Manager Tick 与异步任务并发调用需加锁或使用原子操作）。
 - **空文件清理**：`Unit/` 与 `Lock/` 的空文件应至少包含类声明骨架或 `// TODO` 注释，避免被误认为已完成。
 
@@ -1832,7 +1855,7 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 | 任务系统 | [BXTask.h](Source/BattleX/Task/BXTask.h) / [BXTProcessor.h](Source/BattleX/Task/BXTProcessor.h) |
 | 具体任务 | [BXTAnimation.h](Source/BattleX/Task/BXTAnimation.h) / [BXTCollision.h](Source/BattleX/Task/BXTCollision.h) / [BXTFlowControl.h](Source/BattleX/Task/BXTFlowControl.h) |
 | 状态系统 | [BXStateComponent.h](Source/BattleX/State/BXStateComponent.h) / [BXStateStructs.h](Source/BattleX/State/BXStateStructs.h) / [BXStateMachineAsset.h](Source/BattleX/State/StateMachine/BXStateMachineAsset.h) / [BXStateMachineInstance.h](Source/BattleX/State/StateMachine/BXStateMachineInstance.h) |
-| 行为系统 | [BXBehaviorComponent.h](Source/BattleX/Behavior/BXBehaviorComponent.h) / [BXBehaviorStructs.h](Source/BattleX/Behavior/BXBehaviorStructs.h) / [BXBehaviorSettings.h](Source/BattleX/Behavior/BXBehaviorSettings.h) / [BXBehaviorFunctionLibrary.h](Source/BattleX/Behavior/BXBehaviorFunctionLibrary.h) / [BXBehaviorAgent.h](Source/BattleX/Behavior/BehaviorAgent/BXBehaviorAgent.h) |
+| 行为系统 | [BXBehaviorComponent.h](Source/BattleX/Behavior/BXBehaviorComponent.h) / [BXBehaviorStructs.h](Source/BattleX/Behavior/BXBehaviorStructs.h) / [BXBehaviorSettings.h](Source/BattleX/Behavior/BXBehaviorSettings.h) / [BXBehaviorFunctionLibrary.h](Source/BattleX/Behavior/BXBehaviorFunctionLibrary.h) / [BXBehaviorProxy.h](Source/BattleX/Behavior/BehaviorProxy/BXBehaviorProxy.h) / [BXProxyMove.h](Source/BattleX/Behavior/BehaviorProxy/BXProxyMove.h) / [BXProxyRotate.h](Source/BattleX/Behavior/BehaviorProxy/BXProxyRotate.h) / [BXProxyJump.h](Source/BattleX/Behavior/BehaviorProxy/BXProxyJump.h) / [BXProxyLanded.h](Source/BattleX/Behavior/BehaviorProxy/BXProxyLanded.h) |
 | 决策树 | [BXDecisionTreeTemplate.h](Source/BattleX/DecisionTree/BXDecisionTreeTemplate.h) / [BXDecisionTreeActuator.h](Source/BattleX/DecisionTree/BXDecisionTreeActuator.h) |
 | 装备系统 | [BXGear.h](Source/BattleX/Gear/BXGear.h) / [BXGearComponent.h](Source/BattleX/Gear/BXGearComponent.h) / [BXMeleeWeapon.h](Source/BattleX/Gear/BXMeleeWeapon.h) |
 | 移动系统 | [BXCharacterMovementComponent.h](Source/BattleX/Movement/BXCharacterMovementComponent.h) / [BXRootMotionSource.h](Source/BattleX/Movement/BXRootMotionSource.h) |
@@ -1868,8 +1891,9 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 | `EBXStateEndReason` | BXStateEnums.h | Transition / Expired / External / PredictRollback / Cleared（状态结束原因） |
 | `EBXPresentationType` | BXStateEnums.h | Skill / Timeline / Animation（状态表现三通道） |
 | `EBXTransitionEvaluate` | BXStateEnums.h | OnTick / OnExpired（转移边评估时机） |
-| `EBXBehaviorEndReason` | BXBehaviorEnums.h | TMax / Manual / Suspended / Resumed / Interrupted（行为结束原因） |
-| `EBXBehaviorAgentFunction` | BXBehaviorAgent.h | Native/BP × Init/Cleanup/Start/Stop/CheckStart (Bitflags, 1<<n 位值) |
+| `EBXBehaviorEndReason` | BXBehaviorEnums.h | Manual / Expelled / Suspended / Resumed / PredictRollback / Cleared（行为结束原因；Resumed 仅 Enter 事件携带） |
+| `EBXBehaviorProxyFunction` | BXBehaviorProxy.h | Native/BP × Init/Cleanup/Start/Stop/CheckStart/Enable/Disable/Update (Bitflags, 1<<n 位值, 默认 5461) |
+| `EBXBehaviorRelation` | BXBehaviorEnums.h | None(并存) / Expel(挤出) / Reject(拒绝)（行为矩阵单元格三态） |
 | `EBXLogicOperator` | BXConditionEnums.h | And / Or（组合条件逻辑运算） |
 | `EBXBuffLifeType` | BXBuffEnums.h | Duration / Infinite / Manual（BUFF 生命周期类型） |
 | `EBXBuffLayerLifeMode` | BXBuffEnums.h | Shared / Independent（层级生命周期模式） |
