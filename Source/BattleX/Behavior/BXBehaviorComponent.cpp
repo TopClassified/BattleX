@@ -82,27 +82,40 @@ void UBXBehaviorComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 			UpdatePredictedBehaviorTimeouts(DeltaTime);
 		}
 	}
+
+	// 代理帧更新转发(已启用且声明需要的代理;代理容器BeginPlay预建后只读,回调增删行为表不影响遍历)
+	for (const TPair<FGameplayTag, TObjectPtr<UBXBehaviorProxy>>& Pair : BehaviorProxies)
+	{
+		UBXBehaviorProxy* Proxy = Pair.Value;
+		if (IsValid(Proxy) && Proxy->WantsProxyUpdate() && Proxy->IsEnabled())
+		{
+			Proxy->UpdateProxy(DeltaTime);
+		}
+	}
 }
 
 void UBXBehaviorComponent::BeginPlay()
 {
 	// 初始化行为代理实例
-	for (const TPair<FGameplayTag, TSubclassOf<UBXBehaviorAgent>>& Pair : BehaviorAgentConfigs)
+	for (const TPair<FGameplayTag, FBXBehaviorProxyConfig>& Pair : BehaviorProxyConfigs)
 	{
-		if (!IsValid(Pair.Value))
+		if (!IsValid(Pair.Value.ProxyClass))
 		{
 			continue;
 		}
 
-		UBXBehaviorAgent* NewAgent = NewObject<UBXBehaviorAgent>(this, Pair.Value);
-		if (!IsValid(NewAgent))
+		UBXBehaviorProxy* NewProxy = NewObject<UBXBehaviorProxy>(this, Pair.Value.ProxyClass);
+		if (!IsValid(NewProxy))
 		{
 			continue;
 		}
 
-		NewAgent->Initialize();
-		BehaviorAgents.Add(Pair.Key, NewAgent);
+		NewProxy->Initialize();
+		BehaviorProxies.Add(Pair.Key, NewProxy);
 	}
+
+	// 初始门控命令(默认启用的常驻代理Enable,事件型保持禁用待管线隐式启用)
+	RefreshProxyGates();
 
 	// 定义行为事件参数类型
 	if (UBXEventManager* EventMgr = UBXEventManager::Get(this))
@@ -128,7 +141,7 @@ void UBXBehaviorComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 
 	// 释放代理
-	for (const TPair<FGameplayTag, TObjectPtr<UBXBehaviorAgent>>& Pair : BehaviorAgents)
+	for (const TPair<FGameplayTag, TObjectPtr<UBXBehaviorProxy>>& Pair : BehaviorProxies)
 	{
 		if (!IsValid(Pair.Value))
 		{
@@ -138,11 +151,12 @@ void UBXBehaviorComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Pair.Value->Deinitialize();
 		Pair.Value->MarkAsGarbage();
 	}
-	BehaviorAgents.Empty();
+	BehaviorProxies.Empty();
 
 	SuspendMasks.Empty();
 	ProtectionEntries.Empty();
 	PredictedBehaviors.Empty();
+	ProxyGateStates.Empty();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -384,21 +398,22 @@ void UBXBehaviorComponent::SuspendByForbiddenTag(const FGameplayTag& InForbidden
 		return;
 	}
 
-	// 遮蔽键已存在(其他状态同样禁用此Tag):仅追加状态,遮蔽已生效无需重复处理行为
+	// 遮蔽键已存在(其他状态同样禁用此Tag):仅追加状态,遮蔽已生效无需重复处理代理
 	if (FBXSuspendMask* ExistingMask = SuspendMasks.Find(InForbiddenTag))
 	{
 		ExistingMask->ByStates.Add(InByState);
 		return;
 	}
 
-	// 新遮蔽生效:收集从"未被遮蔽"变"被遮蔽"的活跃行为(已被其他遮蔽键覆盖的不重复处理)
-	// 行为条目不移表:事实保留,Agent停转+查询遮蔽
-	TArray<FGameplayTag> NewlySuspended;
-	for (const TPair<FGameplayTag, FBXBehaviorRuntimeData>& Pair : ActiveBehaviors)
+	// 新遮蔽生效:先收集本次新覆盖的已配置代理(含无活跃条目的常驻门控代理——挂起不依赖条目存在;
+	// 已被其他遮蔽键覆盖的不重复处理)。注意必须先收集后入表,否则本遮蔽键自身会使IsBehaviorSuspended恒真。
+	// 行为条目不移表:事实保留
+	TArray<FGameplayTag> NewlyCovered;
+	for (const TPair<FGameplayTag, FBXBehaviorProxyConfig>& Pair : BehaviorProxyConfigs)
 	{
 		if (Pair.Key.MatchesTag(InForbiddenTag) && !IsBehaviorSuspended(Pair.Key))
 		{
-			NewlySuspended.Add(Pair.Key);
+			NewlyCovered.Add(Pair.Key);
 		}
 	}
 
@@ -406,39 +421,36 @@ void UBXBehaviorComponent::SuspendByForbiddenTag(const FGameplayTag& InForbidden
 	NewMask.ByStates.Add(InByState);
 	SuspendMasks.Add(InForbiddenTag, MoveTemp(NewMask));
 
-	for (const FGameplayTag& Tag : NewlySuspended)
+	// 控制包广播(Tag粒度=代理粒度:客户端置挂起位+差分禁用代理+活跃条目本地事件流重放)
+	for (const FGameplayTag& Tag : NewlyCovered)
 	{
+		MulticastControlBehavior(Tag, BX_NET_BEHAVIOR_OP_SUSPEND);
+	}
+
+	// 挂起位置位+门控差分命令(内部含Refresh:代理禁用→活动中收停并武装恢复重放)
+	for (const FGameplayTag& Tag : NewlyCovered)
+	{
+		SetProxySuspendBit(Tag, true);
+	}
+
+	// 每个来源广播Exit(技能互锁监听点)
+	for (const FGameplayTag& Tag : NewlyCovered)
+	{
+		// 代理禁用回调中同步退出禁用状态(Resume清位)的竞态防御:复查遮蔽仍生效才广播,
+		// 否则Suspended会误触发技能互锁
+		if (!IsBehaviorSuspended(Tag))
+		{
+			continue;
+		}
+
 		const FBXBehaviorRuntimeData* BehaviorData = ActiveBehaviors.Find(Tag);
 		if (!BehaviorData)
 		{
 			continue;
 		}
 
-		// 快照来源(Agent停止/事件回调可能同步移除来源或条目,指针不可跨回调解引用)
+		// 快照来源(事件回调可能同步移除来源或条目,指针不可跨回调解引用)
 		const TArray<FBXBehaviorSource> Sources = BehaviorData->Sources;
-
-		// 控制包广播(Tag粒度精确镜像服务器Agent停转;接收端配合本地每来源事件流重建表现)
-		MulticastControlBehavior(Tag, BX_NET_BEHAVIOR_OP_SUSPEND);
-
-		// Agent停止
-		if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(Tag))
-		{
-			UBXBehaviorAgent* Agent = *FindResult;
-			if (IsValid(Agent))
-			{
-				FInstancedStruct IS;
-				Agent->StopBehavior(IS);
-			}
-		}
-
-		// Agent停止后复查遮蔽仍生效:蓝图Agent可在Stop回调中同步退出禁用状态(Resume解除遮蔽),
-		// 此时广播Suspended会误触发技能互锁,跳过
-		if (!IsBehaviorSuspended(Tag))
-		{
-			continue;
-		}
-
-		// 每个来源广播Exit(技能互锁监听点)
 		for (const FBXBehaviorSource& Source : Sources)
 		{
 			BroadcastBehaviorEvent(false, Tag, Source.Sign, EBXBehaviorEndReason::BER_Suspended);
@@ -464,20 +476,27 @@ void UBXBehaviorComponent::ResumeByForbiddenTag(const FGameplayTag& InForbiddenT
 		return;
 	}
 
-	// 遮蔽解除:恢复匹配此Tag的活跃行为(条目仍在事实表中)
-	// 仍被其他活跃遮蔽键覆盖(如状态A禁Locomotion退出,但状态B仍禁Move)的保持挂起
-	TArray<FGameplayTag> MatchedTags;
-	for (const TPair<FGameplayTag, FBXBehaviorRuntimeData>& Pair : ActiveBehaviors)
+	// 遮蔽解除:收集本次解除覆盖的已配置代理(仍被其他活跃遮蔽键覆盖的保持挂起)
+	TArray<FGameplayTag> ReleasedProxies;
+	for (const TPair<FGameplayTag, FBXBehaviorProxyConfig>& Pair : BehaviorProxyConfigs)
 	{
-		if (Pair.Key.MatchesTag(InForbiddenTag))
+		if (Pair.Key.MatchesTag(InForbiddenTag) && !IsBehaviorSuspended(Pair.Key))
 		{
-			MatchedTags.Add(Pair.Key);
+			ReleasedProxies.Add(Pair.Key);
 		}
 	}
 
-	for (const FGameplayTag& Tag : MatchedTags)
+	// 控制包广播+清挂起位(门控差分命令在SetProxySuspendBit内:代理Enable→恢复重放按快照参数回放Start)
+	for (const FGameplayTag& Tag : ReleasedProxies)
 	{
-		// 其他遮蔽键仍覆盖(恢复会违反其禁用)
+		MulticastControlBehavior(Tag, BX_NET_BEHAVIOR_OP_RESUME);
+		SetProxySuspendBit(Tag, false);
+	}
+
+	// 每来源广播Resumed(来源所有权不变,Sign原样)
+	for (const FGameplayTag& Tag : ReleasedProxies)
+	{
+		// 代理启用回调中同步进入禁用状态(重新遮蔽)的竞态防御:复查未被重新遮蔽才广播
 		if (IsBehaviorSuspended(Tag))
 		{
 			continue;
@@ -489,29 +508,7 @@ void UBXBehaviorComponent::ResumeByForbiddenTag(const FGameplayTag& InForbiddenT
 			continue;
 		}
 
-		// 快照参数与来源(Agent重启/事件回调可能同步修改条目,指针不可跨回调解引用)
-		const FInstancedStruct ResumeParameter = BehaviorData->LastStartParameter;
 		const TArray<FBXBehaviorSource> Sources = BehaviorData->Sources;
-
-		// 控制包广播(Tag粒度精确镜像服务器Agent重启;接收端以最近启动参数回放)
-		MulticastControlBehavior(Tag, BX_NET_BEHAVIOR_OP_RESUME);
-
-		// Agent重启(回放最近启动参数,来源所有权不变,Sign原样)
-		if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(Tag))
-		{
-			UBXBehaviorAgent* Agent = *FindResult;
-			if (IsValid(Agent))
-			{
-				Agent->StartBehavior(ResumeParameter);
-			}
-		}
-
-		// Agent重启后复查未被重新遮蔽:蓝图Agent可在Start回调中进入禁用状态,此时广播Resumed与实际状态不符,跳过
-		if (IsBehaviorSuspended(Tag))
-		{
-			continue;
-		}
-
 		for (const FBXBehaviorSource& Source : Sources)
 		{
 			BroadcastBehaviorEvent(true, Tag, Source.Sign, EBXBehaviorEndReason::BER_Resumed);
@@ -661,7 +658,7 @@ void UBXBehaviorComponent::ServerEnterBehavior_Implementation(FGameplayTag InBeh
 		return;
 	}
 
-	// 权威裁决走同一本地管线(矩阵/挂起/Agent检查);失败回滚通知发起端
+	// 权威裁决走同一本地管线(矩阵/挂起/代理检查);失败回滚通知发起端
 	FBXBehaviorStartCheck Check;
 	if (!CanStartBehaviorInternal(InBehaviorTag, FInstancedStruct(), Check))
 	{
@@ -730,7 +727,7 @@ void UBXBehaviorComponent::MulticastBehaviorExit_Implementation(FGameplayTag InB
 		return;
 	}
 
-	// 挂起事件流由控制包按Tag粒度镜像(精确对齐服务器Agent单次停转),此处防意外混入造成Agent双停
+	// 挂起事件流由控制包按Tag粒度镜像(精确对齐服务器代理单次停转),此处防意外混入造成代理双停
 	const EBXBehaviorEndReason Reason = static_cast<EBXBehaviorEndReason>(InReason);
 	if (Reason == EBXBehaviorEndReason::BER_Suspended || Reason == EBXBehaviorEndReason::BER_Resumed)
 	{
@@ -777,6 +774,21 @@ bool UBXBehaviorComponent::CanStartBehaviorInternal(const FGameplayTag& InBehavi
 		return false;
 	}
 
+	// 代理权限检查(常驻门控代理被禁用=挂起位的端内镜像,客户端无遮蔽表由控制包位承载;事件型随管线隐式启用不在此拦)
+	if (const FBXBehaviorProxyConfig* ProxyConfig = BehaviorProxyConfigs.Find(InBehaviorTag))
+	{
+		if (ProxyConfig->bEnabledByDefault)
+		{
+			const TObjectPtr<UBXBehaviorProxy>* ProxyResult = BehaviorProxies.Find(InBehaviorTag);
+			if (!ProxyResult || !IsValid(*ProxyResult) || !(*ProxyResult)->IsEnabled())
+			{
+				OutCheck.bCanStart = false;
+				OutCheck.FailReason = TEXT("ProxyDisabled");
+				return false;
+			}
+		}
+	}
+
 	// 拒绝关系检查(矩阵:列存在挡行)
 	const UBXBehaviorSettings* Settings = GetDefault<UBXBehaviorSettings>();
 	if (Settings)
@@ -813,21 +825,21 @@ bool UBXBehaviorComponent::CanStartBehaviorInternal(const FGameplayTag& InBehavi
 		}
 	}
 
-	// Agent检查(纯查询无副作用;Agent持非const指针:CheckStartBehavior为UFUNCTION含蓝图事件调用,无法声明const)
-	if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(InBehaviorTag))
+	// 代理检查(纯查询无副作用;代理持非const指针:CheckStartBehavior为UFUNCTION含蓝图事件调用,无法声明const)
+	if (const TObjectPtr<UBXBehaviorProxy>* FindResult = BehaviorProxies.Find(InBehaviorTag))
 	{
-		UBXBehaviorAgent* Agent = *FindResult;
-		if (!IsValid(Agent))
+		UBXBehaviorProxy* Proxy = *FindResult;
+		if (!IsValid(Proxy))
 		{
 			OutCheck.bCanStart = false;
-			OutCheck.FailReason = TEXT("AgentInvalid");
+			OutCheck.FailReason = TEXT("ProxyInvalid");
 			return false;
 		}
 
-		if (!Agent->CheckStartBehavior(InParameter))
+		if (!Proxy->CheckStartBehavior(InParameter))
 		{
 			OutCheck.bCanStart = false;
-			OutCheck.FailReason = TEXT("AgentCheckFailed");
+			OutCheck.FailReason = TEXT("ProxyCheckFailed");
 			return false;
 		}
 	}
@@ -842,19 +854,31 @@ bool UBXBehaviorComponent::InternalStartBehavior(const FGameplayTag& InBehaviorT
 		return false;
 	}
 
-	// Agent执行(重复Start=重启语义;具名右值引用作左值使用,参数此时未被移动)
-	if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(InBehaviorTag))
+	// 代理执行(事件型隐式启用:管线Start前补Enable;重复Start=重启语义;具名右值引用作左值使用,参数此时未被移动)
+	if (const TObjectPtr<UBXBehaviorProxy>* FindResult = BehaviorProxies.Find(InBehaviorTag))
 	{
-		UBXBehaviorAgent* Agent = *FindResult;
-		if (!IsValid(Agent))
+		UBXBehaviorProxy* Proxy = *FindResult;
+		if (!IsValid(Proxy))
 		{
-			UE_LOG(BXBEHAVIOR, Warning, TEXT("UBXBehaviorComponent::InternalStartBehavior: agent invalid. Tag=%s"), *InBehaviorTag.ToString());
+			UE_LOG(BXBEHAVIOR, Warning, TEXT("UBXBehaviorComponent::InternalStartBehavior: proxy invalid. Tag=%s"), *InBehaviorTag.ToString());
 			return false;
 		}
 
-		if (!Agent->StartBehavior(InParameter))
+		const bool bImplicitEnable = !Proxy->IsEnabled();
+		if (bImplicitEnable)
 		{
-			UE_LOG(BXBEHAVIOR, Warning, TEXT("UBXBehaviorComponent::InternalStartBehavior: agent start failed. Tag=%s"), *InBehaviorTag.ToString());
+			Proxy->EnableProxy();
+		}
+
+		if (!Proxy->StartBehavior(InParameter))
+		{
+			// 启动失败回退隐式启用(事件型代理不留悬空启用态)
+			if (bImplicitEnable)
+			{
+				Proxy->DisableProxy();
+			}
+
+			UE_LOG(BXBEHAVIOR, Warning, TEXT("UBXBehaviorComponent::InternalStartBehavior: proxy start failed. Tag=%s"), *InBehaviorTag.ToString());
 			return false;
 		}
 	}
@@ -876,6 +900,9 @@ bool UBXBehaviorComponent::InternalStartBehavior(const FGameplayTag& InBehaviorT
 	{
 		BroadcastBehaviorEvent(true, InBehaviorTag, InSign, EBXBehaviorEndReason::BER_TMax);
 	}
+
+	// 门控归一化(事件型隐式启用的命令值同步)
+	RefreshProxyGates();
 
 	return true;
 }
@@ -903,13 +930,13 @@ bool UBXBehaviorComponent::InternalStopBehavior(const FGameplayTag& InBehaviorTa
 		return true;
 	}
 
-	// Agent停止
-	if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(InBehaviorTag))
+	// 代理停止
+	if (const TObjectPtr<UBXBehaviorProxy>* FindResult = BehaviorProxies.Find(InBehaviorTag))
 	{
-		UBXBehaviorAgent* Agent = *FindResult;
-		if (IsValid(Agent))
+		UBXBehaviorProxy* Proxy = *FindResult;
+		if (IsValid(Proxy))
 		{
-			Agent->StopBehavior(InParameter);
+			Proxy->StopBehavior(InParameter);
 		}
 	}
 
@@ -918,6 +945,9 @@ bool UBXBehaviorComponent::InternalStopBehavior(const FGameplayTag& InBehaviorTa
 
 	// 广播Exit(最后来源退出,技能互锁监听点)
 	BroadcastBehaviorEvent(false, InBehaviorTag, InSign, InReason);
+
+	// 门控归一化(事件型代理最后来源退出→隐式禁用)
+	RefreshProxyGates();
 
 	return true;
 }
@@ -948,7 +978,7 @@ void UBXBehaviorComponent::BroadcastBehaviorEvent(bool bEnter, const FGameplayTa
 		EventMgr->BroadcastGlobalEvent<FBXEventBehaviorChanged>(BXGameplayTags::BXEvent_Behavior_Exit, Parameter);
 	}
 
-	// 权威端同步多播(已有连接行为动态的主通道;挂起/恢复事件流由控制包按Tag粒度镜像防Agent双停双启,
+	// 权威端同步多播(已有连接行为动态的主通道;挂起/恢复事件流由控制包按Tag粒度镜像防代理双停双启,
 	// 清场随Actor销毁广播无意义;回滚仅发生于客户端,权威门自动排除)
 	AActor* Owner = GetOwner();
 	if (Owner && Owner->GetLocalRole() == ENetRole::ROLE_Authority
@@ -965,6 +995,91 @@ void UBXBehaviorComponent::BroadcastBehaviorEvent(bool bEnter, const FGameplayTa
 			MulticastBehaviorExit(InBehaviorTag, InSign, (uint8)InReason);
 		}
 	}
+}
+
+bool UBXBehaviorComponent::IsProxyTagSuspended(const FGameplayTag& InProxyTag) const
+{
+	const FBXProxyGateState* State = ProxyGateStates.Find(InProxyTag);
+	return State && State->bSuspendBit;
+}
+
+void UBXBehaviorComponent::SetProxySuspendBit(const FGameplayTag& InProxyTag, bool bSuspended)
+{
+	FBXProxyGateState& State = ProxyGateStates.FindOrAdd(InProxyTag);
+	if (State.bSuspendBit == bSuspended)
+	{
+		return;
+	}
+
+	State.bSuspendBit = bSuspended;
+	RefreshProxyGates();
+}
+
+void UBXBehaviorComponent::RefreshProxyGates()
+{
+	const UBXBehaviorSettings* Settings = GetDefault<UBXBehaviorSettings>();
+	FGameplayTagContainer ActiveContainer;
+	GetActiveBehaviors(ActiveContainer);
+
+	for (const TPair<FGameplayTag, FBXBehaviorProxyConfig>& Pair : BehaviorProxyConfigs)
+	{
+		FBXProxyGateState& State = ProxyGateStates.FindOrAdd(Pair.Key);
+
+		// 目标启用态=非挂起 且(常驻型:非拒绝 / 事件型:条目存在——管线隐式启停)
+		bool bTargetEnabled = !State.bSuspendBit;
+		if (bTargetEnabled)
+		{
+			if (Pair.Value.bEnabledByDefault)
+			{
+				bTargetEnabled = !Settings || !Settings->IsRejectedByAny(Pair.Key, ActiveContainer);
+			}
+			else
+			{
+				bTargetEnabled = ActiveBehaviors.Contains(Pair.Key);
+			}
+		}
+
+		// 差分命令(值不变零触达;Enable/Disable代理侧幂等兜底)
+		if (State.bCommandedEnabled == bTargetEnabled)
+		{
+			continue;
+		}
+
+		State.bCommandedEnabled = bTargetEnabled;
+
+		const TObjectPtr<UBXBehaviorProxy>* FindResult = BehaviorProxies.Find(Pair.Key);
+		UBXBehaviorProxy* Proxy = FindResult ? *FindResult : nullptr;
+		if (!IsValid(Proxy))
+		{
+			continue;
+		}
+
+		if (bTargetEnabled)
+		{
+			Proxy->EnableProxy();
+		}
+		else
+		{
+			Proxy->DisableProxy();
+		}
+	}
+}
+
+bool UBXBehaviorComponent::EnableAndStartProxy(const FGameplayTag& InProxyTag, const FInstancedStruct& InParameter)
+{
+	const TObjectPtr<UBXBehaviorProxy>* FindResult = BehaviorProxies.Find(InProxyTag);
+	if (!FindResult || !IsValid(*FindResult))
+	{
+		return false;
+	}
+
+	UBXBehaviorProxy* Proxy = *FindResult;
+	if (!Proxy->IsEnabled())
+	{
+		Proxy->EnableProxy();
+	}
+
+	return Proxy->StartBehavior(InParameter);
 }
 
 #pragma endregion Internal
@@ -1039,7 +1154,7 @@ void UBXBehaviorComponent::RebuildRunningBehaviorStates()
 			State.Signs.Add(Source.Sign);
 		}
 
-		// 挂起条目一并投影(LateJoin重建时仅建事实表不停转——Agent从未启动,等待控制包恢复)
+		// 挂起条目一并投影(LateJoin重建时仅建事实表不停转——代理从未启动,等待控制包恢复)
 		if (IsBehaviorSuspended(Pair.Key))
 		{
 			Flags |= BX_SYNC_FLAG_BEHAVIOR_SUSPENDED;
@@ -1094,17 +1209,20 @@ void UBXBehaviorComponent::OnRep_RunningBehaviorStates(TArray<FBXBehaviorReplica
 		{
 			UE_LOG(BXBEHAVIOR, Log, TEXT("UBXBehaviorComponent::OnRep_RunningBehaviorStates: entry vanished, fallback stop. Tag=%s"), *OldState.BehaviorTag.ToString());
 
-			// Agent停转+静默摘表(乱序竞态防御路径,不走管线防误广播)
-			if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(OldState.BehaviorTag))
+			// 代理停转+静默摘表(乱序竞态防御路径,不走管线防误广播)
+			if (const TObjectPtr<UBXBehaviorProxy>* FindResult = BehaviorProxies.Find(OldState.BehaviorTag))
 			{
-				UBXBehaviorAgent* Agent = *FindResult;
-				if (IsValid(Agent))
+				UBXBehaviorProxy* Proxy = *FindResult;
+				if (IsValid(Proxy))
 				{
 					FInstancedStruct EmptyParam;
-					Agent->StopBehavior(EmptyParam);
+					Proxy->StopBehavior(EmptyParam);
 				}
 			}
 			ActiveBehaviors.Remove(OldState.BehaviorTag);
+
+			// 配对清挂起位(挂起条目会一并投影,条目消失=服务器侧遮蔽已解除;防镜像残留导致永久禁挡)
+			SetProxySuspendBit(OldState.BehaviorTag, false);
 		}
 	}
 }
@@ -1130,17 +1248,12 @@ void UBXBehaviorComponent::HandleClientBehaviorEnter(const FGameplayTag& InBehav
 		Data.Sources.Add(FBXBehaviorSource(InSign));
 	}
 
-	// Agent启动+本地事件(表现层各端本地运行;权威门收束点非权威端不再转发多播)
-	if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(InBehaviorTag))
-	{
-		UBXBehaviorAgent* Agent = *FindResult;
-		if (IsValid(Agent))
-		{
-			FInstancedStruct EmptyParam;
-			Agent->StartBehavior(EmptyParam);
-		}
-	}
+	// 代理启用+开始(事件型隐式启用)+本地事件(表现层各端本地运行;权威门收束点非权威端不再转发多播)
+	EnableAndStartProxy(InBehaviorTag, FInstancedStruct());
 	BroadcastBehaviorEvent(true, InBehaviorTag, InSign, EBXBehaviorEndReason::BER_TMax);
+
+	// 门控归一化(事件型隐式启用的命令值同步)
+	RefreshProxyGates();
 }
 
 void UBXBehaviorComponent::HandleClientBehaviorExit(const FGameplayTag& InBehaviorTag, int64 InSign, EBXBehaviorEndReason InReason)
@@ -1159,34 +1272,18 @@ void UBXBehaviorComponent::HandleClientBehaviorExit(const FGameplayTag& InBehavi
 
 void UBXBehaviorComponent::HandleClientControlBehavior(const FGameplayTag& InBehaviorTag, bool bResume)
 {
+	// 挂起位直控(客户端无遮蔽表,控制包即命令源;常驻门控代理无活跃条目时同样生效;内部含门控差分命令)
+	SetProxySuspendBit(InBehaviorTag, !bResume);
+
+	// 无活跃条目(常驻门控代理常态):位已应用,无事件流可重放
 	FBXBehaviorRuntimeData* Data = ActiveBehaviors.Find(InBehaviorTag);
 	if (!Data)
 	{
-		UE_LOG(BXBEHAVIOR, Warning, TEXT("UBXBehaviorComponent::HandleClientControlBehavior: entry missing. Tag=%s Op=%d"), *InBehaviorTag.ToString(), bResume ? 1 : 0);
 		return;
 	}
 
-	// 快照参数与来源(Agent回调可能同步修改条目,指针不可跨回调解引用)
-	const FInstancedStruct ResumeParameter = Data->LastStartParameter;
+	// 快照来源(事件回调可能同步修改条目,指针不可跨回调解引用)
 	const TArray<FBXBehaviorSource> Sources = Data->Sources;
-
-	// Tag粒度精确镜像服务器Agent操作:挂起=单次停转,恢复=单次以最近启动参数重启(来源所有权不变)
-	if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(InBehaviorTag))
-	{
-		UBXBehaviorAgent* Agent = *FindResult;
-		if (IsValid(Agent))
-		{
-			FInstancedStruct EmptyParam;
-			if (bResume)
-			{
-				Agent->StartBehavior(ResumeParameter);
-			}
-			else
-			{
-				Agent->StopBehavior(EmptyParam);
-			}
-		}
-	}
 
 	// 每来源本地事件流(表现层语义与服务器端SuspendByForbiddenTag/ResumeByForbiddenTag一致)
 	for (const FBXBehaviorSource& Source : Sources)
@@ -1211,19 +1308,18 @@ void UBXBehaviorComponent::RebuildBehaviorFromState(const FBXBehaviorReplicatedS
 		Data.Sources.Add(FBXBehaviorSource(Sign));
 	}
 
-	// 挂起条目不启Agent(等待控制包恢复);标志缺省视为活跃直接重建
-	if (!(InState.Flags & BX_SYNC_FLAG_BEHAVIOR_SUSPENDED))
+	// 挂起条目:置挂起位+禁用代理(等待控制包恢复);标志缺省视为活跃直接重建
+	if (InState.Flags & BX_SYNC_FLAG_BEHAVIOR_SUSPENDED)
 	{
-		if (const TObjectPtr<UBXBehaviorAgent>* FindResult = BehaviorAgents.Find(InState.BehaviorTag))
-		{
-			UBXBehaviorAgent* Agent = *FindResult;
-			if (IsValid(Agent))
-			{
-				FInstancedStruct EmptyParam;
-				Agent->StartBehavior(EmptyParam);
-			}
-		}
+		SetProxySuspendBit(InState.BehaviorTag, true);
 	}
+	else
+	{
+		EnableAndStartProxy(InState.BehaviorTag, FInstancedStruct());
+	}
+
+	// 门控归一化
+	RefreshProxyGates();
 }
 
 #pragma endregion Internal Net

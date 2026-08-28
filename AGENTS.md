@@ -59,6 +59,13 @@
 - 广播多播收束点两组件各一处：BroadcastBehaviorEvent / BroadcastStateEvent 内按 ROLE_Authority 门转发，BER_Cleared/SER_Cleared 排除（EndPlay 销毁场景），Suspended/Resumed 由控制包通道负责（行为侧）。
 - 多播 _Implementation 一律首行 Authority 早退（服务器发起 Multicast 时 UE 会本地回环执行实现，早退同时兼作跟随处理器重入防护）。
 
+## 行为 Proxy 体系要点（P9，详见 StateBehaviorSystemDesign.md §13）
+- **UBXBehaviorAgent 已改名 UBXBehaviorProxy**（目录 BehaviorAgent/→BehaviorProxy/，UBXBADefault*→UBXProxyMove/Rotate/Jump/Landed，枚举 BAF_*→BPF_*）。双轴命令：EnableProxy/DisableProxy（权限轴，持有基层开关）+ Start/Stop（活动轴）+ UpdateProxy（bWantsProxyUpdate 时组件 Tick 转发）；权限/活动簿记（bEnabled/bStarted/bArmedResume 恢复重放武装）在基类，派生类只重写 Native/Script 槽位。BehaviorFunctions 默认值 341→5461（追加 Native/BP 启用·禁用·更新三对槽位）。
+- 组件配置 `BehaviorProxyConfigs: TMap<Tag, FBXBehaviorProxyConfig{ProxyClass, bEnabledByDefault}>`：常驻门控代理（Move/Rotate/Jump）默认启用；事件型（Attack 姿态/Landed）默认禁用、管线 Start 隐式启用（失败回退 Disable）、最后来源退出隐式禁用（InternalStart/Stop 尾部 RefreshProxyGates 归一化）。
+- **门控下推（CMC 不再反查行为组件）**：RefreshProxyGates 双禁用位差分命令——挂起位落盘（服务器遮蔽新覆盖逐代理 SetProxySuspendBit(true)/客户端控制包 MulticastControlBehavior 直控）、拒绝位求值即算 → 差分 → Proxy Enable/Disable → `CMC::SetBehaviorMoveBlocked/RotateBlocked/JumpBlocked`；CMC 四处（CalcVelocity 加速度清零/ComputeSlideVector/PhysicsRotation 停转向/CanAttemptJump）只读本地开关，事实上报方向（Start/Stop 上报）不变。
+- **客户端无遮蔽表**：挂起事实由控制包按代理粒度承载，无活跃条目的常驻门控同样生效（这是与 P5 时代的关键差异——控制包从"镜像条目停转"升格为"代理命令"）；CanStart 对默认启用代理含 ProxyDisabled 检查保证预测两端一致；LateJoin 挂起条目置位禁用代理，OnRep 兜底清理配对清挂起位（防镜像残留永久禁挡）。
+- 蓝图迁移：旧 BP Agent 父类需手动重定向到 UBXBehaviorProxy 派生类（类已改名，旧资产会加载报错）；组件 Details 面板 BehaviorAgentConfigs 数据随类型变更丢弃，需按新 FBXBehaviorProxyConfig 结构重新配置（bEnabledByDefault=Move/Rotate/Jump 三项）。
+
 ## 工程经验
 - 事件系统（BXEventManager）使用 TSet 替代 TArray 存储 GlobalTargetMap/SingleKeyMap/SingleTargetMap，提升注册/注销性能。
 - UFunction 查找结果以 (Class, FunctionName) 为键缓存，减少反射开销。

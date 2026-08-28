@@ -35,10 +35,31 @@ protected:
 protected:
 	// 正在主动移动
 	bool bProactiveMoving = false;
-	
+
 	// 正在主动转向
 	bool bProactiveRotating = false;
-	
+
+	// 行为代理下推的门控开关(由UBXProxyMove/Rotate/Jump在Enable/Disable时推送,默认false=允许)
+	// 架构约定:本组件只读本地开关执行物理刹车,不反查行为组件;主动事实上报(Start/Stop)方向保持不变
+	UPROPERTY(Transient, BlueprintReadOnly)
+	bool bBehaviorMoveBlocked = false;
+
+	UPROPERTY(Transient, BlueprintReadOnly)
+	bool bBehaviorRotateBlocked = false;
+
+	UPROPERTY(Transient, BlueprintReadOnly)
+	bool bBehaviorJumpBlocked = false;
+
+public:
+	// 设置主动移动禁止(移动代理门控下推专用,勿在别处刷写)
+	void SetBehaviorMoveBlocked(bool bInBlocked) { bBehaviorMoveBlocked = bInBlocked; }
+
+	// 设置主动转向禁止(转向代理门控下推专用,勿在别处刷写)
+	void SetBehaviorRotateBlocked(bool bInBlocked) { bBehaviorRotateBlocked = bInBlocked; }
+
+	// 设置跳跃禁止(跳跃代理门控下推专用,勿在别处刷写)
+	void SetBehaviorJumpBlocked(bool bInBlocked) { bBehaviorJumpBlocked = bInBlocked; }
+
 #pragma endregion Behavior
 
 

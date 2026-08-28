@@ -68,6 +68,15 @@ protected:
 	// 上次投影时的远程连接数(-1保证组件首个复制周期必建一次基线快照;连接数增加才重建快照)
 	int32 LastProjectedConnectionCount = -1;
 
+	// 预测缓冲条目(AutonomousProxy:本地已执行待服务器确认/拒绝/超时)
+	// 注意:类内嵌套类型须先声明后用,故定义在成员声明之前(C++成员声明不是完整类上下文)
+	struct FBXPredictedState
+	{
+		FGameplayTag Tag;
+		int64 Sign = 0;
+		float ElapsedTime = 0.0f;
+	};
+
 	// 预测缓冲(AutonomousProxy本地已执行待服务器结算;权威端恒空)
 	TArray<FBXPredictedState> PredictedStates;
 
@@ -117,8 +126,9 @@ protected:
 	// 内部进入状态(管线:族内定位/表更新/禁用门控/表现/事件;族内表现由转移边统一触发,此处仅裸状态触发配置的进入表现)
 	bool InternalEnterState(const FGameplayTag& InStateTag, int64 InSign, float InDuration, EBXStateEndReason InExternalReason);
 
-	// 内部退出状态(管线:表更新/表现/禁用解除/事件,全部退出路径收束于此;bDeferForbiddenRelease=延迟禁用解除,转移路径用)
-	bool InternalExitState(const FGameplayTag& InStateTag, int64 InSign, EBXStateEndReason InReason, bool bSuppressPresentation, bool bDeferForbiddenRelease = false);
+	// 内部退出状态(管线:表更新/表现/禁用解除/事件,全部退出路径收束于此;
+	// bSuppressPresentation=true抑制内置Exit表现,转移路径用;bDeferForbiddenRelease=延迟禁用解除,转移路径用)
+	bool InternalExitState(const FGameplayTag& InStateTag, int64 InSign, EBXStateEndReason InReason, bool bSuppressPresentation = false, bool bDeferForbiddenRelease = false);
 
 	// 到期评估(Tick:快照收集→逐条处理)
 	void UpdateExpiredStates(float InDeltaTime);
@@ -205,14 +215,6 @@ public:
 
 #pragma region Internal Net
 protected:
-	// 预测缓冲条目(AutonomousProxy:本地已执行待服务器确认/拒绝/超时)
-	struct FBXPredictedState
-	{
-		FGameplayTag Tag;
-		int64 Sign = 0;
-		float ElapsedTime = 0.0f;
-	};
-
 	// 登记预测条目(去重;超过上限仅告警不再登记——本地执行与上报不受影响,失去自动回滚保护)
 	void RegisterPredictedState(const FGameplayTag& InStateTag, int64 InSign);
 

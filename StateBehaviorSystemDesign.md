@@ -1,6 +1,6 @@
 # BattleX 状态/行为系统架构设计
 
-> 版本：v4.0（双系统分立：行为组件统筹基层组件 + 状态组件驱动可视化自动状态机；状态单向禁用行为；状态机资产化复用决策树编辑器）
+> 版本：v4.1（双系统分立：行为组件统筹基层组件 + 状态组件驱动可视化自动状态机；状态单向禁用行为；状态机资产化复用决策树编辑器。v4.1 增补：§13 行为代理升级 Agent→Proxy——门控下推 CMC 本地开关、权限/活动双轴命令模型、默认启用配置，已完成（代码侧））
 > 范围：`Source/BattleX/State/**` 重写（BehaviorComponent / StateComponent 双组件）+ 决策树派生状态机资产 + 技能/Task/出招表集成 + 网络同步
 > 复用既有：UBXDecisionTree*（图框架）、BXBAMove/Rotate/Jump/Landed（行为Agent，包装 CharacterMovement）、技能系统同步/预测模型（SyncID/防重/超时/服务器世界时间）
 > 关联模块：UBXSkillComponent / UBXTLManager / UBXTask / UBXEventManager / UBXGameplayTags
@@ -741,6 +741,7 @@ SM_Stun 资产（状态机图，决策树编辑器产出）：
 | P6 技能集成 | ✅ 完成 | 五步链（CanStart判定→保护→清场→登记→首帧Task）/EnterStates 收束/CancelWindows 保护切换/互锁监听(Behavior.Exit 按Reason过滤)/CleanSkillTrash 收束 | BXSkillAsset.h、BXSkillManager.cpp、BXSkillComponent.cpp |
 | P7 出招表 | ⏸ 暂缓 | UBXComboComponent/UBXComboAsset + 输入缓冲 + 双触发 + 服务器宽限校验（决议：出招组件后置，CanPlayNextSkill 归 ComboComponent） | Combo/ 新增 |
 | P8 迁移清理 | ✅ 完成（代码侧） | 删旧 BXSMStun/旧状态机类、FunctionLibrary/CMC 适配；Tag 树：BXBehavior.* 族已建，BXStunState_* 等旧 Tag 保留，随资产制作批量迁移（§9） | State/StateMachine 清理、BXGameplayTags.h/cpp |
+| P9 行为代理升级 | ✅ 完成（代码侧） | Agent→Proxy：命令模型（Enable/Disable/Start/Stop/Update，§13.1）/默认启用配置与两种代理形态（§13.2）/双禁用位门控下推（§13.3）/CMC 本地开关改造/改名迁移（§13.5）。实现注记：① 挂起位落盘、拒绝位求值即算（RefreshProxyGates 统一差分命令）；② 控制包升格为代理粒度命令——服务器遮蔽新覆盖逐代理发包（含无活跃条目的常驻门控），客户端 HandleClientControlBehavior 置/清挂起位+活跃条目事件流重放，无条目场景（门控常态）位同样生效；③ CanStart 对默认启用代理含 ProxyDisabled 检查（客户端无遮蔽表的预测两端一致性）；④ InternalStart 失败回退隐式启用；⑤ OnRep 兜底清理配对清挂起位 | BXBehaviorProxy.*、BXProxyMove/Rotate/Jump/Landed、BXBehaviorComponent、BXCharacterMovementComponent、蓝图父类重定向 |
 
 - P1-P4 纯本地独立编译验证；P5 需 PIE 双端（确认/拒绝/超时三路径 × 行为/状态两组）；P6 末做互锁联调；P7 依赖 P6 的 CancelWindowChanged；
 - RPC 参数全部**按值传递**（UHT 约束，已验证教训）；后续可按技能系统合并经验将 Server Enter/Exit RPC 合并瘦身；
@@ -767,3 +768,72 @@ SM_Stun 资产（状态机图，决策树编辑器产出）：
 | R4 Agent 定位 | 行为中间层执行体（统筹基层组件，现有 BXBAMove 等保留）；战斗编排走技能时间轴（技能即执行体），不挂 Agent |
 | R5 Normal 语义 | "无硬直"=无状态条目（SM 空转），BXStunState_Normal 废弃 |
 | R6 子状态回收 | 删除所有权传播机制：技能 EnterStates 退出由 CleanSkillTrash 按 Sign 逐条收束 |
+
+## 13. 行为代理升级规划：Agent → Proxy（v4.1，✅ 完成（代码侧），实现注记见 §11 P9）
+
+> **动机**：① 门控交互方向翻转——CMC 不再反查行为组件（现状：CalcVelocity/ComputeSlideVector/PhysicsRotation/CanAttemptJump 四处 `CheckForbiddenBehavior` 反查），由行为组件裁决后**单向推送开关**；② R4"Agent 统筹基层组件"的落地形态升级——Agent 从"启停回调执行体"升格为**行为域总代理**，权限（启用/禁用）与活动（开始/结束）双轴分家。
+>
+> **否决项备查**：组件直推 CMC（行为系统硬编码移动组件类型，模块耦合）；开关全放 Agent（语义错位——现 Agent 启停时机=事实上报，静止即 Stop 会反向禁用；拒绝关系是聚合判断，无 Agent 回调时机；族级禁令需跨轴分发）。
+>
+> **分层原则**：组件负责"何时算、算什么"（聚合求值 + 差分），Proxy 负责"怎么执行"（持有基层开关）。事实表语义不变——ActiveBehaviors 仍是"正在做什么"，与 Proxy 启用态解耦。
+
+### 13.1 Proxy 命令模型
+
+| 命令 | 轴 | 语义 |
+|------|----|------|
+| EnableProxy / DisableProxy | 权限 | 禁用：置 bEnabled=false → 若活动中先收 Stop → 推基层开关 off；启用：置 true → 禁用期间被停转的按快照参数重放 Start → 推开关 on |
+| StartBehavior / StopBehavior | 活动 | 语义同现状（CMC 事实上报 / 技能姿态），仅在 bEnabled 时生效 |
+| UpdateProxy(DeltaSeconds) | 帧驱动 | bWantsProxyUpdate=true 的代理由组件 Tick 转发（转向插值/轨迹类代理用） |
+| CheckStartBehavior | 判定 | 沿用 |
+
+- Proxy 状态：`bEnabled` / `LastStartParameter`（恢复重放）/ `bWantsProxyUpdate`；`BehaviorFunctions` 位掩码扩位（Native/BP × Enable/Disable/Update 三对新槽位）；
+- **组件是唯一命令源**：Proxy 不自治、不持有禁用来源逻辑——多状态叠加禁用由组件聚合（遮蔽表），最后一个禁用来源退出才发一次 Enable；幂等由组件侧"最后命令值"差分保证。
+
+### 13.2 组件配置与两种代理形态
+
+```cpp
+// 单表配置（避免 ProxyClass 表与启用表两份漂移）
+USTRUCT() FBXBehaviorProxyConfig
+{
+    TSubclassOf<UBXBehaviorProxy> ProxyClass;
+    bool bEnabledByDefault = false;
+};
+TMap<FGameplayTag, FBXBehaviorProxyConfig> BehaviorProxyConfigs;
+```
+
+BeginPlay 流程：创建全部实例 → Initialize → 对 bEnabledByDefault=true 的逐个 EnableProxy。
+
+| 形态 | 例子 | 默认态 | 权限轴驱动方 |
+|------|------|--------|--------------|
+| 常驻型 | Move/Rotate/Jump | 启用 | 门控通道（§13.3） |
+| 事件型 | Attack 姿态、Landed | 禁用 | 管线 Start **隐式启用**、最后来源退出**隐式禁用**——与现状"条目存在即运行"语义天然对齐 |
+
+### 13.3 门控通道：双禁用位，一个出口
+
+组件为每个代理维护**挂起位 + 最后命令值**（拒绝位求值即算不落盘），**有效禁用 = 挂起位 ∨ 拒绝位（常驻型）/ 挂起位 ∨ 无活跃条目（事件型）**，目标态与最后命令值差分后才发命令：
+
+- **挂起位**：服务器由遮蔽表翻转置/清（SuspendByForbiddenTag / ResumeByForbiddenTag 收尾）；客户端由控制包 `MulticastControlBehavior` **直接置/清**——控制包语义从"镜像 Agent 停转"升格为"Proxy 禁用/启用命令"；
+- **拒绝位**：两端各自由 ActiveBehaviors 重算（客户端行为表经多播镜像一致 + 全局 ini 各端相同），任何表变更收尾触发一次；
+- **出口唯一**：位差分 → `Proxy->EnableProxy/DisableProxy` → Proxy 原生实现推 `UBXCharacterMovementComponent::SetBehaviorMoveBlocked/RotateBlocked/JumpBlocked`；组件不再 `FindComponentByClass` 移动组件，行为系统与移动模块解耦，三轴开关由三个 Proxy 各自认领；
+- **CMC 侧改造**：四处反查改读本地布尔开关（CalcVelocity 加速度清零 / ComputeSlideVector 跳过滑动修正 / PhysicsRotation 停转向 / CanAttemptJump 挡跳跃）；事实上报方向（Start/Stop 上报）原样保留；
+- **静止不抖动**：Move 事实上报 Stop（条目移除）不影响 Proxy 启用态，开关不随事实抖动；
+- 早期方案 MirroredSuspensions 镜像集合被"挂起位"取代：数据本质相同，归属从求值输入变为命令源。
+
+### 13.4 网络衔接
+
+- Late Join：快照条目 SUSPENDED 标志 → 置挂起位并命令 Proxy Disable（现"挂起条目不启 Agent"语义的显式化）；OnRep 兜底清理条目时配对清挂起位（防镜像残留导致永久禁挡）；
+- Update 通道：组件 Tick 已开（P5 预测超时用），追加一循环遍历 `bEnabled && bWantsProxyUpdate` 代理转发，无新 Tick 成本；
+- 预测/多播/快照模型零变更（§4.6 不受影响）。
+
+### 13.5 改名与迁移清单
+
+| 项 | 现 | 新 |
+|----|----|----|
+| 基类 | UBXBehaviorAgent | UBXBehaviorProxy |
+| 目录 | Behavior/BehaviorAgent/ | Behavior/BehaviorProxy/ |
+| 组件配置 | BehaviorAgentConfigs（Tag→Class） | BehaviorProxyConfigs（Tag→FBXBehaviorProxyConfig） |
+| 默认实现 | UBXBADefaultMove/Rotate/Jump/Landed | UBXProxyMove/Rotate/Jump/Landed（避开 BXBP≈蓝图 BP_ 前缀混淆） |
+
+- 蓝图 Agent 父类改绑需重定向（项目内数量少，手改即可）；
+- Suspend/Resume 管线内部 `Agent->Stop/Start` 调用点改为命令式 `Proxy->Disable/Enable`；BER_Suspended/Resumed 事件广播与技能互锁不变；
+- **不动**：事实表结构、矩阵裁决、保护/取消窗口、CanStart 五步链、事件系统、技能集成（P1-P8 成果全保留）。

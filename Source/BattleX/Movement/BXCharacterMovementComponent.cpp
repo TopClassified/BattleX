@@ -91,8 +91,8 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 	bool bZeroAcceleration = Acceleration.IsZero();
 	bool bVelocityOverMax = IsExceedingMaxSpeed(MaxSpeed);
 
-	// 禁止主动移动，将寻路和输入的加速度标记为零向量
-	if (UBXBehaviorFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move))
+	// 禁止主动移动(行为代理下推开关),将寻路和输入的加速度标记为零向量
+	if (bBehaviorMoveBlocked)
 	{
 		Acceleration = FVector::ZeroVector;
 		bZeroAcceleration = true;
@@ -169,7 +169,8 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 
 FVector UBXCharacterMovementComponent::ComputeSlideVector(const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const
 {
-	if (UBXBehaviorFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move))
+	// 移动被禁(行为代理下推开关)时不参与滑动修正
+	if (bBehaviorMoveBlocked)
 	{
 		return Delta;
 	}
@@ -185,7 +186,7 @@ void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		return;
 	}
 	
-	if (!(bOrientRotationToMovement || bUseControllerDesiredRotation) || UBXBehaviorFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate))
+	if (!(bOrientRotationToMovement || bUseControllerDesiredRotation) || bBehaviorRotateBlocked)
 	{
 		// 停止主动转向状态
 		if (bProactiveRotating)
@@ -371,7 +372,8 @@ void UBXCharacterMovementComponent::ProcessLanded(const FHitResult& Hit, float r
 
 bool UBXCharacterMovementComponent::CanAttemptJump() const
 {
-	return !UBXBehaviorFunctionLibrary::CheckForbiddenBehavior(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Jump) && !bWantsToCrouch && IsMovingOnGround();
+	// 跳跃被禁走行为代理下推开关
+	return !bBehaviorJumpBlocked && !bWantsToCrouch && IsMovingOnGround();
 }
 
 bool UBXCharacterMovementComponent::DoJump(bool bReplayingMoves)

@@ -4,6 +4,8 @@
 #include "GameplayTagContainer.h"
 #include "StructUtils/InstancedStruct.h"
 
+#include "BehaviorProxy/BXBehaviorProxy.h"
+
 #include "BXBehaviorEnums.h"
 
 #include "BXBehaviorStructs.generated.h"
@@ -124,4 +126,22 @@ public:
 	// 失败原因(诊断/出招表缓冲策略)
 	UPROPERTY(Transient, BlueprintReadOnly)
 	FString FailReason;
+};
+
+
+
+// 行为代理配置(Tag→代理类+是否默认启用;常驻型门控代理默认启用,事件型代理默认禁用随管线隐式启停)
+USTRUCT(BlueprintType)
+struct FBXBehaviorProxyConfig
+{
+	GENERATED_USTRUCT_BODY()
+
+public:
+	// 代理类
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TSubclassOf<UBXBehaviorProxy> ProxyClass;
+
+	// 是否默认启用(BeginPlay即EnableProxy;移动/转向/跳跃门控代理为true)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	bool bEnabledByDefault = false;
 };
