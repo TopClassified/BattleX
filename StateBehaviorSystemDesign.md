@@ -694,6 +694,8 @@ BXEvent                                // 事件根（沿用 BXEvent.* 惯例）
 
 迁移要点：Native Tag 改名 = 宏参数 + 全局替换；`Config/Tags/BXGameplayTags.ini` 资产侧 Tag 无冲突不动；行为矩阵轴注册 `BXBehavior.Locomotion` / `BXBehavior.Attack` 族 Tag。
 
+迁移进度：2026-08-29 Jump/Landed 原生 Tag 已迁移（`BXBehavior.Locomotion.Jump/Landed`，常量同步改名 `BXBehavior_Locomotion_Jump/Landed`），BXImmBehavior 前缀退役——族 Tag `BXBehavior.Locomotion` 现覆盖全部四个移动系行为（禁用/矩阵/族查询一致）。内容资产仅 `BP_BXC_Behavior` 的 BehaviorProxyConfigs 序列化了旧 Tag 键，需在编辑器重选；BXStunState_* 等资产侧旧 Tag 仍随资产制作批量迁移。
+
 ## 10. 配置示例：受击硬直链 + 攻击取消连招
 
 ```

@@ -365,7 +365,7 @@ void UBXCharacterMovementComponent::ProcessLanded(const FHitResult& Hit, float r
 	}
 
 	// 通知到行为组件，落地
-	UBXBehaviorFunctionLibrary::StartBehaviorWithParameter<FHitResult>(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Landed, Hit);
+	UBXBehaviorFunctionLibrary::StartBehaviorWithParameter<FHitResult>(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Landed, Hit);
 	
 	StartNewPhysics(remainingTime, Iterations);
 }
@@ -399,7 +399,7 @@ bool UBXCharacterMovementComponent::DoJump(bool bReplayingMoves)
 		SetMovementMode(MOVE_Falling);
 
 		// 通知到行为组件，跳跃
-		UBXBehaviorFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXImmBehavior_Locomotion_Jump);
+		UBXBehaviorFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Jump);
 		
 		return true;
 	}

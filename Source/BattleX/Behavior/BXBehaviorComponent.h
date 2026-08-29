@@ -198,7 +198,8 @@ public:
 	void MulticastBehaviorExit(FGameplayTag InBehaviorTag, int64 InSign, uint8 InReason);
 
 	// 行为控制包(代理粒度):Op=0挂起(置挂起位+禁用代理+每来源本地Exit事件)/1恢复(清挂起位+启用代理+每来源本地Resumed事件);
-	// 常驻门控代理无活跃条目时同样生效(客户端挂起事实的唯一来源)
+	// 常驻门控代理无活跃条目时同样生效,未配置代理的纯事实行为Tag同样到达(仅事件流重放);
+	// 仅权威端发送——客户端调用NetMulticast被引擎本地同步执行,会与端内直发逻辑叠加造成事件双发
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastControlBehavior(FGameplayTag InBehaviorTag, uint8 InOp);
 

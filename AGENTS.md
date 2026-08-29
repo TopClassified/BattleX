@@ -55,9 +55,15 @@
 - **挂起/恢复不走通用 Enter/Exit 多播**：Suspended/Resumed 事件在通用多播的权威门被剔除，由 Tag 粒度控制包 `MulticastControlBehavior(Op)` 精确镜像服务器"Agent 单次停转/重启"操作粒度，接收端重放 Agent 动作+逐来源本地事件流（客户端无遮蔽表，控制包与快照 Flags(bit0) 是挂起终态仅有的两个事实源，两序到达均收敛）。
 - 表现跟随通道：`TriggerPresentation` 是表现触发唯一收束点，权威端转发 `MulticastStatePresentation(StateTag, FBXStatePresentation)` 跟随端本播（转移边/裸状态进出场全部三通道自动覆盖）；族内 SM 服务器评估转移（Tick 权威门控），SimulatedProxy 不评估边。
 - 族内 SM 状态拒绝客户端自主请求（ServerEnterState 内拒绝回 Reject）：族内互斥/转移必须权威驱动，防伪造硬直等处境作弊。
+- **裸状态 Net 进入须在 StateConfigs 存在**（ServerEnterState 存在性校验拒绝；技能链路走本地 API 不受此限）；族内 SM 状态 Net 入口**客户端侧预检早退**（EnterStateNet 与服务器对称——否则本地预测先顶掉旧状态，拒绝回滚后旧状态在客户端丢失造成双端漂移）。
+- **客户端调用 NetMulticast 会被引擎本地同步执行**（Actor.cpp GetFunctionCallspace 多播分支对客户端返回 Local）——组件内所有 RPC 发起点必须 ROLE_Authority 门控，否则与端内直发逻辑叠加造成事件双发（实例：MulticastControlBehavior 曾在预测端双发 BER_Suspended/BER_Resumed）。
+- **挂起/恢复事件流与代理配置解耦**：Suspend/ResumeByForbiddenTag 的事件循环按活跃行为表族匹配（含未配置代理的纯事实行为——互锁事件不依赖代理配置），命令循环按 BehaviorProxyConfigs；控制包目标=命令∪事件目标去重（跟随端纯事实行为也收事件重放；同 Tag 双包会致跟随端事件重放双发）。
+- **PT_Skill 表现仅权威端本播**：技能经自身多播同步到达各端，跟随端经 MulticastStatePresentation 再本播会在自主端走预测+ServerPlaySkill 造成服务器二次播放（全端双份）；PT_Timeline/PT_Animation 保持各端本播。
+- **外部进入顶掉路径禁用解除延迟**：InternalEnterState 的 SM 顶掉分支与 ExecuteTransition 同型——退出 bDeferForbiddenRelease=true，新状态登记遮蔽后统一 ReleaseForbiddenBehaviors（共享禁用 Tag 无 Resume→Suspend 抖动）。
 - 跟随端 SM CurrentNode 双路径镜像：多播跟随进入（HandleClientStateEnter）与 LateJoin 重建（RebuildStateFromState）均按条目 Tag 反查资产置节点，Exit 管线置空——与服务器 InternalEnterState/ExecuteTransition 置节点语义对齐（CurrentNode 在跟随端仅影响查询一致性，转移评估不跑）。
 - 广播多播收束点两组件各一处：BroadcastBehaviorEvent / BroadcastStateEvent 内按 ROLE_Authority 门转发，BER_Cleared/SER_Cleared 排除（EndPlay 销毁场景），Suspended/Resumed 由控制包通道负责（行为侧）。
 - 多播 _Implementation 一律首行 Authority 早退（服务器发起 Multicast 时 UE 会本地回环执行实现，早退同时兼作跟随处理器重入防护）。
+- SM 转移上下文 ServerTimeMs 使用服务器世界时间域（UBXFunctionLibrary::GetServerWorldTimeMilliseconds），与技能系统一致，勿用 World->GetTimeSeconds。
 
 ## 行为 Proxy 体系要点（P9，详见 StateBehaviorSystemDesign.md §13）
 - **UBXBehaviorAgent 已改名 UBXBehaviorProxy**（目录 BehaviorAgent/→BehaviorProxy/，UBXBADefault*→UBXProxyMove/Rotate/Jump/Landed，枚举 BAF_*→BPF_*）。双轴命令：EnableProxy/DisableProxy（权限轴，持有基层开关）+ Start/Stop（活动轴）+ UpdateProxy（bWantsProxyUpdate 时组件 Tick 转发）；权限/活动簿记（bEnabled/bStarted/bArmedResume 恢复重放武装）在基类，派生类只重写 Native/Script 槽位。BehaviorFunctions 默认值 341→5461（追加 Native/BP 启用·禁用·更新三对槽位）。

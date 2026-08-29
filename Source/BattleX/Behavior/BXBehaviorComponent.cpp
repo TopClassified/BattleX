@@ -405,15 +405,25 @@ void UBXBehaviorComponent::SuspendByForbiddenTag(const FGameplayTag& InForbidden
 		return;
 	}
 
-	// 新遮蔽生效:先收集本次新覆盖的已配置代理(含无活跃条目的常驻门控代理——挂起不依赖条目存在;
-	// 已被其他遮蔽键覆盖的不重复处理)。注意必须先收集后入表,否则本遮蔽键自身会使IsBehaviorSuspended恒真。
-	// 行为条目不移表:事实保留
-	TArray<FGameplayTag> NewlyCovered;
+	// 新遮蔽生效:命令目标与事件目标分离收集。
+	// 注意必须先收集后入表,否则本遮蔽键自身会使IsBehaviorSuspended恒真。行为条目不移表:事实保留
+	// 命令目标=已配置代理(含无活跃条目的常驻门控代理——挂起不依赖条目存在;已被其他遮蔽键覆盖的不重复处理)
+	TArray<FGameplayTag> AffectedProxies;
 	for (const TPair<FGameplayTag, FBXBehaviorProxyConfig>& Pair : BehaviorProxyConfigs)
 	{
 		if (Pair.Key.MatchesTag(InForbiddenTag) && !IsBehaviorSuspended(Pair.Key))
 		{
-			NewlyCovered.Add(Pair.Key);
+			AffectedProxies.Add(Pair.Key);
+		}
+	}
+
+	// 事件目标=活跃行为(含未配置代理的纯事实行为——互锁事件流不依赖代理配置)
+	TArray<FGameplayTag> AffectedBehaviors;
+	for (const TPair<FGameplayTag, FBXBehaviorRuntimeData>& Pair : ActiveBehaviors)
+	{
+		if (Pair.Key.MatchesTag(InForbiddenTag) && !IsBehaviorSuspended(Pair.Key))
+		{
+			AffectedBehaviors.Add(Pair.Key);
 		}
 	}
 
@@ -421,20 +431,32 @@ void UBXBehaviorComponent::SuspendByForbiddenTag(const FGameplayTag& InForbidden
 	NewMask.ByStates.Add(InByState);
 	SuspendMasks.Add(InForbiddenTag, MoveTemp(NewMask));
 
-	// 控制包广播(Tag粒度=代理粒度:客户端置挂起位+差分禁用代理+活跃条目本地事件流重放)
-	for (const FGameplayTag& Tag : NewlyCovered)
+	// 控制包广播(仅权威端:客户端调用NetMulticast被引擎本地同步执行,与下方直发的挂起位/事件流叠加
+	// 会造成BER_Suspended双发;客户端预测路径由下方直发循环本地生效。
+	// 包目标=命令∪事件目标去重——跟随端对未配置代理的行为Tag同样需要事件流重放)
+	AActor* GateOwner = GetOwner();
+	if (GateOwner && GateOwner->GetLocalRole() == ENetRole::ROLE_Authority)
 	{
-		MulticastControlBehavior(Tag, BX_NET_BEHAVIOR_OP_SUSPEND);
+		TArray<FGameplayTag> ControlPacketTags = AffectedProxies;
+		for (const FGameplayTag& Tag : AffectedBehaviors)
+		{
+			ControlPacketTags.AddUnique(Tag);
+		}
+
+		for (const FGameplayTag& Tag : ControlPacketTags)
+		{
+			MulticastControlBehavior(Tag, BX_NET_BEHAVIOR_OP_SUSPEND);
+		}
 	}
 
 	// 挂起位置位+门控差分命令(内部含Refresh:代理禁用→活动中收停并武装恢复重放)
-	for (const FGameplayTag& Tag : NewlyCovered)
+	for (const FGameplayTag& Tag : AffectedProxies)
 	{
 		SetProxySuspendBit(Tag, true);
 	}
 
 	// 每个来源广播Exit(技能互锁监听点)
-	for (const FGameplayTag& Tag : NewlyCovered)
+	for (const FGameplayTag& Tag : AffectedBehaviors)
 	{
 		// 代理禁用回调中同步退出禁用状态(Resume清位)的竞态防御:复查遮蔽仍生效才广播,
 		// 否则Suspended会误触发技能互锁
@@ -476,7 +498,7 @@ void UBXBehaviorComponent::ResumeByForbiddenTag(const FGameplayTag& InForbiddenT
 		return;
 	}
 
-	// 遮蔽解除:收集本次解除覆盖的已配置代理(仍被其他活跃遮蔽键覆盖的保持挂起)
+	// 遮蔽解除:命令目标与事件目标分离收集(同SuspendByForbiddenTag;仍被其他活跃遮蔽键覆盖的保持挂起)
 	TArray<FGameplayTag> ReleasedProxies;
 	for (const TPair<FGameplayTag, FBXBehaviorProxyConfig>& Pair : BehaviorProxyConfigs)
 	{
@@ -486,15 +508,39 @@ void UBXBehaviorComponent::ResumeByForbiddenTag(const FGameplayTag& InForbiddenT
 		}
 	}
 
-	// 控制包广播+清挂起位(门控差分命令在SetProxySuspendBit内:代理Enable→恢复重放按快照参数回放Start)
+	TArray<FGameplayTag> ReleasedBehaviors;
+	for (const TPair<FGameplayTag, FBXBehaviorRuntimeData>& Pair : ActiveBehaviors)
+	{
+		if (Pair.Key.MatchesTag(InForbiddenTag) && !IsBehaviorSuspended(Pair.Key))
+		{
+			ReleasedBehaviors.Add(Pair.Key);
+		}
+	}
+
+	// 控制包广播(仅权威端,同SuspendByForbiddenTag;包目标=命令∪事件目标去重)
+	AActor* GateOwner = GetOwner();
+	if (GateOwner && GateOwner->GetLocalRole() == ENetRole::ROLE_Authority)
+	{
+		TArray<FGameplayTag> ControlPacketTags = ReleasedProxies;
+		for (const FGameplayTag& Tag : ReleasedBehaviors)
+		{
+			ControlPacketTags.AddUnique(Tag);
+		}
+
+		for (const FGameplayTag& Tag : ControlPacketTags)
+		{
+			MulticastControlBehavior(Tag, BX_NET_BEHAVIOR_OP_RESUME);
+		}
+	}
+
+	// 清挂起位(门控差分命令在SetProxySuspendBit内:代理Enable→恢复重放按快照参数回放Start)
 	for (const FGameplayTag& Tag : ReleasedProxies)
 	{
-		MulticastControlBehavior(Tag, BX_NET_BEHAVIOR_OP_RESUME);
 		SetProxySuspendBit(Tag, false);
 	}
 
 	// 每来源广播Resumed(来源所有权不变,Sign原样)
-	for (const FGameplayTag& Tag : ReleasedProxies)
+	for (const FGameplayTag& Tag : ReleasedBehaviors)
 	{
 		// 代理启用回调中同步进入禁用状态(重新遮蔽)的竞态防御:复查未被重新遮蔽才广播
 		if (IsBehaviorSuspended(Tag))
@@ -1272,7 +1318,8 @@ void UBXBehaviorComponent::HandleClientBehaviorExit(const FGameplayTag& InBehavi
 
 void UBXBehaviorComponent::HandleClientControlBehavior(const FGameplayTag& InBehaviorTag, bool bResume)
 {
-	// 挂起位直控(客户端无遮蔽表,控制包即命令源;常驻门控代理无活跃条目时同样生效;内部含门控差分命令)
+	// 挂起位直控(客户端无遮蔽表,控制包即命令源;常驻门控代理无活跃条目时同样生效;内部含门控差分命令;
+	// 未配置代理的纯事实行为Tag:置位为无消费的孤儿状态无害,事件流重放为该Tag到达控制包的主要目的)
 	SetProxySuspendBit(InBehaviorTag, !bResume);
 
 	// 无活跃条目(常驻门控代理常态):位已应用,无事件流可重放

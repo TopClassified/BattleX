@@ -332,6 +332,14 @@ int64 UBXStateComponent::EnterStateNet(const FGameplayTag& InStateTag, float InD
 	// 预测Sign必须可定位:非Client签名时生成全新ClientSyncID
 	if (OwnerRole == ENetRole::ROLE_AutonomousProxy)
 	{
+		// 族内SM状态预检早退(与服务器ServerEnterState对称):本地预测若先执行顶掉,
+		// 拒绝回滚只移除新条目,被SER_External顶掉的旧状态在客户端丢失造成双端漂移
+		if (FindMachineByStateTag(InStateTag))
+		{
+			UE_LOG(BXSTATE, Warning, TEXT("UBXStateComponent::EnterStateNet: SM state is authority-driven only. State=%s"), *InStateTag.ToString());
+			return -1;
+		}
+
 		const int64 PredictSign = BXMakeSyncID(UBXFunctionLibrary::GetUniqueID(), EBXSyncInitiator::Client);
 
 		++EnterChainDepth;
@@ -405,6 +413,15 @@ void UBXStateComponent::ServerEnterState_Implementation(FGameplayTag InStateTag,
 	if (FindMachineByStateTag(InStateTag))
 	{
 		UE_LOG(BXSTATE, Warning, TEXT("UBXStateComponent::ServerEnterState: SM state rejected from client. State=%s"), *InStateTag.ToString());
+		ClientRejectState(InStateTag, InSign);
+		return;
+	}
+
+	// 裸状态存在性校验(配置面=StateConfigs,不存在的Tag一律拒绝——
+	// 若裸状态参与服务端判定即构成伪造作弊面;技能链路走本地API Sign=SkillID不受此限)
+	if (!StateConfigs.Contains(InStateTag))
+	{
+		UE_LOG(BXSTATE, Warning, TEXT("UBXStateComponent::ServerEnterState: unconfigured bare state rejected. State=%s"), *InStateTag.ToString());
 		ClientRejectState(InStateTag, InSign);
 		return;
 	}
@@ -531,6 +548,8 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 
 	// 族内单活:外部进入顶掉当前节点(规则一)
 	UBXStateMachineInstance* Machine = FindMachineByStateTag(InStateTag);
+	FGameplayTag DisplacedStateTag;
+	FGameplayTagContainer DisplacedForbidden;
 	if (Machine)
 	{
 		UBXSMStateNode* TargetNode = Machine->Asset ? Machine->Asset->FindStateNode(InStateTag) : nullptr;
@@ -543,16 +562,25 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 		if (Machine->CurrentNode && Machine->CurrentNode->StateTag != InStateTag)
 		{
 			// 顶掉当前节点状态(SER_External)
-			// 缓存旧Tag:首个来源退出时InternalExitState会置空CurrentNode,循环内重复解引用会崩溃
-			const FGameplayTag OldStateTag = Machine->CurrentNode->StateTag;
+			// 缓存旧Tag与禁用列表:首个来源退出时InternalExitState会置空CurrentNode,循环内重复解引用会崩溃
+			DisplacedStateTag = Machine->CurrentNode->StateTag;
+			if (Machine->Asset)
+			{
+				if (const UBXSMStateNode* OldNode = Machine->Asset->FindStateNode(DisplacedStateTag))
+				{
+					DisplacedForbidden = OldNode->ForbiddenBehaviors;
+				}
+			}
+
 			TArray<FBXStateSource> Sources;
-			if (const FBXStateRuntimeData* CurrentData = ActiveStates.Find(OldStateTag))
+			if (const FBXStateRuntimeData* CurrentData = ActiveStates.Find(DisplacedStateTag))
 			{
 				Sources = CurrentData->Sources;
 			}
 			for (const FBXStateSource& Source : Sources)
 			{
-				InternalExitState(OldStateTag, Source.Sign, InExternalReason, false);
+				// 禁用解除延迟:待新状态登记遮蔽后统一解除(同ExecuteTransition,共享禁用Tag无Resume→Suspend抖动)
+				InternalExitState(DisplacedStateTag, Source.Sign, InExternalReason, false, true);
 			}
 		}
 
@@ -589,6 +617,13 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 		}
 
 		BroadcastStateEvent(true, InStateTag, InSign, ResolvedDuration, EBXStateEndReason::SER_TMax);
+	}
+
+	// 被顶掉旧状态的禁用解除(新状态已登记:共享禁用Tag经遮蔽ByStates多重登记保持挂起,独占Tag解除恢复;
+	// 事件监听者重入旧状态时ReleaseForbiddenBehaviors内含重入保护,登记不被误清)
+	if (DisplacedStateTag.IsValid())
+	{
+		ReleaseForbiddenBehaviors(DisplacedForbidden, DisplacedStateTag);
 	}
 
 	return true;
@@ -763,15 +798,11 @@ void UBXStateComponent::UpdateStateMachines(float InDeltaTime)
 		// 到期检查(含无限来源永不到期;DeltaTime步进越界后剩余为负同样视为到期,旧>=0&&<=0判定会漏掉越界帧)
 		const bool bExpired = !Data->HasInfiniteSource() && Data->GetRemainingTime() <= 0.0f;
 
-		// 边评估上下文
+		// 边评估上下文(服务器世界时间域,与技能系统一致;单机=本地时间,网络游戏=GameState校时后的服务器时间)
 		FBXSMTransitionContext Context;
 		Context.Owner = GetOwner();
 		Context.FromTag = CurrentTag;
-		if (const UWorld* World = GetWorld())
-		{
-			// 单机=本地世界时间;P5网络期接入服务器校时
-			Context.ServerTimeMs = static_cast<int64>(World->GetTimeSeconds() * 1000.0);
-		}
+		Context.ServerTimeMs = UBXFunctionLibrary::GetServerWorldTimeMilliseconds(this);
 
 		// 评估当前节点出边(顺序:OutEdges索引序)
 		UBXSMTransitionEdge* TriggeredEdge = nullptr;
@@ -938,7 +969,14 @@ void UBXStateComponent::TriggerPresentation(const FBXStatePresentation& InPresen
 	{
 	case EBXPresentationType::PT_Skill:
 	{
-		// 技能通道(自带同步体系)
+		// 技能通道(自带同步体系):仅权威端本播,技能经自身多播同步到达各端——
+		// 跟随端再本播会在自主端走客户端预测+ServerPlaySkill上报,服务器权威端二次播放造成全端双份
+		// (代价:跟随端技能到达晚约1个RTT,与服务器发起的表现语义一致)
+		if (Owner->GetLocalRole() != ENetRole::ROLE_Authority)
+		{
+			break;
+		}
+
 		if (UBXSkillComponent* SkillComponent = GetOwner()->FindComponentByClass<UBXSkillComponent>())
 		{
 			if (UBXSkillAsset* SkillAsset = InPresentation.SkillAsset.LoadSynchronous())

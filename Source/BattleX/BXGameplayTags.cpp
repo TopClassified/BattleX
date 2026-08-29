@@ -18,8 +18,8 @@ namespace BXGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Move, "BXBehavior.Locomotion.Move", "主动移动");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Rotate, "BXBehavior.Locomotion.Rotate", "主动转向");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXPlayMontage_Default, "BXBehavior.PlayMontage.Default", "播放Montage默认Tag");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXImmBehavior_Locomotion_Jump, "BXImmBehavior.Locomotion.Jump", "主动跳跃(瞬间行为)");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXImmBehavior_Locomotion_Landed, "BXImmBehavior.Locomotion.Landed", "落地(瞬间行为)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Jump, "BXBehavior.Locomotion.Jump", "主动跳跃(瞬间行为)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Landed, "BXBehavior.Locomotion.Landed", "落地(瞬间行为)");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXDamageType_Default, "BXDamageType.Default", "默认伤害类型");
 
