@@ -701,7 +701,7 @@ void UBXSkillComponent::UpdateCancelWindows(float InDeltaTime)
 		}
 
 		UBXSkillAsset* Asset = Data->SkillAsset;
-		if (!Asset->BehaviorTag.IsValid() || Asset->CancelWindows.IsEmpty() || !Asset->bProtectedBehavior)
+		if (!Asset->BehaviorTag.IsValid() || Asset->CancelWindows.IsEmpty() || !Asset->bWaiveOnCancelWindow)
 		{
 			continue;
 		}
@@ -709,7 +709,7 @@ void UBXSkillComponent::UpdateCancelWindows(float InDeltaTime)
 		// 窗口判定(技能时间轴当前时间)
 		const bool bInWindow = Asset->IsInCancelWindow(Data->TLRunTimeData.RunTime);
 
-		// 边界切换才写保护表(常规帧零开销)
+		// 边界切换才写豁免表(常规帧零开销;缓存初值false=窗口外未豁免,与豁免语义对齐)
 		bool* CachedState = CancelWindowStates.Find(SkillID);
 		if (!CachedState)
 		{
@@ -719,7 +719,7 @@ void UBXSkillComponent::UpdateCancelWindows(float InDeltaTime)
 		if (*CachedState != bInWindow)
 		{
 			*CachedState = bInWindow;
-			BehaviorComp->SetBehaviorProtection(Asset->BehaviorTag, SkillID, !bInWindow);
+			BehaviorComp->SetBehaviorWaiver(Asset->BehaviorTag, SkillID, bInWindow);
 		}
 	}
 
@@ -740,15 +740,15 @@ void UBXSkillComponent::UpdateCancelWindows(float InDeltaTime)
 
 void UBXSkillComponent::OnBehaviorExitEvent(const FBXEventBehaviorChanged& InParameter)
 {
-	// 互锁:本组件持有的技能姿态行为被挤出/挂起→技能中断(Q1任一语义)
+	// 互锁:本组件持有的技能姿态行为被挤出/中断→技能中断(Q1任一语义)
 	if (!OwnedSkillIDs.Contains(InParameter.Sign))
 	{
 		return;
 	}
 
-	// 仅挤出/挂起触发互锁(手动停止/清空是技能结束自身收束,不回路中断)
+	// 仅挤出/中断触发互锁(手动停止/清空是技能结束自身收束,不回路中断)
 	if (InParameter.Reason != EBXBehaviorEndReason::BER_Expelled
-		&& InParameter.Reason != EBXBehaviorEndReason::BER_Suspended)
+		&& InParameter.Reason != EBXBehaviorEndReason::BER_Interrupted)
 	{
 		return;
 	}

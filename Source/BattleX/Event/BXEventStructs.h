@@ -40,7 +40,7 @@ public:
 	UPROPERTY(Transient, BlueprintReadWrite)
 	int64 Sign = 0;
 
-	// 原因(Exit事件:结束原因;Enter事件:BER_TMax=新进入/BER_Resumed=挂起恢复)
+	// 原因(Exit事件:结束原因;Enter事件:BER_TMax=新进入)
 	UPROPERTY(Transient, BlueprintReadWrite)
 	EBXBehaviorEndReason Reason = EBXBehaviorEndReason::BER_TMax;
 

@@ -86,15 +86,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Behavior")
 	FGameplayTag BehaviorTag;
 
-	// 姿态行为是否默认受保护(取消窗口外不可被矩阵挤出,霸体语义)
+	// 取消窗口期内是否豁免自身互斥(窗口期因本技能行为在位而被拒的接招行为放行,接管方向矩阵挤出照旧执行)
 	UPROPERTY(EditDefaultsOnly, Category = "Behavior")
-	bool bProtectedBehavior = true;
+	bool bWaiveOnCancelWindow = true;
 
 	// 技能开始时进入的状态列表(按序进入;Sign=SkillID,技能结束收束退出)
 	UPROPERTY(EditDefaultsOnly, Category = "State")
 	TArray<FBXSkillEnterState> EnterStates;
 
-	// 取消窗口列表(窗口内姿态行为保护解除)
+	// 取消窗口列表(窗口内豁免自身互斥,接招行为放行)
 	UPROPERTY(EditDefaultsOnly, Category = "Behavior")
 	TArray<FBXSkillCancelWindow> CancelWindows;
 

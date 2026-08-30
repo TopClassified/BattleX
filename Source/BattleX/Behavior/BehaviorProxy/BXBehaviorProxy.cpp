@@ -70,7 +70,7 @@ bool UBXBehaviorProxy::NativeDeinitialize()
 
 bool UBXBehaviorProxy::EnableProxy()
 {
-	// 幂等(已启用直接返回);命令值差分由组件侧ProxyGateStates负责,此处兜底
+	// 幂等(已启用直接返回)
 	if (bEnabled)
 	{
 		return true;
@@ -90,13 +90,6 @@ bool UBXBehaviorProxy::EnableProxy()
 		bResult2 = ScriptEnableProxy();
 	}
 
-	// 恢复重放(禁用时活动中被收停,启用时按快照参数重放Start;事件型隐式启用无武装不重放)
-	if (bArmedResume)
-	{
-		bArmedResume = false;
-		StartBehavior(LastStartParameter);
-	}
-
 	return (bResult1 && bResult2);
 }
 
@@ -114,14 +107,6 @@ bool UBXBehaviorProxy::DisableProxy()
 	}
 
 	bEnabled = false;
-
-	// 活动中先收停并武装恢复重放(收停先于开关推送:回调中查询开关时已是禁用态)
-	if (bStarted)
-	{
-		bStarted = false;
-		bArmedResume = true;
-		ExecuteStopBehavior(LastStartParameter);
-	}
 
 	bool bResult1 = true;
 	if (BX_HAS_PROXY_FLAG(BPF_NativeDisableProxy))
@@ -151,7 +136,7 @@ bool UBXBehaviorProxy::StartBehavior(const FInstancedStruct& InParameter)
 		return false;
 	}
 
-	// 记录最近启动参数(恢复重放用)后再执行(重复Start=重启语义)
+	// 记录最近启动参数后再执行(重复Start=重启语义)
 	bStarted = true;
 	LastStartParameter = InParameter;
 
@@ -160,12 +145,13 @@ bool UBXBehaviorProxy::StartBehavior(const FInstancedStruct& InParameter)
 
 bool UBXBehaviorProxy::StopBehavior(const FInstancedStruct& InParameter)
 {
-	// 未开始幂等返回(禁用收停走ExecuteStopBehavior直通,不受此门禁影响)
+	// 真停语义:停止活动并清除开始标记(重复Stop幂等)
 	if (!bStarted)
 	{
 		return true;
 	}
 
+	bStarted = false;
 	return ExecuteStopBehavior(InParameter);
 }
 

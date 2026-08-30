@@ -98,8 +98,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BattleX|State")
 	float GetStateRemainingSeconds(const FGameplayTag& InStateTag) const;
 
-	// 查询某状态是否禁用指定行为(禁用门控查询,行为组件恢复判定用)
-	bool IsBehaviorForbiddenByState(const FGameplayTag& InStateTag, const FGameplayTag& InBehaviorTag) const;
+	// 查询某状态是否禁用指定行为(中断∨禁止;禁用门控查询,行为组件恢复判定用)
+	bool DoesStateDisableBehavior(const FGameplayTag& InStateTag, const FGameplayTag& InBehaviorTag) const;
 
 	// 进入状态(Sign=技能SkillID/时间轴TLID/0系统;Duration≤0用节点/配置默认)
 	UFUNCTION(BlueprintCallable, Category = "BattleX|State")
@@ -126,9 +126,9 @@ protected:
 	// 内部进入状态(管线:族内定位/表更新/禁用门控/表现/事件;族内表现由转移边统一触发,此处仅裸状态触发配置的进入表现)
 	bool InternalEnterState(const FGameplayTag& InStateTag, int64 InSign, float InDuration, EBXStateEndReason InExternalReason);
 
-	// 内部退出状态(管线:表更新/表现/禁用解除/事件,全部退出路径收束于此;
-	// bSuppressPresentation=true抑制内置Exit表现,转移路径用;bDeferForbiddenRelease=延迟禁用解除,转移路径用)
-	bool InternalExitState(const FGameplayTag& InStateTag, int64 InSign, EBXStateEndReason InReason, bool bSuppressPresentation = false, bool bDeferForbiddenRelease = false);
+	// 内部退出状态(管线:表更新/表现/门控解除/事件,全部退出路径收束于此;
+	// bSuppressPresentation=true抑制内置Exit表现,转移路径用;bDeferBehaviorRelease=延迟门控解除,转移路径用)
+	bool InternalExitState(const FGameplayTag& InStateTag, int64 InSign, EBXStateEndReason InReason, bool bSuppressPresentation = false, bool bDeferBehaviorRelease = false);
 
 	// 到期评估(Tick:快照收集→逐条处理)
 	void UpdateExpiredStates(float InDeltaTime);
@@ -139,17 +139,17 @@ protected:
 	// 执行状态机转移(退出当前+进入目标;旧状态禁用解除延迟到新状态登记后,共享禁用Tag经遮蔽多重登记保持无抖动)
 	bool ExecuteTransition(UBXStateMachineInstance* InMachine, UBXSMStateNode* InTargetNode, EBXStateEndReason InReason);
 
-	// 退出状态全部来源(内部版:转移路径延迟禁用解除,由调用方在新状态登记后统一解除)
-	bool ExitStateAllSourcesInternal(const FGameplayTag& InStateTag, EBXStateEndReason InReason, bool bSuppressPresentation, bool bDeferForbiddenRelease);
+	// 退出状态全部来源(内部版:转移路径延迟门控解除,由调用方在新状态登记后统一解除)
+	bool ExitStateAllSourcesInternal(const FGameplayTag& InStateTag, EBXStateEndReason InReason, bool bSuppressPresentation, bool bDeferBehaviorRelease);
 
 	// 触发状态表现(各端本地;入口=转移边表现/裸状态进入退出表现)
 	void TriggerPresentation(const FBXStatePresentation& InPresentation, const FGameplayTag& InStateTag);
 
-	// 状态禁用门控:进入时挂起行为
-	void ApplyForbiddenBehaviors(const FGameplayTagContainer& InForbiddenBehaviors, const FGameplayTag& InByState);
+	// 禁用门控:进入时按两列表组合中断/禁止原子(唯一跨系统调用)
+	void ApplyBehaviorGates(const FGameplayTagContainer& InInterruptBehaviors, const FGameplayTagContainer& InForbidBehaviors, const FGameplayTag& InByState);
 
-	// 状态禁用门控:退出时尝试恢复行为
-	void ReleaseForbiddenBehaviors(const FGameplayTagContainer& InForbiddenBehaviors, const FGameplayTag& InByState);
+	// 禁用门控:退出时按两列表解除(重入保护内置)
+	void ReleaseBehaviorGates(const FGameplayTagContainer& InForbidBehaviors, const FGameplayTag& InByState);
 
 	// 收集活跃状态Tag快照
 	void CollectActiveStateTags(TArray<FGameplayTag>& OutTags) const;
@@ -160,8 +160,8 @@ protected:
 	// 查询状态Tag所属状态机实例
 	UBXStateMachineInstance* FindMachineByStateTag(const FGameplayTag& InStateTag) const;
 
-	// 查询状态配置(族内节点或裸状态配置)
-	bool GetStateDurationAndForbidden(const FGameplayTag& InStateTag, float& OutDuration, FGameplayTagContainer& OutForbidden) const;
+	// 查询状态配置(族内节点或裸状态配置:时长+中断/禁止两列表)
+	bool GetStateBehaviorConfig(const FGameplayTag& InStateTag, float& OutDuration, FGameplayTagContainer& OutInterrupt, FGameplayTagContainer& OutForbid) const;
 
 #pragma endregion Internal
 

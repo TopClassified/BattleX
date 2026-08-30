@@ -20,7 +20,7 @@ bool UBXBehaviorFunctionLibrary::CheckActiveBehavior(AActor* InTarget, const FGa
 	return false;
 }
 
-bool UBXBehaviorFunctionLibrary::CheckForbiddenBehavior(AActor* InTarget, const FGameplayTag& InBehaviorTag)
+bool UBXBehaviorFunctionLibrary::IsBehaviorDisabled(AActor* InTarget, const FGameplayTag& InBehaviorTag)
 {
 	if (!IsValid(InTarget))
 	{
@@ -29,13 +29,13 @@ bool UBXBehaviorFunctionLibrary::CheckForbiddenBehavior(AActor* InTarget, const 
 
 	if (UBXBehaviorComponent* BehaviorComp = InTarget->FindComponentByClass<UBXBehaviorComponent>())
 	{
-		return BehaviorComp->CheckForbiddenBehavior(InBehaviorTag);
+		return BehaviorComp->IsBehaviorDisabled(InBehaviorTag);
 	}
 
 	return false;
 }
 
-bool UBXBehaviorFunctionLibrary::IsBehaviorProtected(AActor* InTarget, const FGameplayTag& InBehaviorTag)
+bool UBXBehaviorFunctionLibrary::CanStartBehavior(AActor* InTarget, const FGameplayTag& InBehaviorTag)
 {
 	if (!IsValid(InTarget))
 	{
@@ -44,7 +44,23 @@ bool UBXBehaviorFunctionLibrary::IsBehaviorProtected(AActor* InTarget, const FGa
 
 	if (UBXBehaviorComponent* BehaviorComp = InTarget->FindComponentByClass<UBXBehaviorComponent>())
 	{
-		return BehaviorComp->IsBehaviorProtected(InBehaviorTag);
+		FBXBehaviorStartCheck Check;
+		return BehaviorComp->CanStartBehavior(InBehaviorTag, Check);
+	}
+
+	return false;
+}
+
+bool UBXBehaviorFunctionLibrary::IsBehaviorWaived(AActor* InTarget, const FGameplayTag& InBehaviorTag)
+{
+	if (!IsValid(InTarget))
+	{
+		return false;
+	}
+
+	if (UBXBehaviorComponent* BehaviorComp = InTarget->FindComponentByClass<UBXBehaviorComponent>())
+	{
+		return BehaviorComp->IsBehaviorWaived(InBehaviorTag);
 	}
 
 	return false;

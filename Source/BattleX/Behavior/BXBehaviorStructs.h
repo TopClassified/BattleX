@@ -71,46 +71,30 @@ public:
 
 
 
-// 挂起遮蔽(状态禁用通道:key为状态禁用列表中的Tag,行为条目不移表,仅Agent停转+查询遮蔽)
-USTRUCT()
-struct FBXSuspendMask
+// 禁止账本来源条目(挡启动的持续禁令;多来源叠加,最后一个移除才失效)
+USTRUCT(BlueprintType)
+struct FBXBehaviorForbidSource
 {
 	GENERATED_USTRUCT_BODY()
 
 public:
-	// 禁用它的状态Tag集合(最后一个退出才解除遮蔽)
-	UPROPERTY()
-	TSet<FGameplayTag> ByStates;
-};
+	FBXBehaviorForbidSource() {}
+	FBXBehaviorForbidSource(const FGameplayTag& InSourceTag, int64 InSign) : SourceTag(InSourceTag), Sign(InSign) {}
 
-
-
-// 取消窗口保护记录
-USTRUCT()
-struct FBXProtectionRecord
-{
-	GENERATED_USTRUCT_BODY()
-
-public:
-	FBXProtectionRecord() {}
-	FBXProtectionRecord(int64 InSign, bool InProtected) : Sign(InSign), bProtected(InProtected) {}
-
-	bool operator==(const FBXProtectionRecord& Other) const
+	bool operator==(const FBXBehaviorForbidSource& Other) const
 	{
-		return Sign == Other.Sign;
+		return SourceTag == Other.SourceTag && Sign == Other.Sign;
 	}
 
 public:
-	// 来源签名(技能SkillID)
-	UPROPERTY()
+	// 来源标识(状态Tag/在位行为Tag/系统来源Tag)
+	UPROPERTY(Transient, BlueprintReadOnly)
+	FGameplayTag SourceTag;
+
+	// 来源签名(配对解除;矩阵贡献=0)
+	UPROPERTY(Transient, BlueprintReadOnly)
 	int64 Sign = 0;
-
-	// 是否受保护
-	UPROPERTY()
-	bool bProtected = false;
 };
-
-
 
 // 行为开始检查结果
 USTRUCT(BlueprintType)
@@ -130,7 +114,7 @@ public:
 
 
 
-// 行为代理配置(Tag→代理类+是否默认启用;常驻型门控代理默认启用,事件型代理默认禁用随管线隐式启停)
+// 行为代理配置(Tag→代理类;代理出生即启用,禁用只由禁止原子造成)
 USTRUCT(BlueprintType)
 struct FBXBehaviorProxyConfig
 {
@@ -140,8 +124,4 @@ public:
 	// 代理类
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TSubclassOf<UBXBehaviorProxy> ProxyClass;
-
-	// 是否默认启用(BeginPlay即EnableProxy;移动/转向/跳跃门控代理为true)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	bool bEnabledByDefault = false;
 };

@@ -171,9 +171,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	float Duration = -1.0f;
 
-	// 存续期禁用的行为(Tag层级:禁BXBehavior根=全禁,禁族Tag=禁族)
+	// 存续期中断的行为(停运在跑,不挡启动;Tag层级:禁BXBehavior根=全禁,禁族Tag=禁族)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	FGameplayTagContainer ForbiddenBehaviors;
+	FGameplayTagContainer InterruptBehaviors;
+
+	// 存续期禁止的行为(挡启动;Tag层级同上)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	FGameplayTagContainer ForbidBehaviors;
 
 	// 进入表现
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)

@@ -211,8 +211,8 @@ void UBXSkillManager::CleanSkillTrash()
 						BehaviorComp->StopBehavior(TrashAsset->BehaviorTag, SkillID);
 					}
 
-					// 取消窗口保护记录移除
-					BehaviorComp->RemoveProtectionBySign(SkillID);
+					// 取消窗口豁免移除(来源收束,零残留)
+					BehaviorComp->RemoveWaiversBySign(SkillID);
 				}
 
 				if (UBXStateComponent* StateComp = TrashOwner->FindComponentByClass<UBXStateComponent>())
@@ -505,8 +505,8 @@ int64 UBXSkillManager::InternalPlaySkill(UBXSkillAsset* InAsset, AActor* InOwner
 		NewData->TLRunTimeData.DynamicDatas.Add(FBXTLDynamicDataSearchKey(-1, Entry.Tag), MoveTemp(Entry.Value));
 	}
 
-	// ===== 技能-行为集成(五步链:判定->清场->登记行为->首帧Task) =====
-	// 行为先行判决(CanStart只读无副作用:挂起/拒绝关系/Agent检查/挤出目标保护)
+	// ===== 技能-行为集成(四步链:判定->清场->登记行为->首帧Task) =====
+	// 行为先行判决(CanStart只读无副作用:挂起/拒绝关系(豁免感知)/代理检查)
 	// 此后清场与登记理论上必过,原子性缺口闭合(失败路径零残留)
 	if (UBXBehaviorComponent* BehaviorComp = InOwner->FindComponentByClass<UBXBehaviorComponent>())
 	{
@@ -519,25 +519,13 @@ int64 UBXSkillManager::InternalPlaySkill(UBXSkillAsset* InAsset, AActor* InOwner
 				return INDEX_NONE;
 			}
 
-			// 保护先置位再清场(清场目标不含自身;窗口内切换由SkillComponent边界管理)
-			if (InAsset->bProtectedBehavior)
-			{
-				BehaviorComp->SetBehaviorProtection(InAsset->BehaviorTag, InSkillID, true);
-			}
-
-			// ③ 清场:挤出与姿态行为互斥的活跃行为(受保护目标上面CanStart已拦,此处幂等防御)
-			if (!BehaviorComp->InterruptBehaviorsConflicting(InAsset->BehaviorTag))
-			{
-				UE_LOG(BXMGR_Skill, Warning, TEXT("UBXSkillManager::InternalPlaySkill: behavior conflict protected. SkillID=%lld Tag=%s"), InSkillID, *InAsset->BehaviorTag.ToString());
-				BehaviorComp->RemoveProtectionBySign(InSkillID);
-				return INDEX_NONE;
-			}
+			// ③ 清场:挤出与姿态行为互斥的活跃行为(接管方向不受豁免影响,无条件执行)
+			BehaviorComp->InterruptBehaviorsConflicting(InAsset->BehaviorTag);
 
 			// ⑤a 登记姿态行为(先于首帧Task:首帧Task查询行为表时已含本条目,视图自洽)
 			if (!BehaviorComp->StartBehavior(InAsset->BehaviorTag, InSkillID))
 			{
 				UE_LOG(BXMGR_Skill, Warning, TEXT("UBXSkillManager::InternalPlaySkill: behavior start failed. SkillID=%lld Tag=%s"), InSkillID, *InAsset->BehaviorTag.ToString());
-				BehaviorComp->RemoveProtectionBySign(InSkillID);
 				return INDEX_NONE;
 			}
 		}
@@ -563,7 +551,7 @@ int64 UBXSkillManager::InternalPlaySkill(UBXSkillAsset* InAsset, AActor* InOwner
 		{
 			if (UBXBehaviorComponent* BehaviorComp2 = InOwner->FindComponentByClass<UBXBehaviorComponent>())
 			{
-				if (BehaviorComp2->IsBehaviorSuspended(InAsset->BehaviorTag))
+				if (BehaviorComp2->IsBehaviorDisabled(InAsset->BehaviorTag))
 				{
 					UE_LOG(BXMGR_Skill, Warning, TEXT("UBXSkillManager::InternalPlaySkill: skill behavior forbidden by its own EnterStates (config conflict). SkillID=%lld Tag=%s"), InSkillID, *InAsset->BehaviorTag.ToString());
 				}

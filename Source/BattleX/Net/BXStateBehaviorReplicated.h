@@ -25,8 +25,8 @@
 
 
 
-// 行为复制条目条目级标志位(Flags)
-#define BX_SYNC_FLAG_BEHAVIOR_SUSPENDED 0x01
+// 行为复制条目级标志位(Flags):bit0=中断中(LateJoin重建不启代理,等控制包恢复)
+#define BX_SYNC_FLAG_BEHAVIOR_STOPPED 0x01
 
 
 
@@ -45,7 +45,7 @@ public:
 	UPROPERTY()
 	TArray<int64> Signs;
 
-	// 条目级标志(BX_SYNC_FLAG_BEHAVIOR_*:bit0=挂起中——LateJoin重建时不启动Agent,等待控制包恢复)
+	// 条目级标志(BX_SYNC_FLAG_BEHAVIOR_*:bit0=代理未启动——LateJoin重建时不自动Start)
 	UPROPERTY()
 	uint8 Flags = 0;
 };

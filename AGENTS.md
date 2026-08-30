@@ -52,25 +52,39 @@
 - 确认=多播匹配（MulticastBehaviorEnter 到达即从预测缓冲移除）；拒绝=`ClientReject*` 单独回包回滚；超时=`BehaviorPredictMaxDuration/StatePredictMaxDuration`（0.3s）Tick 快照收集回滚（回滚后迟到的确认多播经跟随路径重建条目自愈）；请求年龄=`BehaviorRequestMaxAgeMs/StateRequestMaxAgeMs`（服务器世界时间域毫秒；客户端 GameState 未校时到位时时间戳为 0 会被拒绝=fail-safe）。防重：同(Tag,Sign)已存在静默忽略不回 Reject（避免误删已确认条目）。缓冲上限 32 条仅告警。
 - **Exit 上报仅允许 Client 签名来源**：`ServerExitBehavior/ServerExitState` 校验 Initiator==Client 且 Sign!=0，非 Client 一律忽略（防客户端伪造退出技能驱动/常驻来源）；`StopBehaviorNet/ExitStateNet` 客户端侧同校验前置拦截（否则本地已退服务器拒收造成双端漂移）。停止必须使用 Net Start 返回的生效 Sign（BP 默认参数已移除）。
 - **条目已存在时来源级新增须补发确认多播**：服务器 ServerEnter* 前置记录 bEntryExisted，条目新建场景多播由 Broadcast 收束门发出，已存在场景（管线内 bNewEntry=false 不走事件门）执行后显式补发 `MulticastBehaviorEnter/MulticastStateEnter`——否则发起端预测缓冲超时误回滚造成双端漂移。
-- **挂起/恢复不走通用 Enter/Exit 多播**：Suspended/Resumed 事件在通用多播的权威门被剔除，由 Tag 粒度控制包 `MulticastControlBehavior(Op)` 精确镜像服务器"Agent 单次停转/重启"操作粒度，接收端重放 Agent 动作+逐来源本地事件流（客户端无遮蔽表，控制包与快照 Flags(bit0) 是挂起终态仅有的两个事实源，两序到达均收敛）。
+- **中断/恢复不走通用 Enter/Exit 多播**：Interrupted/Resumed 事件在通用多播的权威门被剔除，由 Tag 粒度控制包 `MulticastControlBehavior(Op)` 精确镜像服务器"代理单次停转/重启"操作粒度，接收端重放代理动作+逐来源本地事件流（客户端无账本 Suspend 镜像，控制包与快照 Flags(bit0) 是中断终态仅有的两个事实源，两序到达均收敛）。
 - 表现跟随通道：`TriggerPresentation` 是表现触发唯一收束点，权威端转发 `MulticastStatePresentation(StateTag, FBXStatePresentation)` 跟随端本播（转移边/裸状态进出场全部三通道自动覆盖）；族内 SM 服务器评估转移（Tick 权威门控），SimulatedProxy 不评估边。
 - 族内 SM 状态拒绝客户端自主请求（ServerEnterState 内拒绝回 Reject）：族内互斥/转移必须权威驱动，防伪造硬直等处境作弊。
 - **裸状态 Net 进入须在 StateConfigs 存在**（ServerEnterState 存在性校验拒绝；技能链路走本地 API 不受此限）；族内 SM 状态 Net 入口**客户端侧预检早退**（EnterStateNet 与服务器对称——否则本地预测先顶掉旧状态，拒绝回滚后旧状态在客户端丢失造成双端漂移）。
-- **客户端调用 NetMulticast 会被引擎本地同步执行**（Actor.cpp GetFunctionCallspace 多播分支对客户端返回 Local）——组件内所有 RPC 发起点必须 ROLE_Authority 门控，否则与端内直发逻辑叠加造成事件双发（实例：MulticastControlBehavior 曾在预测端双发 BER_Suspended/BER_Resumed）。
-- **挂起/恢复事件流与代理配置解耦**：Suspend/ResumeByForbiddenTag 的事件循环按活跃行为表族匹配（含未配置代理的纯事实行为——互锁事件不依赖代理配置），命令循环按 BehaviorProxyConfigs；控制包目标=命令∪事件目标去重（跟随端纯事实行为也收事件重放；同 Tag 双包会致跟随端事件重放双发）。
+- **客户端调用 NetMulticast 会被引擎本地同步执行**（Actor.cpp GetFunctionCallspace 多播分支对客户端返回 Local）——组件内所有 RPC 发起点必须 ROLE_Authority 门控，否则与端内直发逻辑叠加造成事件双发（实例：MulticastControlBehavior 曾在预测端双发 BER_Interrupted/BER_Resumed）。
+- **中断/恢复事件流与代理配置解耦**：Interrupt/ResumeBehavior 的事件循环按活跃行为表族匹配（含未配置代理的纯事实行为——互锁事件不依赖代理配置），命令循环按 BehaviorProxyConfigs；控制包目标=命令∪事件目标去重（跟随端纯事实行为也收事件重放；同 Tag 双包会致跟随端事件重放双发）。
 - **PT_Skill 表现仅权威端本播**：技能经自身多播同步到达各端，跟随端经 MulticastStatePresentation 再本播会在自主端走预测+ServerPlaySkill 造成服务器二次播放（全端双份）；PT_Timeline/PT_Animation 保持各端本播。
-- **外部进入顶掉路径禁用解除延迟**：InternalEnterState 的 SM 顶掉分支与 ExecuteTransition 同型——退出 bDeferForbiddenRelease=true，新状态登记遮蔽后统一 ReleaseForbiddenBehaviors（共享禁用 Tag 无 Resume→Suspend 抖动）。
+- **外部进入顶掉路径门控解除延迟**：InternalEnterState 的 SM 顶掉分支与 ExecuteTransition 同型——退出 bDeferBehaviorRelease=true，新状态登记账本后统一 ReleaseBehaviorGates（共享禁用 Tag 无 Resume→Interrupt 抖动）。
 - 跟随端 SM CurrentNode 双路径镜像：多播跟随进入（HandleClientStateEnter）与 LateJoin 重建（RebuildStateFromState）均按条目 Tag 反查资产置节点，Exit 管线置空——与服务器 InternalEnterState/ExecuteTransition 置节点语义对齐（CurrentNode 在跟随端仅影响查询一致性，转移评估不跑）。
-- 广播多播收束点两组件各一处：BroadcastBehaviorEvent / BroadcastStateEvent 内按 ROLE_Authority 门转发，BER_Cleared/SER_Cleared 排除（EndPlay 销毁场景），Suspended/Resumed 由控制包通道负责（行为侧）。
+- 广播多播收束点两组件各一处：BroadcastBehaviorEvent / BroadcastStateEvent 内按 ROLE_Authority 门转发，BER_Cleared/SER_Cleared 排除（EndPlay 销毁场景），Interrupted/Resumed 由控制包通道负责（行为侧）。
 - 多播 _Implementation 一律首行 Authority 早退（服务器发起 Multicast 时 UE 会本地回环执行实现，早退同时兼作跟随处理器重入防护）。
 - SM 转移上下文 ServerTimeMs 使用服务器世界时间域（UBXFunctionLibrary::GetServerWorldTimeMilliseconds），与技能系统一致，勿用 World->GetTimeSeconds。
 
 ## 行为 Proxy 体系要点（P9，详见 StateBehaviorSystemDesign.md §13）
 - **UBXBehaviorAgent 已改名 UBXBehaviorProxy**（目录 BehaviorAgent/→BehaviorProxy/，UBXBADefault*→UBXProxyMove/Rotate/Jump/Landed，枚举 BAF_*→BPF_*）。双轴命令：EnableProxy/DisableProxy（权限轴，持有基层开关）+ Start/Stop（活动轴）+ UpdateProxy（bWantsProxyUpdate 时组件 Tick 转发）；权限/活动簿记（bEnabled/bStarted/bArmedResume 恢复重放武装）在基类，派生类只重写 Native/Script 槽位。BehaviorFunctions 默认值 341→5461（追加 Native/BP 启用·禁用·更新三对槽位）。
 - 组件配置 `BehaviorProxyConfigs: TMap<Tag, FBXBehaviorProxyConfig{ProxyClass, bEnabledByDefault}>`：常驻门控代理（Move/Rotate/Jump）默认启用；事件型（Attack 姿态/Landed）默认禁用、管线 Start 隐式启用（失败回退 Disable）、最后来源退出隐式禁用（InternalStart/Stop 尾部 RefreshProxyGates 归一化）。
-- **门控下推（CMC 不再反查行为组件）**：RefreshProxyGates 双禁用位差分命令——挂起位落盘（服务器遮蔽新覆盖逐代理 SetProxySuspendBit(true)/客户端控制包 MulticastControlBehavior 直控）、拒绝位求值即算 → 差分 → Proxy Enable/Disable → `CMC::SetBehaviorMoveBlocked/RotateBlocked/JumpBlocked`；CMC 四处（CalcVelocity 加速度清零/ComputeSlideVector/PhysicsRotation 停转向/CanAttemptJump）只读本地开关，事实上报方向（Start/Stop 上报）不变。
-- **客户端无遮蔽表**：挂起事实由控制包按代理粒度承载，无活跃条目的常驻门控同样生效（这是与 P5 时代的关键差异——控制包从"镜像条目停转"升格为"代理命令"）；CanStart 对默认启用代理含 ProxyDisabled 检查保证预测两端一致；LateJoin 挂起条目置位禁用代理，OnRep 兜底清理配对清挂起位（防镜像残留永久禁挡）。
+- **门控下推（CMC 不再反查行为组件）**：RefreshProxyGates 双禁用位差分命令——中断位落盘（服务器账本中断来源翻转逐代理 SetProxyInterruptBit(true)/客户端控制包 MulticastControlBehavior 直控）、禁止位求值即算 → 差分 → Proxy Enable/Disable → `CMC::SetBehaviorMoveBlocked/RotateBlocked/JumpBlocked`；CMC 四处（CalcVelocity 加速度清零/ComputeSlideVector/PhysicsRotation 停转向/CanAttemptJump）只读本地开关，事实上报方向（Start/Stop 上报）不变。
+- **客户端无账本 Suspend 镜像**：中断事实由控制包按代理粒度承载，无活跃条目的常驻门控同样生效（这是与 P5 时代的关键差异——控制包从"镜像条目停转"升格为"代理命令"）；CanStart 对默认启用代理含 ProxyDisabled 检查保证预测两端一致；LateJoin 中断条目置位禁用代理，OnRep 兜底清理配对清中断位（防镜像残留永久禁挡）。
 - 蓝图迁移：旧 BP Agent 父类需手动重定向到 UBXBehaviorProxy 派生类（类已改名，旧资产会加载报错）；组件 Details 面板 BehaviorAgentConfigs 数据随类型变更丢弃，需按新 FBXBehaviorProxyConfig 结构重新配置（bEnabledByDefault=Move/Rotate/Jump 三项）。
+
+## 统一禁用账本要点（v4.4，原保护机制/遮蔽表已退役）
+
+**术语契约**：**禁止（Forbid）**=挡启动的持续禁令（裁决层原子）；**中断（Interrupt）**=停运在跑实例+待恢复（执行层原子，**不挡启动**）；**接管（Expel）**=进入时踢掉（动作）；**禁用（Disable）**=禁止∨中断总称。**设计原则：账本只记原子，高级需求全部显式组合**。
+
+- 原子操作两对：`ForbidBehavior/UnforbidBehavior`（禁止：账本登记 BDK_Forbid，零管线副作用）、`InterruptBehavior/ResumeBehavior`（中断：停运在跑+武装恢复重放+账本登记 BDK_Interrupt，带管线）。原 `SuspendByForbiddenTag/ResumeByForbiddenTag/SuspendMasks` 已删除。
+- **组合表**：硬直=中断∧禁止（同源同 Sign）；打断不锁=仅中断；聚气只锁=仅禁止；矩阵禁止贡献=Forbid 的自动组合（在位方生死经 `RefreshForbidSources` 代为登记/注销）；接管=对在位者执行 Stop（事实表生命周期，非账本概念）。
+- **三条原子交互协议**：① 启动覆盖中断——同域显式启动成功即清除该域全部 BDK_Interrupt 条目与代理武装（新事实覆盖旧恢复；`UBXBehaviorProxy::StartBehavior` 顶部清 `bArmedResume`）；② 禁止挡启动——CanStart 裁决只看 `EvaluateBehaviorDisable().bForbidden`，中断不参与；③ 常驻门控轴（Move/Rotate/Jump）的禁止经门控位立即生效（刹车），事件型行为的禁止只挡启动。
+- **记账收束（九记账点，缺一即鬼影）**：Forbid 贡献=条目生死四入口（InternalStart bNewEntry/InternalStop/多播跟随进入/LateJoin 重建/OnRep 兜底清理，统一走 `RefreshForbidSources(在位Tag)`：先注销旧贡献再按"在位∧未豁免"沿列索引 `ForbidDomainsBySource` 重推导）+ 豁免翻转刷新 + 动态 `ForbidBehavior/UnforbidBehavior`（Sign 配对，`UnforbidBySign` 收束）；Interrupt=显式 API 配对 + 启动覆盖清除。
+- **豁免写入期折算**：`BehaviorWaivers` 只被 `RefreshForbidSources` 消费（被豁免的在位方不贡献禁止条目），读路径零豁免依赖——账本命中即被禁；豁免只作用于禁止原子，不作用于中断；翻转时刷新匹配域的全部活跃在位方（收束点⑥）。
+- 状态配置面两列表：SM 节点/裸状态 `InterruptBehaviors`（停运在跑）+ `ForbidBehaviors`（挡启动），**原子显式组合**（硬直两列都配，"打断不锁"只配中断，"聚气只锁"只配禁止）；状态组件 `ApplyBehaviorGates/ReleaseBehaviorGates` 内部组合两原子，重入保护内置。
+- 矩阵单元格=两开关组合（禁止/接管），**空单元格=天然共存不落数据**；静态表后处理双索引（`RelationRowIndex` 行索引清场求值 + `ForbidDomainsBySource` 列索引贡献计算，`RebuildRelationIndex` 在启动/ini 重载/编辑器变更后重建）——ini 运行期只读，索引物化零漂移。
+- 更名清单：`SuspendByForbiddenTag→InterruptBehavior`、`ResumeByForbiddenTag→ResumeBehavior`、`IsBehaviorSuspended→IsBehaviorInterrupted`、`CheckForbiddenBehavior→IsBehaviorDisabled`、`InterruptBehaviorsConflicting→ExpelConflictingBehaviors`、`bSuspendBit→bInterruptBit`、`BR_Reject→BR_Forbid`/`BR_ExpelReject→BR_ForbidExpel`、`BER_Suspended→BER_Interrupted`、`BX_SYNC_FLAG_BEHAVIOR_SUSPENDED→BX_SYNC_FLAG_BEHAVIOR_INTERRUPTED`、`IsRejectedByAny/FindRejectingBehaviors/EvaluateRejectRelations` 删除（被 `EvaluateBehaviorDisable` 取代）。
+- 技能侧：`bWaiveOnCancelWindow` 语义不变；互锁监听 Reason 为 `BER_Expelled/BER_Interrupted`；技能开始不登记任何禁用（禁止由矩阵承担）。
 
 ## 工程经验
 - 事件系统（BXEventManager）使用 TSet 替代 TArray 存储 GlobalTargetMap/SingleKeyMap/SingleTargetMap，提升注册/注销性能。

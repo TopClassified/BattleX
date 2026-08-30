@@ -86,9 +86,13 @@ public:
 	UPROPERTY(EditDefaultsOnly)
 	float Duration = -1.0f;
 
-	// 存续期禁用的行为(Tag层级)
+	// 存续期中断的行为(停运在跑,不挡启动;Tag层级)
 	UPROPERTY(EditDefaultsOnly)
-	FGameplayTagContainer ForbiddenBehaviors;
+	FGameplayTagContainer InterruptBehaviors;
+
+	// 存续期禁止的行为(挡启动;Tag层级)
+	UPROPERTY(EditDefaultsOnly)
+	FGameplayTagContainer ForbidBehaviors;
 
 #if WITH_EDITOR
 public:

@@ -158,9 +158,10 @@ FReply FBXBehaviorSettingsCustomization::OnCellClicked(int32 InRowIndex, int32 I
 		return FReply::Unhandled();
 	}
 
-	// 三态循环:并存→挤出→拒绝→并存
+	// 四态循环:空(天然共存)→接管→禁止→禁止+接管→空
+	// ("并存"不是一种关系,是关系的缺席=空单元格;禁止+接管=两张表同格配置,取消窗口标准配法)
 	const uint8 Current = GetCellRelation(InRowIndex, InColumnIndex);
-	const uint8 Next = (Current + 1) % 3;
+	const uint8 Next = (Current + 1) % 4;
 
 	// 清除旧关系
 	if (FGameplayTagContainer* Container = Settings->ExpelRelations.Find(RowTag))
@@ -180,18 +181,19 @@ FReply FBXBehaviorSettingsCustomization::OnCellClicked(int32 InRowIndex, int32 I
 		}
 	}
 
-	// 写入新关系
-	if (Next == 1)
+	// 写入新关系(禁止与接管两轴独立,可同格并存)
+	if (Next == 1 || Next == 3)
 	{
 		Settings->ExpelRelations.FindOrAdd(RowTag).AddTag(ColTag);
 	}
-	else if (Next == 2)
+	if (Next == 2 || Next == 3)
 	{
 		Settings->RejectRelations.FindOrAdd(RowTag).AddTag(ColTag);
 	}
 
-	// 标记配置脏(保存到ini)
+	// 标记配置脏(保存到ini)并重建后处理索引(运行时查询走索引)
 	Settings->SaveConfig();
+	Settings->RebuildRelationIndex();
 
 	return FReply::Handled();
 }
@@ -212,11 +214,14 @@ uint8 FBXBehaviorSettingsCustomization::GetCellRelation(int32 InRowIndex, int32 
 	const FGameplayTag& RowTag = Settings->RelationTags[InRowIndex];
 	const FGameplayTag& ColTag = Settings->RelationTags[InColumnIndex];
 
+	// 两轴独立读取,同格配置返回禁止+接管
+	uint8 Relation = 0;
+
 	if (const FGameplayTagContainer* Container = Settings->ExpelRelations.Find(RowTag))
 	{
 		if (Container->HasTagExact(ColTag))
 		{
-			return 1;
+			Relation |= 1;
 		}
 	}
 
@@ -224,11 +229,11 @@ uint8 FBXBehaviorSettingsCustomization::GetCellRelation(int32 InRowIndex, int32 
 	{
 		if (Container->HasTagExact(ColTag))
 		{
-			return 2;
+			Relation |= 2;
 		}
 	}
 
-	return 0;
+	return Relation;
 }
 
 FText FBXBehaviorSettingsCustomization::GetCellText(int32 InRowIndex, int32 InColumnIndex) const
@@ -242,11 +247,13 @@ FText FBXBehaviorSettingsCustomization::GetCellText(int32 InRowIndex, int32 InCo
 	switch (Relation)
 	{
 	case 1:
-		return LOCTEXT("Expel", "挤出");
+		return LOCTEXT("Expel", "接管");
 	case 2:
-		return LOCTEXT("Reject", "拒绝");
+		return LOCTEXT("Forbid", "禁止");
+	case 3:
+		return LOCTEXT("ForbidExpel", "禁止+接管");
 	default:
-		return LOCTEXT("Coexist", "并存");
+		return LOCTEXT("Empty", "空");
 	}
 }
 

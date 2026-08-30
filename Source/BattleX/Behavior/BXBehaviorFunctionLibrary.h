@@ -22,13 +22,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Behavior")
 	static bool CheckActiveBehavior(AActor* InTarget, const FGameplayTag& InBehaviorTag);
 
-	// 查询目标行为是否被禁止(挂起中/被拒关系挡住)
+	// 查询目标行为是否被禁用(禁止命中,挡启动;中断不参与)
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Behavior")
-	static bool CheckForbiddenBehavior(AActor* InTarget, const FGameplayTag& InBehaviorTag);
+	static bool IsBehaviorDisabled(AActor* InTarget, const FGameplayTag& InBehaviorTag);
 
-	// 查询目标行为是否受取消窗口保护
+	// 行为能否开始(聚合判定:挂起/代理权限/拒绝关系(豁免感知)/代理检查)
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Behavior")
-	static bool IsBehaviorProtected(AActor* InTarget, const FGameplayTag& InBehaviorTag);
+	static bool CanStartBehavior(AActor* InTarget, const FGameplayTag& InBehaviorTag);
+
+	// 查询目标行为是否处于豁免中(生效期间因其在位而命中的拒绝关系暂不执行)
+	UFUNCTION(BlueprintCallable, Category = "BattleX|Behavior")
+	static bool IsBehaviorWaived(AActor* InTarget, const FGameplayTag& InBehaviorTag);
 
 	// 开始行为(Sign默认0系统常驻)
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Behavior")

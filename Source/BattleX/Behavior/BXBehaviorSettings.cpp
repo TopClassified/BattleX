@@ -4,6 +4,52 @@
 
 
 
+UBXBehaviorSettings::UBXBehaviorSettings()
+{
+}
+
+void UBXBehaviorSettings::PostInitProperties()
+{
+	Super::PostInitProperties();
+
+	// 配置加载完成后重建后处理索引
+	RebuildRelationIndex();
+}
+
+void UBXBehaviorSettings::PostReloadConfig(class FProperty* PropertyThatWasLoaded)
+{
+	Super::PostReloadConfig(PropertyThatWasLoaded);
+
+	RebuildRelationIndex();
+}
+
+void UBXBehaviorSettings::RebuildRelationIndex()
+{
+	RelationRowIndex.Reset();
+	ForbidDomainsBySource.Reset();
+
+	// 行索引:两表按行键合并(同格配置=禁止+接管,各管一段互不遮蔽)
+	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : ExpelRelations)
+	{
+		FBXBehaviorRelationRow& Row = RelationRowIndex.FindOrAdd(Pair.Key);
+		Row.ExpelColumns.AppendTags(Pair.Value);
+	}
+	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : RejectRelations)
+	{
+		FBXBehaviorRelationRow& Row = RelationRowIndex.FindOrAdd(Pair.Key);
+		Row.ForbidColumns.AppendTags(Pair.Value);
+	}
+
+	// 列索引:反排禁止列(来源 → 它禁止的域集合;接管是动作不贡献账本,不入索引)
+	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : RejectRelations)
+	{
+		for (int32 i = 0; i < Pair.Value.Num(); ++i)
+		{
+			ForbidDomainsBySource.FindOrAdd(Pair.Value.GetByIndex(i)).AddTag(Pair.Key);
+		}
+	}
+}
+
 EBXBehaviorRelation UBXBehaviorSettings::GetRelation(const FGameplayTag& InEntering, const FGameplayTag& InExisting) const
 {
 	if (InEntering == InExisting || !InEntering.IsValid() || !InExisting.IsValid())
@@ -23,97 +69,72 @@ void UBXBehaviorSettings::GetExpelTargets(const FGameplayTag& InEntering, TArray
 		return;
 	}
 
-	if (const FGameplayTagContainer* Container = ExpelRelations.Find(InEntering))
+	// 沿父链查行索引(精确键命中穷尽 MatchesTag 的全部行),收集接管列
+	FGameplayTag Cursor = InEntering;
+	while (Cursor.IsValid())
 	{
-		for (int32 i = 0; i < Container->Num(); ++i)
+		if (const FBXBehaviorRelationRow* Row = RelationRowIndex.Find(Cursor))
 		{
-			OutTags.Add(Container->GetByIndex(i));
-		}
-	}
-
-	// 族Tag自身可作关系键(如注册BXBehavior.Locomotion行为族)
-	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : ExpelRelations)
-	{
-		if (InEntering.MatchesTag(Pair.Key))
-		{
-			for (int32 i = 0; i < Pair.Value.Num(); ++i)
+			for (int32 i = 0; i < Row->ExpelColumns.Num(); ++i)
 			{
-				OutTags.AddUnique(Pair.Value.GetByIndex(i));
+				OutTags.AddUnique(Row->ExpelColumns.GetByIndex(i));
 			}
 		}
-	}
-}
 
-bool UBXBehaviorSettings::IsRejectedByAny(const FGameplayTag& InEntering, const FGameplayTagContainer& InActiveBehaviors) const
-{
-	if (!InEntering.IsValid() || InActiveBehaviors.IsEmpty())
-	{
-		return false;
+		Cursor = Cursor.RequestDirectParent();
 	}
-
-	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : RejectRelations)
-	{
-		// 行Tag匹配:精确命中或进入行为是行Tag的族成员
-		if (InEntering.MatchesTag(Pair.Key))
-		{
-			// 列存在检查:活跃集合中任一行为命中列Tag(列方向同样支持族匹配)
-			for (int32 i = 0; i < Pair.Value.Num(); ++i)
-			{
-				const FGameplayTag& RejectTag = Pair.Value.GetByIndex(i);
-				for (int32 j = 0; j < InActiveBehaviors.Num(); ++j)
-				{
-					if (InActiveBehaviors.GetByIndex(j).MatchesTag(RejectTag))
-					{
-						return true;
-					}
-				}
-			}
-		}
-	}
-
-	return false;
 }
 
 EBXBehaviorRelation UBXBehaviorSettings::FindRelation(const FGameplayTag& InEntering, const FGameplayTag& InExisting) const
 {
-	// 挤出优先(同一对配置了挤出与拒绝时,挤出语义更具体)
-	if (ExpelRelations.Contains(InEntering))
+	// 两轴独立求值后合并(同格配置时返回禁止+接管,拒绝与挤出各管一段互不遮蔽)
+	bool bExpel = false;
+	bool bForbid = false;
+
+	if (const FGameplayTagContainer* Container = ExpelRelations.Find(InEntering))
 	{
-		if (const FGameplayTagContainer* Container = ExpelRelations.Find(InEntering))
+		if (InExisting.MatchesAny(*Container))
 		{
-			if (InExisting.MatchesAny(*Container))
-			{
-				return EBXBehaviorRelation::BR_Expel;
-			}
+			bExpel = true;
 		}
 	}
 
-	if (RejectRelations.Contains(InEntering))
+	if (const FGameplayTagContainer* Container = RejectRelations.Find(InEntering))
 	{
-		if (const FGameplayTagContainer* Container = RejectRelations.Find(InEntering))
+		if (InExisting.MatchesAny(*Container))
 		{
-			if (InExisting.MatchesAny(*Container))
-			{
-				return EBXBehaviorRelation::BR_Reject;
-			}
+			bForbid = true;
 		}
 	}
 
 	// 族Tag方向匹配:行Tag为族,进入行为为其子Tag时继承关系
 	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : ExpelRelations)
 	{
-		if (InEntering.MatchesTag(Pair.Key) && InExisting.MatchesAny(Pair.Value))
+		if (!bExpel && InEntering.MatchesTag(Pair.Key) && InExisting.MatchesAny(Pair.Value))
 		{
-			return EBXBehaviorRelation::BR_Expel;
+			bExpel = true;
 		}
 	}
 
 	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : RejectRelations)
 	{
-		if (InEntering.MatchesTag(Pair.Key) && InExisting.MatchesAny(Pair.Value))
+		if (!bForbid && InEntering.MatchesTag(Pair.Key) && InExisting.MatchesAny(Pair.Value))
 		{
-			return EBXBehaviorRelation::BR_Reject;
+			bForbid = true;
 		}
+	}
+
+	if (bExpel && bForbid)
+	{
+		return EBXBehaviorRelation::BR_ForbidExpel;
+	}
+	if (bExpel)
+	{
+		return EBXBehaviorRelation::BR_Expel;
+	}
+	if (bForbid)
+	{
+		return EBXBehaviorRelation::BR_Forbid;
 	}
 
 	return EBXBehaviorRelation::BR_None;

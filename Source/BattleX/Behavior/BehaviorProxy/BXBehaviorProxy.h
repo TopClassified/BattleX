@@ -38,7 +38,7 @@ ENUM_CLASS_FLAGS(EBXBehaviorProxyFunction);
 
 // 行为代理(一个行为域的总代理,组件是唯一命令源,代理不自治不持有禁用来源逻辑)
 // 双轴命令:Enable/Disable为权限轴(持有基层开关,如移动组件的Blocked布尔),Start/Stop为活动轴(事实上报/技能姿态)
-// 权限/活动状态机(bEnabled/bStarted/恢复重放武装)由基类统一簿记,派生类只重写Native/Script执行槽位
+// 权限/活动状态机(bEnabled/bStarted)由基类统一簿记,派生类只重写Native/Script执行槽位
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class BATTLEX_API UBXBehaviorProxy : public UObject
 {
@@ -64,7 +64,7 @@ public:
 	// 是否需要帧更新(bWantsProxyUpdate且已启用时组件Tick才转发UpdateProxy)
 	UFUNCTION(BlueprintCallable)
 	bool WantsProxyUpdate() const { return bWantsProxyUpdate; }
-	
+
 	// 初始化
 	UFUNCTION(BlueprintCallable)
 	bool Initialize();
@@ -79,14 +79,14 @@ public:
 	UFUNCTION(BlueprintImplementableEvent)
 	bool ScriptDeinitialize();
 
-	// 启用代理(权限轴;禁用期间被收停的按快照参数自动重放Start)
+	// 启用代理(权限轴;基类/子类Enable槽位)
 	UFUNCTION(BlueprintCallable)
 	bool EnableProxy();
 	virtual bool NativeEnableProxy();
 	UFUNCTION(BlueprintImplementableEvent)
 	bool ScriptEnableProxy();
 
-	// 禁用代理(权限轴;活动中先收停并武装恢复重放)
+	// 禁用代理(权限轴;基类/子类Disable槽位;不触碰活动轴)
 	UFUNCTION(BlueprintCallable)
 	bool DisableProxy();
 	virtual bool NativeDisableProxy();
@@ -100,7 +100,7 @@ public:
 	UFUNCTION(BlueprintImplementableEvent)
 	bool ScriptStartBehavior(const FInstancedStruct& InParameter);
 	
-	// 停止行为(活动轴)
+	// 停止行为(活动轴;真停语义,置bStarted=false)
 	UFUNCTION(BlueprintCallable)
 	bool StopBehavior(const FInstancedStruct& InParameter);
 	virtual bool NativeStopBehavior(const FInstancedStruct& InParameter);
@@ -120,6 +120,13 @@ public:
 	UFUNCTION(BlueprintImplementableEvent)
 	bool ScriptCheckStartBehavior(const FInstancedStruct& InParameter);
 
+protected:
+	// 执行开始(位掩码分发;公开包装做簿记后调用)
+	bool ExecuteStartBehavior(const FInstancedStruct& InParameter);
+
+	// 执行停止(位掩码分发;公开包装与禁用收停共用)
+	bool ExecuteStopBehavior(const FInstancedStruct& InParameter);
+
 public:
 	// 要执行的函数(位组合,默认=C++五件套+启用/禁用)
 	UPROPERTY(EditDefaultsOnly, Meta = (Bitmask, BitmaskEnum = "/Script/BattleX.EBXBehaviorProxyFunction"))
@@ -130,7 +137,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Proxy")
 	bool bWantsProxyUpdate = false;
 
-protected:
 	// 唯一ID
 	UPROPERTY(Transient, BlueprintReadOnly)
 	int64 UniqueKey = 0;
@@ -141,17 +147,7 @@ protected:
 	// 活动轴:已开始
 	bool bStarted = false;
 
-	// 恢复重放武装(禁用时活动中被收停,启用时按LastStartParameter重放Start)
-	bool bArmedResume = false;
-
-	// 最近一次启动参数(恢复重放用)
+	// 最近一次启动参数(StartBehavior记录)
 	FInstancedStruct LastStartParameter;
-
-protected:
-	// 执行开始(位掩码分发;公开包装做簿记后调用)
-	bool ExecuteStartBehavior(const FInstancedStruct& InParameter);
-
-	// 执行停止(位掩码分发;公开包装与禁用收停共用)
-	bool ExecuteStopBehavior(const FInstancedStruct& InParameter);
 	
 };

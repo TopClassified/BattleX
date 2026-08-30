@@ -136,7 +136,7 @@ void UBXStateComponent::BeginPlay()
 
 void UBXStateComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	// 清空全部活跃状态(直摘表广播Exit,禁用解除交由行为组件EndPlay清空遮蔽表)
+	// 清空全部活跃状态(直摘表广播Exit,禁用解除交由行为组件EndPlay清空账本)
 	{
 		TArray<FGameplayTag> ActiveTags;
 		CollectActiveStateTags(ActiveTags);
@@ -214,7 +214,7 @@ float UBXStateComponent::GetStateRemainingSeconds(const FGameplayTag& InStateTag
 	return -1.0f;
 }
 
-bool UBXStateComponent::IsBehaviorForbiddenByState(const FGameplayTag& InStateTag, const FGameplayTag& InBehaviorTag) const
+bool UBXStateComponent::DoesStateDisableBehavior(const FGameplayTag& InStateTag, const FGameplayTag& InBehaviorTag) const
 {
 	// 状态不活跃→不禁用
 	if (!CheckStateActive(InStateTag))
@@ -230,7 +230,7 @@ bool UBXStateComponent::IsBehaviorForbiddenByState(const FGameplayTag& InStateTa
 		{
 			if (const UBXSMStateNode* Node = Instance->Asset->FindStateNode(InStateTag))
 			{
-				return Node->ForbiddenBehaviors.HasTag(InBehaviorTag);
+				return Node->InterruptBehaviors.HasTag(InBehaviorTag) || Node->ForbidBehaviors.HasTag(InBehaviorTag);
 			}
 		}
 	}
@@ -238,7 +238,7 @@ bool UBXStateComponent::IsBehaviorForbiddenByState(const FGameplayTag& InStateTa
 	// 裸状态查配置
 	if (const FBXStateConfig* Config = StateConfigs.Find(InStateTag))
 	{
-		return Config->ForbiddenBehaviors.HasTag(InBehaviorTag);
+		return Config->InterruptBehaviors.HasTag(InBehaviorTag) || Config->ForbidBehaviors.HasTag(InBehaviorTag);
 	}
 
 	return false;
@@ -270,7 +270,7 @@ bool UBXStateComponent::ExitStateAllSources(const FGameplayTag& InStateTag, EBXS
 	return ExitStateAllSourcesInternal(InStateTag, InReason, bSuppressPresentation, false);
 }
 
-bool UBXStateComponent::ExitStateAllSourcesInternal(const FGameplayTag& InStateTag, EBXStateEndReason InReason, bool bSuppressPresentation, bool bDeferForbiddenRelease)
+bool UBXStateComponent::ExitStateAllSourcesInternal(const FGameplayTag& InStateTag, EBXStateEndReason InReason, bool bSuppressPresentation, bool bDeferBehaviorRelease)
 {
 	const FBXStateRuntimeData* FindResult = ActiveStates.Find(InStateTag);
 	if (!FindResult)
@@ -282,7 +282,7 @@ bool UBXStateComponent::ExitStateAllSourcesInternal(const FGameplayTag& InStateT
 	TArray<FBXStateSource> Sources = FindResult->Sources;
 	for (const FBXStateSource& Source : Sources)
 	{
-		if (!InternalExitState(InStateTag, Source.Sign, InReason, bSuppressPresentation, bDeferForbiddenRelease))
+		if (!InternalExitState(InStateTag, Source.Sign, InReason, bSuppressPresentation, bDeferBehaviorRelease))
 		{
 			UE_LOG(BXSTATE, Verbose, TEXT("UBXStateComponent::ExitStateAllSources: source already removed. Tag=%s Sign=%lld"), *InStateTag.ToString(), Source.Sign);
 		}
@@ -530,26 +530,30 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 		return false;
 	}
 
-	// 解析时长与禁用列表(规则二:外部携带时长优先,≤0用节点/配置默认;禁用列表始终查静态配置)
+	// 解析时长与门控列表(规则二:外部携带时长优先,≤0用节点/配置默认;门控列表始终查静态配置)
 	float ResolvedDuration = InDuration;
-	FGameplayTagContainer ForbiddenBehaviors;
+	FGameplayTagContainer InterruptBehaviors;
+	FGameplayTagContainer ForbidBehaviors;
 	{
 		float DefaultDuration = -1.0f;
-		FGameplayTagContainer DefaultForbidden;
-		if (GetStateDurationAndForbidden(InStateTag, DefaultDuration, DefaultForbidden))
+		FGameplayTagContainer DefaultInterrupt;
+		FGameplayTagContainer DefaultForbid;
+		if (GetStateBehaviorConfig(InStateTag, DefaultDuration, DefaultInterrupt, DefaultForbid))
 		{
 			if (InDuration <= 0.0f)
 			{
 				ResolvedDuration = DefaultDuration;
 			}
-			ForbiddenBehaviors = MoveTemp(DefaultForbidden);
+			InterruptBehaviors = MoveTemp(DefaultInterrupt);
+			ForbidBehaviors = MoveTemp(DefaultForbid);
 		}
 	}
 
 	// 族内单活:外部进入顶掉当前节点(规则一)
 	UBXStateMachineInstance* Machine = FindMachineByStateTag(InStateTag);
 	FGameplayTag DisplacedStateTag;
-	FGameplayTagContainer DisplacedForbidden;
+	FGameplayTagContainer DisplacedInterrupt;
+	FGameplayTagContainer DisplacedForbid;
 	if (Machine)
 	{
 		UBXSMStateNode* TargetNode = Machine->Asset ? Machine->Asset->FindStateNode(InStateTag) : nullptr;
@@ -568,7 +572,8 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 			{
 				if (const UBXSMStateNode* OldNode = Machine->Asset->FindStateNode(DisplacedStateTag))
 				{
-					DisplacedForbidden = OldNode->ForbiddenBehaviors;
+					DisplacedInterrupt = OldNode->InterruptBehaviors;
+					DisplacedForbid = OldNode->ForbidBehaviors;
 				}
 			}
 
@@ -579,7 +584,7 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 			}
 			for (const FBXStateSource& Source : Sources)
 			{
-				// 禁用解除延迟:待新状态登记遮蔽后统一解除(同ExecuteTransition,共享禁用Tag无Resume→Suspend抖动)
+				// 门控解除延迟:待新状态登记账本后统一解除(同ExecuteTransition,共享禁用Tag无Resume→Interrupt抖动)
 				InternalExitState(DisplacedStateTag, Source.Sign, InExternalReason, false, true);
 			}
 		}
@@ -605,7 +610,7 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 	// 条目从无到有才执行门控/表现/事件
 	if (bNewEntry)
 	{
-		ApplyForbiddenBehaviors(ForbiddenBehaviors, InStateTag);
+		ApplyBehaviorGates(InterruptBehaviors, ForbidBehaviors, InStateTag);
 
 		// 族内进入表现由ExecuteTransition按转移边统一触发,此处仅裸状态触发配置的进入表现
 		if (!Machine)
@@ -619,17 +624,17 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 		BroadcastStateEvent(true, InStateTag, InSign, ResolvedDuration, EBXStateEndReason::SER_TMax);
 	}
 
-	// 被顶掉旧状态的禁用解除(新状态已登记:共享禁用Tag经遮蔽ByStates多重登记保持挂起,独占Tag解除恢复;
-	// 事件监听者重入旧状态时ReleaseForbiddenBehaviors内含重入保护,登记不被误清)
+	// 被顶掉旧状态的门控解除(新状态已登记:共享禁用Tag经账本多来源登记保持中断,独占Tag解除恢复;
+	// 事件监听者重入旧状态时ReleaseBehaviorGates内含重入保护,登记不被误清)
 	if (DisplacedStateTag.IsValid())
 	{
-		ReleaseForbiddenBehaviors(DisplacedForbidden, DisplacedStateTag);
+		ReleaseBehaviorGates(DisplacedForbid, DisplacedStateTag);
 	}
 
 	return true;
 }
 
-bool UBXStateComponent::InternalExitState(const FGameplayTag& InStateTag, int64 InSign, EBXStateEndReason InReason, bool bSuppressPresentation, bool bDeferForbiddenRelease)
+bool UBXStateComponent::InternalExitState(const FGameplayTag& InStateTag, int64 InSign, EBXStateEndReason InReason, bool bSuppressPresentation, bool bDeferBehaviorRelease)
 {
 	FBXStateRuntimeData* Data = ActiveStates.Find(InStateTag);
 	if (!Data)
@@ -655,8 +660,9 @@ bool UBXStateComponent::InternalExitState(const FGameplayTag& InStateTag, int64 
 	// 移除条目
 	ActiveStates.Remove(InStateTag);
 
-	// 静态配置查询(表现与禁用解除共用)
-	FGameplayTagContainer ForbiddenBehaviors;
+	// 静态配置查询(表现与门控解除共用)
+	FGameplayTagContainer InterruptBehaviors;
+	FGameplayTagContainer ForbidBehaviors;
 	UBXStateMachineInstance* Machine = FindMachineByStateTag(InStateTag);
 	if (Machine)
 	{
@@ -664,7 +670,8 @@ bool UBXStateComponent::InternalExitState(const FGameplayTag& InStateTag, int64 
 		{
 			if (const UBXSMStateNode* Node = Machine->Asset->FindStateNode(InStateTag))
 			{
-				ForbiddenBehaviors = Node->ForbiddenBehaviors;
+				InterruptBehaviors = Node->InterruptBehaviors;
+				ForbidBehaviors = Node->ForbidBehaviors;
 			}
 		}
 
@@ -676,7 +683,8 @@ bool UBXStateComponent::InternalExitState(const FGameplayTag& InStateTag, int64 
 	}
 	else if (const FBXStateConfig* Config = StateConfigs.Find(InStateTag))
 	{
-		ForbiddenBehaviors = Config->ForbiddenBehaviors;
+		InterruptBehaviors = Config->InterruptBehaviors;
+		ForbidBehaviors = Config->ForbidBehaviors;
 	}
 
 	// 表现(预测回滚强制不触发;仅裸状态触发配置的退出表现)
@@ -688,10 +696,10 @@ bool UBXStateComponent::InternalExitState(const FGameplayTag& InStateTag, int64 
 		}
 	}
 
-	// 禁用解除判定→行为恢复(表现抑制时门控仍需解除;转移路径延迟到新状态登记后由调用方统一解除)
-	if (!bDeferForbiddenRelease)
+	// 门控解除判定→行为恢复(表现抑制时门控仍需解除;转移路径延迟到新状态登记后由调用方统一解除)
+	if (!bDeferBehaviorRelease)
 	{
-		ReleaseForbiddenBehaviors(ForbiddenBehaviors, InStateTag);
+		ReleaseBehaviorGates(ForbidBehaviors, InStateTag);
 	}
 
 	// 广播Exit(最后来源退出)
@@ -917,18 +925,19 @@ bool UBXStateComponent::ExecuteTransition(UBXStateMachineInstance* InMachine, UB
 		}
 	}
 
-	// 旧状态禁用集合快照(退出前收集:延迟解除用)
+	// 旧状态门控集合快照(退出前收集:延迟解除用)
 	const FGameplayTag CurrentTag = InMachine->CurrentNode->StateTag;
-	const FGameplayTagContainer OldForbidden = InMachine->CurrentNode->ForbiddenBehaviors;
+	const FGameplayTagContainer OldInterrupt = InMachine->CurrentNode->InterruptBehaviors;
+	const FGameplayTagContainer OldForbid = InMachine->CurrentNode->ForbidBehaviors;
 
-	// 退出当前(全部来源;抑制Exit表现;禁用解除延迟到新状态登记后:共享禁用Tag经遮蔽多重登记保持挂起,独占Tag解除恢复,消除Resume→Suspend抖动)
+	// 退出当前(全部来源;抑制Exit表现;门控解除延迟到新状态登记后:共享禁用Tag经账本多重登记保持中断,独占Tag解除恢复,消除Resume→Interrupt抖动)
 	ExitStateAllSourcesInternal(CurrentTag, InReason, true, true);
 
 	// 进入目标(节点默认时长,Sign=0状态机自身)
 	bool bResult = InternalEnterState(InTargetNode->StateTag, 0, InTargetNode->Duration, InReason);
 
-	// 解除旧状态禁用登记(新状态已登记:共享Tag的遮蔽仍持新状态登记不会被解除,行为不抖动;进入失败同样解除,禁用不残留)
-	ReleaseForbiddenBehaviors(OldForbidden, CurrentTag);
+	// 解除旧状态门控登记(新状态已登记:共享Tag的账本仍持新状态登记不会被解除,行为不抖动;进入失败同样解除,禁用不残留)
+	ReleaseBehaviorGates(OldForbid, CurrentTag);
 
 	// 转移表现(唯一入口=边上的TransitionPresentation,未配置则无表现)
 	if (bResult && TransitionEdge)
@@ -1037,31 +1046,35 @@ void UBXStateComponent::TriggerPresentation(const FBXStatePresentation& InPresen
 	}
 }
 
-void UBXStateComponent::ApplyForbiddenBehaviors(const FGameplayTagContainer& InForbiddenBehaviors, const FGameplayTag& InByState)
+void UBXStateComponent::ApplyBehaviorGates(const FGameplayTagContainer& InInterruptBehaviors, const FGameplayTagContainer& InForbidBehaviors, const FGameplayTag& InByState)
 {
-	if (InForbiddenBehaviors.IsEmpty())
+	if (InInterruptBehaviors.IsEmpty() && InForbidBehaviors.IsEmpty())
 	{
 		return;
 	}
 
 	if (UBXBehaviorComponent* BehaviorComp = GetOwner()->FindComponentByClass<UBXBehaviorComponent>())
 	{
-		for (int32 i = 0; i < InForbiddenBehaviors.Num(); ++i)
+		for (int32 i = 0; i < InInterruptBehaviors.Num(); ++i)
 		{
-			BehaviorComp->SuspendByForbiddenTag(InForbiddenBehaviors.GetByIndex(i), InByState);
+			BehaviorComp->InterruptBehavior(InInterruptBehaviors.GetByIndex(i));
+		}
+		for (int32 i = 0; i < InForbidBehaviors.Num(); ++i)
+		{
+			BehaviorComp->ForbidBehavior(InForbidBehaviors.GetByIndex(i), InByState, 0);
 		}
 	}
 }
 
-void UBXStateComponent::ReleaseForbiddenBehaviors(const FGameplayTagContainer& InForbiddenBehaviors, const FGameplayTag& InByState)
+void UBXStateComponent::ReleaseBehaviorGates(const FGameplayTagContainer& InForbidBehaviors, const FGameplayTag& InByState)
 {
-	if (InForbiddenBehaviors.IsEmpty())
+	if (InForbidBehaviors.IsEmpty())
 	{
 		return;
 	}
 
 	// 重入保护:解除窗口内状态被重新进入时登记仍有效,跳过解除
-	// 场景1(延迟解除):ExecuteTransition的Exit/Enter事件监听者同步EnterState重入旧状态(SuspendByForbiddenTag幂等追加ByStates),随后统一解除会误清活跃状态登记
+	// 场景1(延迟解除):ExecuteTransition的Exit/Enter事件监听者同步EnterState重入旧状态(InterruptBehavior幂等追加账本来源),随后统一解除会误清活跃状态登记
 	// 场景2(即时解除):InternalExitState的Exit表现触发技能EnterStates重入自身,表现后解除会误清新登记
 	if (ActiveStates.Contains(InByState))
 	{
@@ -1070,10 +1083,10 @@ void UBXStateComponent::ReleaseForbiddenBehaviors(const FGameplayTagContainer& I
 
 	if (UBXBehaviorComponent* BehaviorComp = GetOwner()->FindComponentByClass<UBXBehaviorComponent>())
 	{
-		for (int32 i = 0; i < InForbiddenBehaviors.Num(); ++i)
+		for (int32 i = 0; i < InForbidBehaviors.Num(); ++i)
 		{
-			// 遮蔽表按状态登记解除(最后一个禁用状态退出才恢复行为)
-			BehaviorComp->ResumeByForbiddenTag(InForbiddenBehaviors.GetByIndex(i), InByState);
+			// 账本按来源登记解除(最后一个禁用状态退出才解禁;中断是一次性动作无解除)
+			BehaviorComp->UnforbidBehavior(InForbidBehaviors.GetByIndex(i), InByState, 0);
 		}
 	}
 }
@@ -1127,7 +1140,7 @@ UBXStateMachineInstance* UBXStateComponent::FindMachineByStateTag(const FGamepla
 	return nullptr;
 }
 
-bool UBXStateComponent::GetStateDurationAndForbidden(const FGameplayTag& InStateTag, float& OutDuration, FGameplayTagContainer& OutForbidden) const
+bool UBXStateComponent::GetStateBehaviorConfig(const FGameplayTag& InStateTag, float& OutDuration, FGameplayTagContainer& OutInterrupt, FGameplayTagContainer& OutForbid) const
 {
 	// 族内节点(TObjectPtr值表:Find返回TObjectPtr指针,不可按裸指针二级指针接收)
 	if (const TObjectPtr<UBXStateMachineInstance>* FindResult = StateToMachineMap.Find(InStateTag))
@@ -1138,7 +1151,8 @@ bool UBXStateComponent::GetStateDurationAndForbidden(const FGameplayTag& InState
 			if (const UBXSMStateNode* Node = Instance->Asset->FindStateNode(InStateTag))
 			{
 				OutDuration = Node->Duration;
-				OutForbidden = Node->ForbiddenBehaviors;
+				OutInterrupt = Node->InterruptBehaviors;
+				OutForbid = Node->ForbidBehaviors;
 				return true;
 			}
 		}
@@ -1148,7 +1162,8 @@ bool UBXStateComponent::GetStateDurationAndForbidden(const FGameplayTag& InState
 	if (const FBXStateConfig* Config = StateConfigs.Find(InStateTag))
 	{
 		OutDuration = Config->Duration;
-		OutForbidden = Config->ForbiddenBehaviors;
+		OutInterrupt = Config->InterruptBehaviors;
+		OutForbid = Config->ForbidBehaviors;
 		return true;
 	}
 
