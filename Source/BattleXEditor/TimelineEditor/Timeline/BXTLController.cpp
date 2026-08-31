@@ -19,7 +19,7 @@
 #include "SOutlinerItem.h"
 #include "BXTLEditor.h"
 #include "BXTLEditorDelegates.h"
-#include "BXTLEditorSettings.h"
+#include "BattleXTimelineEditor.h"
 #include "BXTLTaskGroupTrack.h"
 #include "BXTLTaskTrackPanel.h"
 #include "BXTLExtraTrackPanel.h"
@@ -233,7 +233,7 @@ float FBXTLController::GetPlayLength() const
 
 double FBXTLController::GetFrameRate() const
 {
-	if (const UBXTLEditorSettings* Setting = GetDefault<UBXTLEditorSettings>())
+	if (const UBattleXTimelineEditor* Setting = GetDefault<UBattleXTimelineEditor>())
 	{
 		return Setting->PreviewTickRate;
 	}
@@ -893,7 +893,7 @@ void FBXTLController::InternalExportSelectedTaskTemplate()
 		return;
 	}
 
-	const UBXTLEditorSettings* Setting = GetDefault<UBXTLEditorSettings>();
+	const UBattleXTimelineEditor* Setting = GetDefault<UBattleXTimelineEditor>();
 	if (!Setting)
 	{
 		return;
@@ -971,7 +971,7 @@ void FBXTLController::ImportTaskTemplate(FName InTemplateName, int32 InGroupID)
 		return;
 	}
 
-	const UBXTLEditorSettings* Setting = GetDefault<UBXTLEditorSettings>();
+	const UBattleXTimelineEditor* Setting = GetDefault<UBattleXTimelineEditor>();
 	if (!Setting)
 	{
 		return;

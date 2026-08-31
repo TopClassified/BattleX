@@ -63,10 +63,6 @@ public:
 	// 来源列表(空代表不存在)
 	UPROPERTY(Transient, BlueprintReadOnly)
 	TArray<FBXBehaviorSource> Sources;
-
-	// 最近一次启动参数(挂起恢复时Agent回放;重启语义,重复Start覆盖)
-	UPROPERTY(Transient, BlueprintReadOnly)
-	FInstancedStruct LastStartParameter;
 };
 
 
@@ -95,6 +91,8 @@ public:
 	UPROPERTY(Transient, BlueprintReadOnly)
 	int64 Sign = 0;
 };
+
+
 
 // 行为开始检查结果
 USTRUCT(BlueprintType)

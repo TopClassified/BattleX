@@ -584,7 +584,7 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 			}
 			for (const FBXStateSource& Source : Sources)
 			{
-				// 门控解除延迟:待新状态登记账本后统一解除(同ExecuteTransition,共享禁用Tag无Resume→Interrupt抖动)
+				// 门控解除延迟:待新状态登记账本后统一解除(同ExecuteTransition,共享禁用Tag无解禁→再禁抖动)
 				InternalExitState(DisplacedStateTag, Source.Sign, InExternalReason, false, true);
 			}
 		}
@@ -624,7 +624,7 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 		BroadcastStateEvent(true, InStateTag, InSign, ResolvedDuration, EBXStateEndReason::SER_TMax);
 	}
 
-	// 被顶掉旧状态的门控解除(新状态已登记:共享禁用Tag经账本多来源登记保持中断,独占Tag解除恢复;
+	// 被顶掉旧状态的禁止解除(新状态已登记:共享禁用Tag经账本多来源登记保持禁止,独占Tag解除恢复;
 	// 事件监听者重入旧状态时ReleaseBehaviorGates内含重入保护,登记不被误清)
 	if (DisplacedStateTag.IsValid())
 	{
@@ -930,13 +930,13 @@ bool UBXStateComponent::ExecuteTransition(UBXStateMachineInstance* InMachine, UB
 	const FGameplayTagContainer OldInterrupt = InMachine->CurrentNode->InterruptBehaviors;
 	const FGameplayTagContainer OldForbid = InMachine->CurrentNode->ForbidBehaviors;
 
-	// 退出当前(全部来源;抑制Exit表现;门控解除延迟到新状态登记后:共享禁用Tag经账本多重登记保持中断,独占Tag解除恢复,消除Resume→Interrupt抖动)
+	// 退出当前(全部来源;抑制Exit表现;禁止解除延迟到新状态登记后:共享禁用Tag经账本多重登记保持,独占Tag解除,无解禁→再禁抖动)
 	ExitStateAllSourcesInternal(CurrentTag, InReason, true, true);
 
 	// 进入目标(节点默认时长,Sign=0状态机自身)
 	bool bResult = InternalEnterState(InTargetNode->StateTag, 0, InTargetNode->Duration, InReason);
 
-	// 解除旧状态门控登记(新状态已登记:共享Tag的账本仍持新状态登记不会被解除,行为不抖动;进入失败同样解除,禁用不残留)
+	// 解除旧状态禁止登记(新状态已登记:共享Tag的账本仍持新状态登记不会被解除,行为不抖动;进入失败同样解除,禁用不残留)
 	ReleaseBehaviorGates(OldForbid, CurrentTag);
 
 	// 转移表现(唯一入口=边上的TransitionPresentation,未配置则无表现)
@@ -1074,7 +1074,7 @@ void UBXStateComponent::ReleaseBehaviorGates(const FGameplayTagContainer& InForb
 	}
 
 	// 重入保护:解除窗口内状态被重新进入时登记仍有效,跳过解除
-	// 场景1(延迟解除):ExecuteTransition的Exit/Enter事件监听者同步EnterState重入旧状态(InterruptBehavior幂等追加账本来源),随后统一解除会误清活跃状态登记
+	// 场景1(延迟解除):ExecuteTransition的Exit/Enter事件监听者同步EnterState重入旧状态(ForbidBehavior幂等追加账本来源),随后统一解除会误清活跃状态登记
 	// 场景2(即时解除):InternalExitState的Exit表现触发技能EnterStates重入自身,表现后解除会误清新登记
 	if (ActiveStates.Contains(InByState))
 	{
@@ -1369,7 +1369,7 @@ void UBXStateComponent::HandleClientStateExit(const FGameplayTag& InStateTag, in
 void UBXStateComponent::RebuildStateFromState(const FBXStateReplicatedState& InState)
 {
 	// Late Join静默重建(仅事实表+SM CurrentNode反查恢复;不发事件不触表现不动门控——
-	// 行为快照侧bSuspended标志已编码挂起终态,与技能侧RebuildSkillFromProjection一致)
+	// 行为快照侧STOPPED标志已编码停运终态,与技能侧RebuildSkillFromProjection一致)
 	if (ActiveStates.Contains(InState.StateTag))
 	{
 		return;

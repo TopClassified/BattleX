@@ -8,6 +8,42 @@ UBXBehaviorSettings::UBXBehaviorSettings()
 {
 }
 
+// Project Settings 页面定位:项目设置 → 插件 → BattleXBehaviorRelations
+// (引擎SettingsEditor自动发现UDeveloperSettings CDO并按这组虚函数注册;手动再注册会同位置双页面)
+FName UBXBehaviorSettings::GetContainerName() const
+{
+	static const FName ProjectName("Project");
+	return ProjectName;
+}
+
+FName UBXBehaviorSettings::GetCategoryName() const
+{
+	static const FName PluginsName("Plugins");
+	return PluginsName;
+}
+
+FName UBXBehaviorSettings::GetSectionName() const
+{
+	static const FName RelationsSectionName("BattleXBehaviorRelations");
+	return RelationsSectionName;
+}
+
+#if WITH_EDITOR
+FText UBXBehaviorSettings::GetSectionText() const
+{
+#define LOCTEXT_NAMESPACE "BXBehaviorSettings"
+	return LOCTEXT("SectionText", "BattleXBehaviorRelations");
+#undef LOCTEXT_NAMESPACE
+}
+
+FText UBXBehaviorSettings::GetSectionDescription() const
+{
+#define LOCTEXT_NAMESPACE "BXBehaviorSettings"
+	return LOCTEXT("SectionDesc", "行为矩阵:行为域之间的禁止/接管关系配置(轴经页面内按钮添加)");
+#undef LOCTEXT_NAMESPACE
+}
+#endif
+
 void UBXBehaviorSettings::PostInitProperties()
 {
 	Super::PostInitProperties();

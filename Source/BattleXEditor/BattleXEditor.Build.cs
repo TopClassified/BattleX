@@ -36,6 +36,7 @@ public class BattleXEditor : ModuleRules
                 "BattleX/DecisionTree",
                 "BattleX/Skill",
                 "BattleX/Net",
+                "BattleX/Projectile",
 
                 "BattleXEditor",
                 "BattleXEditor/CustomLayout",
@@ -43,6 +44,7 @@ public class BattleXEditor : ModuleRules
                 "BattleXEditor/TimelineBase",
                 "BattleXEditor/TimelineEditor",
                 "BattleXEditor/DecisionTreeEditor",
+                "BattleXEditor/Projectile",
             }
 		);
 			
@@ -87,6 +89,7 @@ public class BattleXEditor : ModuleRules
                 "SequencerWidgets",
 
                 "GameplayTags",
+                "GameplayTagsEditor",
 
                 "BattleX",
 			}

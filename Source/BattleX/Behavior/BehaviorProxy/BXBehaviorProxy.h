@@ -100,12 +100,12 @@ public:
 	UFUNCTION(BlueprintImplementableEvent)
 	bool ScriptStartBehavior(const FInstancedStruct& InParameter);
 	
-	// 停止行为(活动轴;真停语义,置bStarted=false)
+	// 停止行为(活动轴;真停语义,置bStarted=false;无参——停止参数通道已随v4.5中断语义退役)
 	UFUNCTION(BlueprintCallable)
-	bool StopBehavior(const FInstancedStruct& InParameter);
-	virtual bool NativeStopBehavior(const FInstancedStruct& InParameter);
+	bool StopBehavior();
+	virtual bool NativeStopBehavior();
 	UFUNCTION(BlueprintImplementableEvent)
-	bool ScriptStopBehavior(const FInstancedStruct& InParameter);
+	bool ScriptStopBehavior();
 
 	// 帧更新(组件Tick转发;bWantsProxyUpdate且已启用时执行)
 	bool UpdateProxy(float InDeltaTime);
@@ -125,7 +125,7 @@ protected:
 	bool ExecuteStartBehavior(const FInstancedStruct& InParameter);
 
 	// 执行停止(位掩码分发;公开包装与禁用收停共用)
-	bool ExecuteStopBehavior(const FInstancedStruct& InParameter);
+	bool ExecuteStopBehavior();
 
 public:
 	// 要执行的函数(位组合,默认=C++五件套+启用/禁用)

@@ -14,6 +14,7 @@
 
 #include "BXTLAssetTypeActions.h"
 #include "BXBuffAssetTypeActions.h"
+#include "Projectile/BXProjectileAssetTypeActions.h"
 #include "BXTLAssetThumbnailRenderer.h"
 #include "TimelineEditor/BXTLEditorStyle.h"
 #include "BXDTAssetTypeActions.h"
@@ -24,6 +25,7 @@
 #include "CustomLayout/BXBehaviorMatrixCustomization.h"
 
 #include "Behavior/BXBehaviorSettings.h"
+
 
 
 
@@ -54,6 +56,8 @@ void FBattleXEditorModule::StartupModule()
 	AssetToolsModule.RegisterAssetTypeActions(MakeShareable(new FBXCombatTreeAssetTypeActions(CurrentAssetCategory)));
 	// 注册状态机资源
 	AssetToolsModule.RegisterAssetTypeActions(MakeShareable(new FBXStateMachineAssetTypeActions(CurrentAssetCategory)));
+	// 注册子弹资源
+	AssetToolsModule.RegisterAssetTypeActions(MakeShareable(new FAssetTypeActions_BXProjectileAsset(CurrentAssetCategory)));
 
 	// 自定义缩略图
 	UThumbnailManager::Get().UnregisterCustomRenderer(UBXTLAsset::StaticClass());

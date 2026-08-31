@@ -63,26 +63,6 @@ public:
 		return bResult;
 	}
 
-	// 停止行为(有参数版本)
-	template<typename T>
-	static bool StopBehaviorWithParameter(AActor* InTarget, const FGameplayTag& InBehaviorTag, const T& InParameter, int64 InSign = 0)
-	{
-		bool bResult = false;
-
-		if (!IsValid(InTarget))
-		{
-			return bResult;
-		}
-
-		if (UBXBehaviorComponent* BehaviorComp = InTarget->FindComponentByClass<UBXBehaviorComponent>())
-		{
-			FInstancedStruct IS;
-			IS.InitializeAs(T::StaticStruct(), reinterpret_cast<const uint8*>(&InParameter));
-			bResult = BehaviorComp->StopBehaviorWithParameter(InBehaviorTag, IS, InSign);
-		}
-
-		return bResult;
-	}
 
 	// 查询目标是否处于指定状态
 	UFUNCTION(BlueprintCallable, Category = "BattleX|State")

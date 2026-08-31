@@ -1,6 +1,6 @@
 #include "BXBuffAssetFactory.h"
 
-#include "BXTLEditorSettings.h"
+#include "BattleXTimelineEditor.h"
 
 #include "BXBuffAsset.h"
 
@@ -17,7 +17,7 @@ UObject* UBXBuffAssetFactory::FactoryCreateNew(UClass* Class, UObject* InParent,
 	UBXBuffAsset* NewBuff = NewObject<UBXBuffAsset>(InParent, Class, Name, Flags | RF_Transactional);
 	if (NewBuff)
 	{
-		const UBXTLEditorSettings* EdSettings = GetDefault<UBXTLEditorSettings>();
+		const UBattleXTimelineEditor* EdSettings = GetDefault<UBattleXTimelineEditor>();
 
 		UClass* PlayerType = EdSettings->PlayerType.Get() ? EdSettings->PlayerType.Get() : UBXTLPreviewActor::StaticClass();
 		UClass* TargetType = EdSettings->TargetType.Get() ? EdSettings->TargetType.Get() : UBXTLPreviewActor::StaticClass();

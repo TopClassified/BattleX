@@ -7,20 +7,26 @@
 #include "BXTLEditorTemplate.h"
 #include "Preview/BXTLPreviewActor.h"
 
-#include "BXTLEditorSettings.generated.h" 
+#include "BattleXTimelineEditor.generated.h" 
 
 
 
 
-UCLASS(Config = BattleX, DefaultConfig, meta = (DisplayName = "BXTLEditorSettings"))
-class BATTLEXEDITOR_API UBXTLEditorSettings : public UDeveloperSettings
+UCLASS(Config = BattleX, DefaultConfig, meta = (DisplayName = "BattleXTimelineEditor"))
+class BATTLEXEDITOR_API UBattleXTimelineEditor : public UDeveloperSettings
 {
 	GENERATED_BODY()
 
 public:
-	UBXTLEditorSettings(const FObjectInitializer& ObjectInitializer);
+	UBattleXTimelineEditor(const FObjectInitializer& ObjectInitializer);
 
+	// Project Settings 页面定位(引擎自动发现UDeveloperSettings,按此注册;勿手动ISettingsModule注册——会双页面)
+	virtual FName GetContainerName() const override;
+	virtual FName GetCategoryName() const override;
+	virtual FName GetSectionName() const override;
 #if WITH_EDITOR
+	virtual FText GetSectionText() const override;
+	virtual FText GetSectionDescription() const override;
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 

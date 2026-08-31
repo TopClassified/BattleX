@@ -25,7 +25,7 @@
 - 数据与逻辑分离：UBXBuffAsset 继承 UBXTLAsset，运行时数据 FBXBuffRuntimeData 内嵌 FBXTLRunTimeData，Task 执行完全复用 UBXTLManager；BUFF 特有逻辑（层级、共存策略、生命时长）由 UBXBuffManager 处理。
 - 层级变化仅走高层 RebuildEffect 方案（Processor->RebuildEffectTask，Task 需重写 RebuildEffect 响应）。
 - BUFF 编辑器复用技能编辑器（FBXBuffEditor 继承 FBXTLEditor），节点带 MinLayer/MaxLayer 配置。
-- 需在插件 `Config/DefaultBattleX.ini` 注册：`+ManagerClasses=/Script/BattleX.BXBuffManager`。UBXSettings / UBXTLEditorSettings 均使用 `Config=BattleX`（与插件同名的自定义 ini，引擎经 GPluginLayers 自动加载插件 Config 目录），勿改回 Game/Editor。
+- 需在插件 `Config/DefaultBattleX.ini` 注册：`+ManagerClasses=/Script/BattleX.BXBuffManager`。UBXSettings / UBattleXTimelineEditor 均使用 `Config=BattleX`（与插件同名的自定义 ini，引擎经 GPluginLayers 自动加载插件 Config 目录），勿改回 Game/Editor。
 
 ## 技能同步框架要点
 - 多个技能 RPC 已合并为单一 ServerPlaySkill；ReleaseLocation/ReleaseRotation/AimLocation/AimRotation/LockParts 等业务参数统一移入 InputDatas（BXSkillInput.* 标签）。**RPC 传输形态为 TArray<FBXSkillInputEntry>（UE 不支持 TMap 做 RPC 参数）**，PlaySkillWithInputData 的 BP 入参仍为 TMap，组件内逐条移动转换。
@@ -72,18 +72,27 @@
 - **客户端无账本 Suspend 镜像**：中断事实由控制包按代理粒度承载，无活跃条目的常驻门控同样生效（这是与 P5 时代的关键差异——控制包从"镜像条目停转"升格为"代理命令"）；CanStart 对默认启用代理含 ProxyDisabled 检查保证预测两端一致；LateJoin 中断条目置位禁用代理，OnRep 兜底清理配对清中断位（防镜像残留永久禁挡）。
 - 蓝图迁移：旧 BP Agent 父类需手动重定向到 UBXBehaviorProxy 派生类（类已改名，旧资产会加载报错）；组件 Details 面板 BehaviorAgentConfigs 数据随类型变更丢弃，需按新 FBXBehaviorProxyConfig 结构重新配置（bEnabledByDefault=Move/Rotate/Jump 三项）。
 
-## 统一禁用账本要点（v4.4，原保护机制/遮蔽表已退役）
+## 编辑器设置页与 Slate 定制要点
+- **UDeveloperSettings 由引擎自动发现注册**（SettingsEditorModule 扫描全部派生类 CDO，模块加载后重建）——页面位置用 `GetContainerName/GetCategoryName/GetSectionName/GetSectionText` 虚函数重写定位；**禁止再手动 ISettingsModule::RegisterSettings，会出双页面**。`GetSectionText/GetSectionDescription` 在基类是 WITH_EDITOR only，重写必须包 `#if WITH_EDITOR`（否则游戏构建编译失败）。
+- **HideCategory 会把整个分类从构建中剔除**（BuildCategories 对隐藏分类连 GenerateLayout 都不调，AddCustomRow 的自定义行一并消失）——要"隐藏属性+显示自定义行"必须用 `HideProperty(GET_MEMBER_NAME_CHECKED(...))` 逐属性隐藏，分类保留可见。
+- Slate 定制网格是构建期一次性生成：数据变更后必须 `IDetailLayoutBuilder::ForceRefreshDetails()` 重建定制，否则 UI 不反映（缓存 Builder 用裸指针，定制实例由视图持有先于视图析构）。
+- `IDetailsView` 不继承 `IDetailLayoutBuilder`；lambda 内调外部成员函数记得捕 `this`。
 
-**术语契约**：**禁止（Forbid）**=挡启动的持续禁令（裁决层原子）；**中断（Interrupt）**=停运在跑实例+待恢复（执行层原子，**不挡启动**）；**接管（Expel）**=进入时踢掉（动作）；**禁用（Disable）**=禁止∨中断总称。**设计原则：账本只记原子，高级需求全部显式组合**。
+## 禁止账本要点（v4.5，原保护机制/遮蔽表/中断记账已全部退役）
 
-- 原子操作两对：`ForbidBehavior/UnforbidBehavior`（禁止：账本登记 BDK_Forbid，零管线副作用）、`InterruptBehavior/ResumeBehavior`（中断：停运在跑+武装恢复重放+账本登记 BDK_Interrupt，带管线）。原 `SuspendByForbiddenTag/ResumeByForbiddenTag/SuspendMasks` 已删除。
-- **组合表**：硬直=中断∧禁止（同源同 Sign）；打断不锁=仅中断；聚气只锁=仅禁止；矩阵禁止贡献=Forbid 的自动组合（在位方生死经 `RefreshForbidSources` 代为登记/注销）；接管=对在位者执行 Stop（事实表生命周期，非账本概念）。
-- **三条原子交互协议**：① 启动覆盖中断——同域显式启动成功即清除该域全部 BDK_Interrupt 条目与代理武装（新事实覆盖旧恢复；`UBXBehaviorProxy::StartBehavior` 顶部清 `bArmedResume`）；② 禁止挡启动——CanStart 裁决只看 `EvaluateBehaviorDisable().bForbidden`，中断不参与；③ 常驻门控轴（Move/Rotate/Jump）的禁止经门控位立即生效（刹车），事件型行为的禁止只挡启动。
-- **记账收束（九记账点，缺一即鬼影）**：Forbid 贡献=条目生死四入口（InternalStart bNewEntry/InternalStop/多播跟随进入/LateJoin 重建/OnRep 兜底清理，统一走 `RefreshForbidSources(在位Tag)`：先注销旧贡献再按"在位∧未豁免"沿列索引 `ForbidDomainsBySource` 重推导）+ 豁免翻转刷新 + 动态 `ForbidBehavior/UnforbidBehavior`（Sign 配对，`UnforbidBySign` 收束）；Interrupt=显式 API 配对 + 启动覆盖清除。
-- **豁免写入期折算**：`BehaviorWaivers` 只被 `RefreshForbidSources` 消费（被豁免的在位方不贡献禁止条目），读路径零豁免依赖——账本命中即被禁；豁免只作用于禁止原子，不作用于中断；翻转时刷新匹配域的全部活跃在位方（收束点⑥）。
-- 状态配置面两列表：SM 节点/裸状态 `InterruptBehaviors`（停运在跑）+ `ForbidBehaviors`（挡启动），**原子显式组合**（硬直两列都配，"打断不锁"只配中断，"聚气只锁"只配禁止）；状态组件 `ApplyBehaviorGates/ReleaseBehaviorGates` 内部组合两原子，重入保护内置。
+**术语契约**：**禁止（Forbid）**=挡启动的持续禁令（账本唯一事实，来源解除即失效）；**中断（Interrupt）**=一次性停运在跑实例的动作（就是 Stop——不记账、不恢复、不挡启动）；**接管（Expel）**=进入时踢掉（动作非状态，对在位者执行 Stop）。**设计原则：账本只记持续事实，一次性动作不记账；高级需求全部显式组合**。
+
+- 原子操作：`ForbidBehavior/UnforbidBehavior(域, 来源, Sign)`（账本登记 + **直调域覆盖代理 DisableProxy/EnableProxy**，Proxy 内部幂等）、`InterruptBehavior(域)`（一次性：对域覆盖代理直调 `Proxy->StopBehavior()` + 逐来源 BER_Interrupted，不记账）、`UnforbidBySign(Sign)`（动态禁止来源收束）。原 `SuspendByForbiddenTag/ResumeByForbiddenTag/ResumeBehavior/SuspendMasks/EvaluateBehaviorDisable` 已删除。
+- **组合表**：硬直=Forbid（刹车+锁启动）；需打断攻击蒙太奇→追加 `InterruptBehavior[Attack]`；打断（可立刻再出招）=仅中断；聚气只锁=仅 Forbid；矩阵禁止贡献=在位方生死经 `RefreshForbidSources` 自动组合；接管=对在位者执行 Stop（事实表生命周期）。
+- **幂等语义**：重复 `ForbidBehavior` 只短路账本登记（`Contains` 检查），**代理调用与控制包必达**——重复禁止期间代理可能已被解禁，跳过会造成裁决与物理脱节；`DisableProxy/EnableProxy` 自身幂等，重复调用无害。中断不记账 → 无启动覆盖规则、无恢复配对。
+- **记账收束（七记账点，缺一即鬼影）**：贡献=条目生死入口（InternalStart bNewEntry/InternalStop/多播跟随进入/LateJoin 重建/OnRep 兜底清理，统一走 `RefreshForbidSources(在位Tag)`：先注销旧贡献再按"在位∧未豁免"沿列索引 `ForbidDomainsBySource` 重推导，Lifted/Added 差分直调代理）+ 豁免翻转刷新 + 动态 Forbid/Unforbid（Sign 配对）。
+- **豁免写入期折算**：`BehaviorWaivers` 只被 `RefreshForbidSources` 消费（被豁免的在位方不贡献禁止条目），读路径零豁免依赖——账本命中即被禁；翻转时刷新匹配域的全部活跃在位方。
+- 状态配置面两列表：SM 节点/裸状态 `InterruptBehaviors`（进入时一次性停运）+ `ForbidBehaviors`（存续期禁止，状态退出自动解除）；`ApplyBehaviorGates` 组合两原子，`ReleaseBehaviorGates` 只解除 Forbid（中断是一次性动作无解除），重入保护内置。
 - 矩阵单元格=两开关组合（禁止/接管），**空单元格=天然共存不落数据**；静态表后处理双索引（`RelationRowIndex` 行索引清场求值 + `ForbidDomainsBySource` 列索引贡献计算，`RebuildRelationIndex` 在启动/ini 重载/编辑器变更后重建）——ini 运行期只读，索引物化零漂移。
-- 更名清单：`SuspendByForbiddenTag→InterruptBehavior`、`ResumeByForbiddenTag→ResumeBehavior`、`IsBehaviorSuspended→IsBehaviorInterrupted`、`CheckForbiddenBehavior→IsBehaviorDisabled`、`InterruptBehaviorsConflicting→ExpelConflictingBehaviors`、`bSuspendBit→bInterruptBit`、`BR_Reject→BR_Forbid`/`BR_ExpelReject→BR_ForbidExpel`、`BER_Suspended→BER_Interrupted`、`BX_SYNC_FLAG_BEHAVIOR_SUSPENDED→BX_SYNC_FLAG_BEHAVIOR_INTERRUPTED`、`IsRejectedByAny/FindRejectingBehaviors/EvaluateRejectRelations` 删除（被 `EvaluateBehaviorDisable` 取代）。
+- **代理查找族匹配**：`FindProxyForBehavior(Tag)` 精确命中优先、沿父链族匹配——CanStart 的权限/CheckStart 检查、启停均支持按族 Tag 操作（族内多代理命中首个）；行为事实键仍为精确 Tag。
+- **中断对纯事实行为=纯事件**（显式决策）：无代理配置的行为被中断时只发 BER_Interrupted（互锁链路会停技能→收束→条目死亡），不直接终止事实——事实终止归事实表生命周期（StopBehavior），中断不代劳。
+- 控制包=原子重放：`MulticastForbidBehavior/UnforbidBehavior(域,来源,Sign)` + `MulticastInterruptBehavior(域)`，跟随端收到后执行同一个原子函数（账本+代理，与服务器同构）；LateJoin 快照条目按代理 `IsStarted()` 推导 `BX_SYNC_FLAG_BEHAVIOR_STOPPED`——标记条目重建时不自动 Start。
+- 更名清单：`SuspendByForbiddenTag→InterruptBehavior`（单参数）、`ResumeByForbiddenTag/ResumeBehavior` 删除、`IsBehaviorSuspended/IsBehaviorInterrupted` 删除、`CheckForbiddenBehavior→IsBehaviorDisabled`、`bSuspendBit→删除`（无门控位）、`BR_Reject→BR_Forbid`/`BR_ExpelReject→BR_ForbidExpel`、`BER_Suspended→BER_Interrupted`、`BER_Resumed` 删除、`BX_SYNC_FLAG_BEHAVIOR_SUSPENDED→BX_SYNC_FLAG_BEHAVIOR_STOPPED`（语义=代理未启动）、`Proxy::StopBehavior` 去参化（真停语义置 bStarted=false）、`StopBehaviorWithParameter/FunctionLibrary 参数停止模板` 删除、事实表 `LastStartParameter` 删除（Proxy 自记参数）。
 - 技能侧：`bWaiveOnCancelWindow` 语义不变；互锁监听 Reason 为 `BER_Expelled/BER_Interrupted`；技能开始不登记任何禁用（禁止由矩阵承担）。
 
 ## 工程经验

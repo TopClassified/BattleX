@@ -21,7 +21,7 @@ public:
 
 	virtual bool NativeStartBehavior(const FInstancedStruct& InParameter) override;
 
-	virtual bool NativeStopBehavior(const FInstancedStruct& InParameter) override;
+	virtual bool NativeStopBehavior() override;
 
 	virtual bool NativeCheckStartBehavior(const FInstancedStruct& InParameter) override;
 

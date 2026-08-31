@@ -37,7 +37,7 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 protected:
-	// 行为代理配置(Tag→代理类+是否默认启用;常驻型门控代理默认启用,事件型随管线隐式启停)
+	// 行为代理配置(Tag→代理类;代理出生即启用,禁用只由禁止原子造成)
 	UPROPERTY(EditDefaultsOnly, Category = "Behavior")
 	TMap<FGameplayTag, FBXBehaviorProxyConfig> BehaviorProxyConfigs;
 
@@ -49,7 +49,7 @@ protected:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Behavior")
 	TMap<FGameplayTag, FBXBehaviorRuntimeData> ActiveBehaviors;
 
-	// 取消窗口豁免记录(在位域Tag→来源Sign列表;生效期间因该域在位而命中的拒绝关系不执行——挡入豁免,接管不豁免)
+	// 取消窗口豁免记录(在位域Tag→来源Sign列表;生效期间在位方不贡献禁止条目——豁免写入期折算)
 	TMap<FGameplayTag, TArray<int64>> BehaviorWaivers;
 
 	// 禁止账本(唯一事实:挡启动的持续禁令;域键→来源列表,多来源叠加,最后一个移除才失效;
@@ -101,17 +101,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Behavior")
 	bool StartBehavior(const FGameplayTag& InBehaviorTag, int64 InSign = 0);
 
-	// 开始行为(有参数版本;按值收参+内部MoveTemp:蓝图调用方数据不受影响,C++可MoveTemp传入,LastStartParameter存储零额外拷贝)
+	// 开始行为(有参数版本;按值收参+内部MoveTemp:蓝图调用方数据不受影响,C++可MoveTemp传入)
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Behavior")
 	bool StartBehaviorWithParameter(const FGameplayTag& InBehaviorTag, FInstancedStruct InParameter, int64 InSign = 0);
 
 	// 停止行为(仅移除该Sign来源,先停先退)
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Behavior")
 	bool StopBehavior(const FGameplayTag& InBehaviorTag, int64 InSign = 0);
-
-	// 停止行为(有参数版本)
-	UFUNCTION(BlueprintCallable, Category = "BattleX|Behavior")
-	bool StopBehaviorWithParameter(const FGameplayTag& InBehaviorTag, const FInstancedStruct& InParameter, int64 InSign = 0);
 
 	// 停止行为(全部来源)
 	UFUNCTION(BlueprintCallable, Category = "BattleX|Behavior")
@@ -183,11 +179,11 @@ public:
 	UFUNCTION(Client, Reliable)
 	void ClientRejectBehavior(FGameplayTag InBehaviorTag, int64 InSign);
 
-	// 广播行为进入(Reliable:事实动态主通道,来源级新增同样到达;多播匹配即预测确认)。挂起恢复不在此通道(走控制包)
+	// 广播行为进入(Reliable:事实动态主通道,来源级新增同样到达;多播匹配即预测确认)
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastBehaviorEnter(FGameplayTag InBehaviorTag, int64 InSign);
 
-	// 广播行为退出(InReason透传Suspended除外:挂起恢复走控制包按Tag粒度精确镜像服务器代理操作)
+	// 广播行为退出(InReason透传;Interrupted原因仅权威端本地事件——中断走原子重放控制包)
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastBehaviorExit(FGameplayTag InBehaviorTag, int64 InSign, uint8 InReason);
 
@@ -209,11 +205,11 @@ protected:
 	// 只读判定内部实现(带启动参数:参数依赖型代理用真实参数判定)
 	bool CanStartBehaviorInternal(const FGameplayTag& InBehaviorTag, const FInstancedStruct& InParameter, FBXBehaviorStartCheck& OutCheck) const;
 
-	// 内部开始行为(管线执行:代理隐式启用/表更新/事件;参数经移动语义存入LastStartParameter,代理在移动前使用)
+	// 内部开始行为(管线执行:代理Start/表更新/事件)
 	bool InternalStartBehavior(const FGameplayTag& InBehaviorTag, FInstancedStruct&& InParameter, int64 InSign);
 
 	// 内部停止行为(管线执行:表更新/代理/事件,全部停止路径收束于此)
-	bool InternalStopBehavior(const FGameplayTag& InBehaviorTag, const FInstancedStruct& InParameter, int64 InSign, EBXBehaviorEndReason InReason);
+	bool InternalStopBehavior(const FGameplayTag& InBehaviorTag, int64 InSign, EBXBehaviorEndReason InReason);
 
 	// 收集活跃行为Tag快照(遍历前收集,回调中增删安全)
 	void CollectActiveBehaviorTags(TArray<FGameplayTag>& OutTags) const;
@@ -221,16 +217,16 @@ protected:
 	// 禁止裁决:遍历账本,族匹配命中即禁止(唯一挡启动判据)
 	bool IsForbiddenByLedger(const FGameplayTag& InBehaviorTag, FGameplayTag* OutBy = nullptr) const;
 
+	// 代理查找:精确命中优先,未命中沿父链族匹配(判定/启停共用;无配置返回nullptr)
+	UBXBehaviorProxy* FindProxyForBehavior(const FGameplayTag& InBehaviorTag) const;
+
 	// 禁止贡献记账:在位方生死/豁免翻转时重推导其在账本中的全部禁止条目(收束点统一入口)
 	void RefreshForbidSources(const FGameplayTag& InIncumbentTag);
 
-	// 广播行为事件(本端表达层唯一收束点;权威端经此同步多播,挂起/恢复/清场除外——挂起恢复走控制包,清场不广播)
+	// 广播行为事件(本端表达层唯一收束点;权威端经此同步多播,中断/清场除外——中断走原子重放控制包,清场不广播)
 	void BroadcastBehaviorEvent(bool bEnter, const FGameplayTag& InBehaviorTag, int64 InSign, EBXBehaviorEndReason InReason);
 
-	// 重算每个代理的目标开关态并差分下发:目标=没挂起 且(常驻型:没被矩阵拒绝/事件型:有活跃条目)
-	// 行为表/遮蔽/挂起位任何变更后收尾调用一次
-
-	// 代理启用+开始(管线开始/跟随进入/LateJoin重建共用;事件型隐式启用,已启用时不重复Enable)
+	// 代理启用+开始(管线开始/跟随进入/LateJoin重建共用;代理出生即启用,此函数仅做Start)
 	bool EnableAndStartProxy(const FGameplayTag& InProxyTag, const FInstancedStruct& InParameter);
 
 #pragma endregion Internal
@@ -248,13 +244,13 @@ protected:
 	// 预测超时扫描(Tick末尾客户端调用;快照收集后逐条回滚,回调中增删缓冲安全)
 	void UpdatePredictedBehaviorTimeouts(float InDeltaTime);
 
-	// 从ActiveBehaviors重建RunningBehaviorStates快照(新客户端连入时PreReplication调用;含挂起条目,投影bSuspended标志)
+	// 从ActiveBehaviors重建RunningBehaviorStates快照(新客户端连入时PreReplication调用;代理未启动的条目投影STOPPED标志)
 	void RebuildRunningBehaviorStates();
 
 	// 多播接收:跟随进入(新建事实条目+代理隐式启用启动+本地事件+视为预测确认;权威端早退,重复Sign幂等)
 	void HandleClientBehaviorEnter(const FGameplayTag& InBehaviorTag, int64 InSign);
 
-	// 多播接收:跟随退出(Suspended原因同控制包语义早退防双停;移除匹配预测条目=退出确认)
+	// 多播接收:跟随退出(移除匹配预测条目=退出确认;Interrupted原因权威端本地事件不转发)
 	void HandleClientBehaviorExit(const FGameplayTag& InBehaviorTag, int64 InSign, EBXBehaviorEndReason InReason);
 
 	// 原子重放接收:跟随端执行与服务器同构的原子函数(账本+代理调用)
@@ -262,7 +258,7 @@ protected:
 	void HandleClientUnforbidBehavior(const FGameplayTag& InDomainTag, const FGameplayTag& InSourceTag, int64 InSign);
 	void HandleClientInterruptBehavior(const FGameplayTag& InDomainTag);
 
-	// Late Join重建单个行为(OnRep新增条目;bSuspended=true仅建表+置挂起位禁用代理——代理从未启动,等待控制包恢复)
+	// Late Join重建单个行为(OnRep新增条目;STOPPED标志=仅建表不自动Start——服务器上它就是被停着的)
 	void RebuildBehaviorFromState(const FBXBehaviorReplicatedState& InState);
 
 protected:

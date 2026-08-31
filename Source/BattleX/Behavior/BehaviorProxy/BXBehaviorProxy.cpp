@@ -143,7 +143,7 @@ bool UBXBehaviorProxy::StartBehavior(const FInstancedStruct& InParameter)
 	return ExecuteStartBehavior(InParameter);
 }
 
-bool UBXBehaviorProxy::StopBehavior(const FInstancedStruct& InParameter)
+bool UBXBehaviorProxy::StopBehavior()
 {
 	// 真停语义:停止活动并清除开始标记(重复Stop幂等)
 	if (!bStarted)
@@ -152,7 +152,7 @@ bool UBXBehaviorProxy::StopBehavior(const FInstancedStruct& InParameter)
 	}
 
 	bStarted = false;
-	return ExecuteStopBehavior(InParameter);
+	return ExecuteStopBehavior();
 }
 
 bool UBXBehaviorProxy::NativeStartBehavior(const FInstancedStruct& InParameter)
@@ -161,7 +161,7 @@ bool UBXBehaviorProxy::NativeStartBehavior(const FInstancedStruct& InParameter)
 	return true;
 }
 
-bool UBXBehaviorProxy::NativeStopBehavior(const FInstancedStruct& InParameter)
+bool UBXBehaviorProxy::NativeStopBehavior()
 {
 	return true;
 }
@@ -233,18 +233,18 @@ bool UBXBehaviorProxy::ExecuteStartBehavior(const FInstancedStruct& InParameter)
 	return (bResult1 && bResult2);
 }
 
-bool UBXBehaviorProxy::ExecuteStopBehavior(const FInstancedStruct& InParameter)
+bool UBXBehaviorProxy::ExecuteStopBehavior()
 {
 	bool bResult1 = true;
 	if (BX_HAS_PROXY_FLAG(BPF_NativeStopBehavior))
 	{
-		bResult1 = NativeStopBehavior(InParameter);
+		bResult1 = NativeStopBehavior();
 	}
 
 	bool bResult2 = true;
 	if (BX_HAS_PROXY_FLAG(BPF_BPStopBehavior))
 	{
-		bResult2 = ScriptStopBehavior(InParameter);
+		bResult2 = ScriptStopBehavior();
 	}
 
 	return (bResult1 && bResult2);

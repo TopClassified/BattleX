@@ -36,7 +36,7 @@ bool UBXProxyRotate::NativeStartBehavior(const FInstancedStruct& InParameter)
 	return true;
 }
 
-bool UBXProxyRotate::NativeStopBehavior(const FInstancedStruct& InParameter)
+bool UBXProxyRotate::NativeStopBehavior()
 {
 	return true;
 }

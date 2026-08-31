@@ -37,7 +37,7 @@ bool UBXProxyMove::NativeStartBehavior(const FInstancedStruct& InParameter)
 	return true;
 }
 
-bool UBXProxyMove::NativeStopBehavior(const FInstancedStruct& InParameter)
+bool UBXProxyMove::NativeStopBehavior()
 {
 	return true;
 }

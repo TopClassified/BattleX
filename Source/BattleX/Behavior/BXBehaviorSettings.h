@@ -29,13 +29,22 @@ public:
 
 
 // 全局行为关系配置(行为矩阵,各端一致的ini)
-UCLASS(Config = BattleX, DefaultConfig, Meta = (DisplayName = "BattleX Behavior Relations"))
+UCLASS(Config = BattleX, DefaultConfig, Meta = (DisplayName = "BattleXBehaviorRelations"))
 class BATTLEX_API UBXBehaviorSettings : public UDeveloperSettings
 {
 	GENERATED_BODY()
 
 public:
 	UBXBehaviorSettings();
+
+	// Project Settings 页面定位(引擎自动发现UDeveloperSettings并按此注册,勿再手动ISettingsModule注册——会双页面)
+	virtual FName GetContainerName() const override;
+	virtual FName GetCategoryName() const override;
+	virtual FName GetSectionName() const override;
+#if WITH_EDITOR
+	virtual FText GetSectionText() const override;
+	virtual FText GetSectionDescription() const override;
+#endif
 
 	virtual void PostInitProperties() override;
 	virtual void PostReloadConfig(class FProperty* PropertyThatWasLoaded) override;

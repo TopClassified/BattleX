@@ -5,7 +5,7 @@
 #include "Engine/Blueprint.h"
 #include "UObject/UnrealType.h"
 
-#include "BXTLEditorSettings.h"
+#include "BattleXTimelineEditor.h"
 #include "BXTLAsset.h"
 #include "BXTask.h"
 
@@ -144,7 +144,7 @@ void FBXTLEditorUtilities::MakeNewTaskPicker(FMenuBuilder& MenuBuilder, const FO
 void FBXTLEditorUtilities::MakeNewTaskTemplatePicker(class FMenuBuilder& MenuBuilder, const FBXTLPickTaskGroup& OnTemplatePicked)
 {
 	TArray< TSharedPtr<FName>> TemplateNameList;
-	if (const UBXTLEditorSettings* Setting = GetDefault<UBXTLEditorSettings>())
+	if (const UBattleXTimelineEditor* Setting = GetDefault<UBattleXTimelineEditor>())
 	{
 		if (UBXTLTaskGroupTemplate* Template = Setting->Template.LoadSynchronous())
 		{

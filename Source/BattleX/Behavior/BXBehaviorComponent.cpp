@@ -227,13 +227,7 @@ bool UBXBehaviorComponent::StartBehaviorWithParameter(const FGameplayTag& InBeha
 
 bool UBXBehaviorComponent::StopBehavior(const FGameplayTag& InBehaviorTag, int64 InSign)
 {
-	FInstancedStruct IS;
-	return StopBehaviorWithParameter(InBehaviorTag, IS, InSign);
-}
-
-bool UBXBehaviorComponent::StopBehaviorWithParameter(const FGameplayTag& InBehaviorTag, const FInstancedStruct& InParameter, int64 InSign)
-{
-	return InternalStopBehavior(InBehaviorTag, InParameter, InSign, EBXBehaviorEndReason::BER_Manual);
+	return InternalStopBehavior(InBehaviorTag, InSign, EBXBehaviorEndReason::BER_Manual);
 }
 
 bool UBXBehaviorComponent::StopBehaviorAllSources(const FGameplayTag& InBehaviorTag, EBXBehaviorEndReason InReason)
@@ -248,8 +242,7 @@ bool UBXBehaviorComponent::StopBehaviorAllSources(const FGameplayTag& InBehavior
 	TArray<FBXBehaviorSource> Sources = FindResult->Sources;
 	for (const FBXBehaviorSource& Source : Sources)
 	{
-		FInstancedStruct IS;
-		if (!InternalStopBehavior(InBehaviorTag, IS, Source.Sign, InReason))
+		if (!InternalStopBehavior(InBehaviorTag, Source.Sign, InReason))
 		{
 			UE_LOG(BXBEHAVIOR, Verbose, TEXT("UBXBehaviorComponent::StopBehaviorAllSources: source already removed. Tag=%s Sign=%lld"), *InBehaviorTag.ToString(), Source.Sign);
 		}
@@ -295,8 +288,7 @@ bool UBXBehaviorComponent::InterruptBehaviorsConflicting(const FGameplayTag& InB
 			TArray<FBXBehaviorSource> Sources = FindResult->Sources;
 			for (const FBXBehaviorSource& Source : Sources)
 			{
-				FInstancedStruct IS;
-				if (!InternalStopBehavior(MatchedTag, IS, Source.Sign, EBXBehaviorEndReason::BER_Expelled))
+				if (!InternalStopBehavior(MatchedTag, Source.Sign, EBXBehaviorEndReason::BER_Expelled))
 				{
 					UE_LOG(BXBEHAVIOR, Verbose, TEXT("UBXBehaviorComponent::InterruptBehaviorsConflicting: source already removed. Tag=%s Sign=%lld"), *MatchedTag.ToString(), Source.Sign);
 				}
@@ -427,8 +419,7 @@ void UBXBehaviorComponent::InterruptBehavior(const FGameplayTag& InDomainTag)
 		{
 			if (IsValid(*FindResult))
 			{
-				FInstancedStruct EmptyParam;
-				(*FindResult)->StopBehavior(EmptyParam);
+				(*FindResult)->StopBehavior();
 			}
 		}
 	}
@@ -533,7 +524,7 @@ bool UBXBehaviorComponent::StopBehaviorNet(const FGameplayTag& InBehaviorTag, in
 			return false;
 		}
 
-		const bool bResult = InternalStopBehavior(InBehaviorTag, FInstancedStruct(), InSign, EBXBehaviorEndReason::BER_Manual);
+		const bool bResult = InternalStopBehavior(InBehaviorTag, InSign, EBXBehaviorEndReason::BER_Manual);
 		UnregisterPredictedBehavior(InBehaviorTag, InSign);
 		ServerExitBehavior(InBehaviorTag, InSign);
 		return bResult;
@@ -571,7 +562,7 @@ void UBXBehaviorComponent::ServerEnterBehavior_Implementation(FGameplayTag InBeh
 		return;
 	}
 
-	// 权威裁决走同一本地管线(矩阵/挂起/代理检查);失败回滚通知发起端
+	// 权威裁决走同一本地管线(禁止账本/代理检查);失败回滚通知发起端
 	FBXBehaviorStartCheck Check;
 	if (!CanStartBehaviorInternal(InBehaviorTag, FInstancedStruct(), Check))
 	{
@@ -603,7 +594,7 @@ bool UBXBehaviorComponent::ServerExitBehavior_Validate(FGameplayTag InBehaviorTa
 void UBXBehaviorComponent::ServerExitBehavior_Implementation(FGameplayTag InBehaviorTag, int64 InSign)
 {
 	// 发起方校验:仅允许退出Client签名来源(Server/系统Sign=SkillID/0常驻等来源的生命周期归权威管线,
-	// 由技能收束/矩阵挤出/状态挂起驱动;客户端伪造上报一律忽略)
+	// 由技能收束/矩阵挤出驱动;客户端伪造上报一律忽略)
 	if (BXGetSyncIDInitiator(InSign) != EBXSyncInitiator::Client || InSign == 0)
 	{
 		UE_LOG(BXBEHAVIOR, Warning, TEXT("UBXBehaviorComponent::ServerExitBehavior: invalid initiator rejected. Tag=%s Sign=%lld"), *InBehaviorTag.ToString(), InSign);
@@ -611,14 +602,14 @@ void UBXBehaviorComponent::ServerExitBehavior_Implementation(FGameplayTag InBeha
 	}
 
 	// 幂等:查无即忽略;上报不可自定Reason,固定Manual语义由服务器裁决
-	InternalStopBehavior(InBehaviorTag, FInstancedStruct(), InSign, EBXBehaviorEndReason::BER_Manual);
+	InternalStopBehavior(InBehaviorTag, InSign, EBXBehaviorEndReason::BER_Manual);
 }
 
 void UBXBehaviorComponent::ClientRejectBehavior_Implementation(FGameplayTag InBehaviorTag, int64 InSign)
 {
 	// 回滚=本地移除该来源(不含表现);移除缓冲在HandleClientBehaviorExit路径同型处理,此处显式双保险
 	UnregisterPredictedBehavior(InBehaviorTag, InSign);
-	InternalStopBehavior(InBehaviorTag, FInstancedStruct(), InSign, EBXBehaviorEndReason::BER_PredictRollback);
+	InternalStopBehavior(InBehaviorTag, InSign, EBXBehaviorEndReason::BER_PredictRollback);
 }
 
 void UBXBehaviorComponent::MulticastBehaviorEnter_Implementation(FGameplayTag InBehaviorTag, int64 InSign)
@@ -640,7 +631,7 @@ void UBXBehaviorComponent::MulticastBehaviorExit_Implementation(FGameplayTag InB
 		return;
 	}
 
-	// 挂起事件流由控制包按Tag粒度镜像(精确对齐服务器代理单次停转),此处防意外混入造成代理双停
+	// 中断事件流由原子重放控制包承载,此处防意外混入造成代理双停
 	const EBXBehaviorEndReason Reason = static_cast<EBXBehaviorEndReason>(InReason);
 	if (Reason == EBXBehaviorEndReason::BER_Interrupted)
 	{
@@ -701,17 +692,6 @@ bool UBXBehaviorComponent::CanStartBehaviorInternal(const FGameplayTag& InBehavi
 		return false;
 	}
 
-	// 代理权限检查(端内镜像防御:被禁止原子的 DisableProxy 关掉的代理不可启动;账本为权威判据)
-	if (const TObjectPtr<UBXBehaviorProxy>* ProxyResult = BehaviorProxies.Find(InBehaviorTag))
-	{
-		if (IsValid(*ProxyResult) && !(*ProxyResult)->IsEnabled())
-		{
-			OutCheck.bCanStart = false;
-			OutCheck.FailReason = TEXT("ProxyDisabled");
-			return false;
-		}
-	}
-
 	// 禁止裁决(唯一挡启动判据)
 	{
 		FGameplayTag ForbiddenBy;
@@ -723,17 +703,19 @@ bool UBXBehaviorComponent::CanStartBehaviorInternal(const FGameplayTag& InBehavi
 		}
 	}
 
-	// 代理检查(纯查询无副作用;代理持非const指针:CheckStartBehavior为UFUNCTION含蓝图事件调用,无法声明const)
-	if (const TObjectPtr<UBXBehaviorProxy>* FindResult = BehaviorProxies.Find(InBehaviorTag))
+	// 代理查找:精确命中优先,未命中沿父链族匹配(支持按族Tag判定/启动;族内多代理命中首个)
+	UBXBehaviorProxy* Proxy = FindProxyForBehavior(InBehaviorTag);
+	if (Proxy)
 	{
-		UBXBehaviorProxy* Proxy = *FindResult;
-		if (!IsValid(Proxy))
+		// 代理权限检查(端内镜像防御:被禁止原子的 DisableProxy 关掉的代理不可启动;账本为权威判据)
+		if (!Proxy->IsEnabled())
 		{
 			OutCheck.bCanStart = false;
-			OutCheck.FailReason = TEXT("ProxyInvalid");
+			OutCheck.FailReason = TEXT("ProxyDisabled");
 			return false;
 		}
 
+		// 代理检查(纯查询无副作用;代理持非const指针:CheckStartBehavior为UFUNCTION含蓝图事件调用,无法声明const)
 		if (!Proxy->CheckStartBehavior(InParameter))
 		{
 			OutCheck.bCanStart = false;
@@ -743,6 +725,35 @@ bool UBXBehaviorComponent::CanStartBehaviorInternal(const FGameplayTag& InBehavi
 	}
 
 	return true;
+}
+
+UBXBehaviorProxy* UBXBehaviorComponent::FindProxyForBehavior(const FGameplayTag& InBehaviorTag) const
+{
+	// 精确命中优先
+	if (const TObjectPtr<UBXBehaviorProxy>* FindResult = BehaviorProxies.Find(InBehaviorTag))
+	{
+		if (IsValid(*FindResult))
+		{
+			return *FindResult;
+		}
+	}
+
+	// 沿父链族匹配(请求族Tag→族内任一已配置代理;请求具体Tag→其祖先域代理同样接管)
+	FGameplayTag Cursor = InBehaviorTag;
+	while (Cursor.IsValid())
+	{
+		if (const TObjectPtr<UBXBehaviorProxy>* FindResult = BehaviorProxies.Find(Cursor))
+		{
+			if (IsValid(*FindResult))
+			{
+				return *FindResult;
+			}
+		}
+
+		Cursor = Cursor.RequestDirectParent();
+	}
+
+	return nullptr;
 }
 
 bool UBXBehaviorComponent::InternalStartBehavior(const FGameplayTag& InBehaviorTag, FInstancedStruct&& InParameter, int64 InSign)
@@ -774,8 +785,6 @@ bool UBXBehaviorComponent::InternalStartBehavior(const FGameplayTag& InBehaviorT
 	const bool bNewEntry = !ActiveBehaviors.Contains(InBehaviorTag);
 	FBXBehaviorRuntimeData& Data = ActiveBehaviors.FindOrAdd(InBehaviorTag);
 	Data.Tag = InBehaviorTag;
-	// 移动存储(FuncLib模板路径LastStartParameter零额外拷贝;Agent已在上方使用完毕)
-	Data.LastStartParameter = MoveTemp(InParameter);
 	if (!Data.HasSource(InSign))
 	{
 		Data.Sources.Add(FBXBehaviorSource(InSign));
@@ -796,7 +805,7 @@ bool UBXBehaviorComponent::InternalStartBehavior(const FGameplayTag& InBehaviorT
 	return true;
 }
 
-bool UBXBehaviorComponent::InternalStopBehavior(const FGameplayTag& InBehaviorTag, const FInstancedStruct& InParameter, int64 InSign, EBXBehaviorEndReason InReason)
+bool UBXBehaviorComponent::InternalStopBehavior(const FGameplayTag& InBehaviorTag, int64 InSign, EBXBehaviorEndReason InReason)
 {
 	FBXBehaviorRuntimeData* Data = ActiveBehaviors.Find(InBehaviorTag);
 	if (!Data)
@@ -819,13 +828,13 @@ bool UBXBehaviorComponent::InternalStopBehavior(const FGameplayTag& InBehaviorTa
 		return true;
 	}
 
-	// 代理停止
+	// 代理停止(真停语义:置bStarted=false+停止槽位;重复Stop幂等)
 	if (const TObjectPtr<UBXBehaviorProxy>* FindResult = BehaviorProxies.Find(InBehaviorTag))
 	{
 		UBXBehaviorProxy* Proxy = *FindResult;
 		if (IsValid(Proxy))
 		{
-			Proxy->StopBehavior(InParameter);
+			Proxy->StopBehavior();
 		}
 	}
 
@@ -867,7 +876,7 @@ void UBXBehaviorComponent::BroadcastBehaviorEvent(bool bEnter, const FGameplayTa
 		EventMgr->BroadcastGlobalEvent<FBXEventBehaviorChanged>(BXGameplayTags::BXEvent_Behavior_Exit, Parameter);
 	}
 
-	// 权威端同步多播(已有连接行为动态的主通道;中断/恢复事件流由控制包按Tag粒度镜像防代理双停双启,
+	// 权威端同步多播(已有连接行为动态的主通道;中断事件流由原子重放控制包承载,
 	// 清场随Actor销毁广播无意义;回滚仅发生于客户端,权威门自动排除)
 	AActor* Owner = GetOwner();
 	if (Owner && Owner->GetLocalRole() == ENetRole::ROLE_Authority
@@ -910,7 +919,8 @@ void UBXBehaviorComponent::ForbidBehavior(const FGameplayTag& InDomainTag, const
 		return;
 	}
 
-	// 账本登记(持续禁令,来源解除才失效)
+	// 账本登记(持续禁令,来源解除才失效;重复登记幂等短路仅作用于账本——
+	// 代理调用与控制包必须执行:重复Forbid期间代理可能已被解禁Enable,跳过会造成裁决与物理脱节)
 	TArray<FBXBehaviorForbidSource>* Sources = ForbidLedger.Find(InDomainTag);
 	FBXBehaviorForbidSource NewSource(InSourceTag, InSign);
 	if (!Sources)
@@ -921,12 +931,8 @@ void UBXBehaviorComponent::ForbidBehavior(const FGameplayTag& InDomainTag, const
 	{
 		Sources->Add(NewSource);
 	}
-	else
-	{
-		return;
-	}
 
-	// 禁止原子直调代理:域覆盖代理执行 DisableProxy(子类未实现Disable槽位=纯记账)
+	// 禁止原子直调代理:域覆盖代理执行 DisableProxy(幂等;子类未实现Disable槽位=纯记账)
 	for (const TPair<FGameplayTag, FBXBehaviorProxyConfig>& Pair : BehaviorProxyConfigs)
 	{
 		if (!Pair.Key.MatchesTag(InDomainTag))
@@ -943,7 +949,7 @@ void UBXBehaviorComponent::ForbidBehavior(const FGameplayTag& InDomainTag, const
 		}
 	}
 
-	// 权威端原子重放控制包(跟随端同构执行 Forbid)
+	// 权威端原子重放控制包(跟随端同构执行 Forbid;handler幂等,重复到达无害)
 	AActor* Owner = GetOwner();
 	if (Owner && Owner->GetLocalRole() == ENetRole::ROLE_Authority)
 	{
@@ -1204,7 +1210,7 @@ void UBXBehaviorComponent::UpdatePredictedBehaviorTimeouts(float InDeltaTime)
 		PredictedBehaviors.RemoveAt(i);
 
 		UE_LOG(BXBEHAVIOR, Log, TEXT("UBXBehaviorComponent::UpdatePredictedBehaviorTimeouts: rollback. Tag=%s Sign=%lld"), *Entry.Tag.ToString(), Entry.Sign);
-		InternalStopBehavior(Entry.Tag, FInstancedStruct(), Entry.Sign, EBXBehaviorEndReason::BER_PredictRollback);
+		InternalStopBehavior(Entry.Tag, Entry.Sign, EBXBehaviorEndReason::BER_PredictRollback);
 	}
 }
 
@@ -1287,8 +1293,7 @@ void UBXBehaviorComponent::OnRep_RunningBehaviorStates(TArray<FBXBehaviorReplica
 				UBXBehaviorProxy* Proxy = *FindResult;
 				if (IsValid(Proxy))
 				{
-					FInstancedStruct EmptyParam;
-					Proxy->StopBehavior(EmptyParam);
+					Proxy->StopBehavior();
 				}
 			}
 			ActiveBehaviors.Remove(OldState.BehaviorTag);
@@ -1323,7 +1328,7 @@ void UBXBehaviorComponent::HandleClientBehaviorEnter(const FGameplayTag& InBehav
 	// 条目诞生边沿 → 禁止贡献登记(客户端账本镜像)
 	RefreshForbidSources(InBehaviorTag);
 
-	// 代理启用+开始(事件型隐式启用)+本地事件(表现层各端本地运行;权威门收束点非权威端不再转发多播)
+	// 代理启动+本地事件(表现层各端本地运行;权威门收束点非权威端不再转发多播)
 	EnableAndStartProxy(InBehaviorTag, FInstancedStruct());
 	BroadcastBehaviorEvent(true, InBehaviorTag, InSign, EBXBehaviorEndReason::BER_TMax);
 }
@@ -1339,7 +1344,7 @@ void UBXBehaviorComponent::HandleClientBehaviorExit(const FGameplayTag& InBehavi
 	}
 
 	// 跟随退出走同一管线(条目移除+代理停+本地事件;管线内中断原因不转发多播的门控对非权威端天然无效)
-	InternalStopBehavior(InBehaviorTag, FInstancedStruct(), InSign, InReason);
+	InternalStopBehavior(InBehaviorTag, InSign, InReason);
 }
 
 void UBXBehaviorComponent::HandleClientForbidBehavior(const FGameplayTag& InDomainTag, const FGameplayTag& InSourceTag, int64 InSign)

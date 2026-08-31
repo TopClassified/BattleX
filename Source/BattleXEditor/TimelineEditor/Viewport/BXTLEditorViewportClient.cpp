@@ -15,7 +15,7 @@
 #include "GameFramework/WorldSettings.h"
 
 #include "BXTLEditor.h"
-#include "BXTLEditorSettings.h"
+#include "BattleXTimelineEditor.h"
 #include "BXTLEditorDelegates.h"
 #include "Preview/BXTLPreviewScene.h" 
 
@@ -82,7 +82,7 @@ FBXTLEditorViewportClient::~FBXTLEditorViewportClient()
 void FBXTLEditorViewportClient::Tick(float DeltaSeconds)
 {
 	double TickDelta = DeltaSeconds;
-	if (const UBXTLEditorSettings* Settings = GetDefault<UBXTLEditorSettings>())
+	if (const UBattleXTimelineEditor* Settings = GetDefault<UBattleXTimelineEditor>())
 	{
 		TickDelta = 1.0f / Settings->PreviewTickRate;
 		TickDelta = FMath::FloorToDouble((RemainTime + DeltaSeconds) / TickDelta) * TickDelta;

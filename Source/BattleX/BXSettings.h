@@ -9,13 +9,22 @@
 
 
 
-UCLASS(Config = BattleX, DefaultConfig, Meta = (DisplayName = "BattleX Settings"))
+UCLASS(Config = BattleX, DefaultConfig, Meta = (DisplayName = "BattleX"))
 class BATTLEX_API UBXSettings : public UDeveloperSettings
 {
 	GENERATED_BODY()
 
 public:
 	UBXSettings(const FObjectInitializer& ObjectInitializer);
+
+	// Project Settings 页面定位(引擎自动发现UDeveloperSettings,按此注册;勿手动ISettingsModule注册——会双页面)
+	virtual FName GetContainerName() const override;
+	virtual FName GetCategoryName() const override;
+	virtual FName GetSectionName() const override;
+#if WITH_EDITOR
+	virtual FText GetSectionText() const override;
+	virtual FText GetSectionDescription() const override;
+#endif
 
 public:
 	// 按顺序创建并初始化的管理器

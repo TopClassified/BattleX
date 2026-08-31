@@ -19,7 +19,7 @@
 #include "BXTLAsset.h"
 #include "BXTLEditor.h"
 #include "BXTLPreviewProxy.h"
-#include "BXTLEditorSettings.h"
+#include "BattleXTimelineEditor.h"
 #include "BXTLEditorDelegates.h"
 #include "Gear/BXGearComponent.h"
 #include "Viewport/SBXTLEditorViewport.h" 
@@ -44,7 +44,7 @@ FBXTLPreviewScene::~FBXTLPreviewScene()
 
 void FBXTLPreviewScene::OnCreateViewport(SBXTLEditorViewport* InEditorViewport, TSharedPtr<FSceneViewport> InSceneViewport)
 {
-	const UBXTLEditorSettings* EditorSettings = GetDefault<UBXTLEditorSettings>();
+	const UBattleXTimelineEditor* EditorSettings = GetDefault<UBattleXTimelineEditor>();
 	if (!EditorSettings->DefaultViewMap.IsNull())
 	{
 		ExternalLevel = LoadExternalMap(EditorSettings->DefaultViewMap);
