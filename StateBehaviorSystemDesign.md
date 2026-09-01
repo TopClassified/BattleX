@@ -1,6 +1,6 @@
 # BattleX 状态/行为系统架构设计
 
-> 版本：v4.5（v4.5：中断=一次性 Stop 动作——不记账、不恢复，账本只剩禁止，Proxy 四函数与四操作严格一一对应，详见 §4.5/§4.8。v4.4：禁用原子化+显式组合。v4.3：统一禁用账本、静态索引。v4.2：取消窗口豁免。v4.1：双系统分立 + §13 行为代理升级。均已完成（代码侧））
+> 版本：v4.5（v4.5：中断=一次性 Stop 动作——不记账、不恢复，账本只剩禁止，Proxy 四函数与四操作严格一一对应，详见 §4.5/§4.8；已实施+审查修复：Stop 去参化、事实表 LastStartParameter 删除、FindProxyForBehavior 族匹配、幂等语义（重复 Forbid 只短路账本,代理/控制包必达）、中断对纯事实行为=纯事件。v4.4：禁用原子化+显式组合。v4.3：统一禁用账本、静态索引。v4.2：取消窗口豁免。v4.1：双系统分立 + §13 行为代理升级。均已完成（代码侧）；设置页命名统一:UBXSettings→页面"BattleX"、UBXBehaviorSettings→"BattleXBehaviorRelations"、UBattleXTimelineEditor(原 UBXTLEditorSettings)——三者均在 项目设置→插件 分类）
 > 范围：`Source/BattleX/State/**` 重写（BehaviorComponent / StateComponent 双组件）+ 决策树派生状态机资产 + 技能/Task/出招表集成 + 网络同步
 > 复用既有：UBXDecisionTree*（图框架）、UBXProxyMove/Rotate/Jump/Landed（行为代理，统筹 CharacterMovement）、技能系统同步/预测模型（SyncID/防重/超时/服务器世界时间）
 > 关联模块：UBXSkillComponent / UBXTLManager / UBXTask / UBXEventManager / UBXGameplayTags
@@ -25,8 +25,8 @@
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ UBXBehaviorComponent（行为系统）                                │
-│   ActiveBehaviors: Tag → {Sources(Sign), LastStartParameter}  │
-│   行为关系矩阵（并存/接管/禁止）          ← 行为间自动权衡        │
+│   ActiveBehaviors: Tag → Sources(Sign)                        │
+│   行为关系矩阵（并存/中断/禁用）          ← 行为间自动权衡        │
 │   禁止原子直调代理（账本覆盖→Disable/Enable）← 中间层定位          │
 └───────────────▲──────────────────────────────────────────────┘
                 │ 唯一交互：禁用（单向，立即中断 + 恢复）
@@ -44,7 +44,7 @@
 ```
 
 - **状态 → 行为：单向禁用**。状态存在期间其 `InterruptBehaviors` 列表被中断：未启动的禁止启动，运行中的**立即中断**（状态退出后自动恢复）。
-- **行为 → 状态：零影响**。行为被挤出/停止不产生任何状态变化。
+- **行为 → 状态：零影响**。行为被中断/停止不产生任何状态变化。
 - **进出行为/进出状态的决策权在驱动层**（技能/BUFF 配置决定），系统间不互相触发——杜绝交叉配置表。
 
 ### 1.3 v3.x → v4.0 决策演进
@@ -61,13 +61,13 @@
 
 | # | 需求 | 机制 | 主责 |
 |---|------|------|------|
-| 1 | 行为并行、禁用、中断 | 并行=表内多条目；禁用=矩阵禁止 + 状态中断（统一账本 §4.8）；中断=矩阵挤出（接管） | Behavior |
+| 1 | 行为并行、禁用、中断 | 并行=表内多条目；禁用=矩阵禁用 + 状态禁止（统一账本 §4.8）；中断=矩阵中断（停运在位者） | Behavior |
 | 2 | 状态并存、互斥 | 并存=跨族天然；族内互斥=状态机图结构（单当前节点） | State |
 | 3 | 技能/BUFF 决定进出行为 | SkillAsset.BehaviorTag（Sign=SkillID），结束收束退出 | 驱动层 |
 | 4 | 状态结束触发表现（含行为） | 状态机转移 → 边 TransitionPresentation；裸状态到期 → StateConfig.ExitPresentation（可配技能/时间轴/动画；技能本身可为行为） | State |
 | 5 | 状态时长（≤0 无限） | 节点 Duration / 外部携带，来源独立计时 | State |
 | 6 | 技能状态集 | SkillAsset.EnterStates（Tag→时长，Sign=SkillID） | 驱动层 |
-| 7 | 技能时间段解除互斥（取消窗口） | 矩阵配置"禁止+接管"（禁止挡入+挤出生效）；窗口内 SetBehaviorWaiver 豁免在位方禁止 → 放行进入 → 挤出接管 → 行为 Exit(Sign=SkillID) → 技能互锁中断（§4.7） | 双方 |
+| 7 | 技能时间段解除互斥（取消窗口） | 矩阵配置"禁用并中断"（禁用挡入+中断生效）；窗口内 SetBehaviorWaiver 豁免在位方禁用 → 放行进入 → 中断在位者 → 行为 Exit(Sign=SkillID) → 技能互锁中断（§4.7） | 双方 |
 | 8 | 状态自动切换 | 状态机资产：节点+条件边，服务器评估 | State |
 | 9 | 状态跳转表现 | 转移边 TransitionPresentation 唯一入口（状态节点不配表现——节点进出场与边过渡冗余；技能/时间轴/纯动画三通道，详情面板按 Type 显隐对应资产） | State |
 | 10 | 状态Task | BXT_EnterState（时长+可回退）/ BXT_ExitState（可控表现） | 驱动层 |
@@ -107,15 +107,15 @@
 
 ## 4. 行为系统：UBXBehaviorComponent
 
-> **术语契约（v4.5）**：**禁止（Forbid）**=挡启动的持续禁令（账本唯一事实，可被豁免，来源解除即失效）；**中断（Interrupt）**=一次性停运在跑实例的动作（就是 Stop——不记账、不恢复、不挡启动；需要"期间不许启动"就组合禁止原子）；**接管（Expel）**=进入时踢掉（动作非状态，矩阵挤出轴，对在位者执行 Stop）；**禁用（Disable）**=总称。**设计原则：账本只记持续事实，一次性动作不记账；高级需求全部显式组合**——硬直=禁止（+可选中断停蒙太奇）、打断=中断、聚气只锁=禁止（§4.8 组合表）。
+> **术语契约（v4.5；2026-09-01 命名修订）**：**禁止（Forbid）**=挡启动的持续禁令（账本唯一事实，可被豁免，来源解除即失效）；**中断**=一次性停运在跑实例的动作（就是 Stop——不记账、不恢复、不挡启动；需要"期间不许启动"就组合禁止原子），两个来源：状态/手动 `InterruptBehavior(域)` 与**矩阵中断轴**（行进入时停运列中的在位者，`BER_Expelled`）。**矩阵配置面（UI）命名：禁用=禁止关系挡入（RejectRelations）/ 中断=停运在位者（ExpelRelations）/ 禁用并中断=同格双配置**——"接管（挤出）"一词已弃用（用户决策），旧段落中的"接管/挤出"一律读作矩阵"中断"。**设计原则：账本只记持续事实，一次性动作不记账；高级需求全部显式组合**——硬直=禁止（+可选中断停蒙太奇）、打断=中断、聚气只锁=禁止（§4.8 组合表）。
 
 ### 4.1 职责
 
 | 职责 | 说明 |
 |------|------|
-| 唯一行为事实表 | ActiveBehaviors：Tag → Sources(Sign) + LastStartParameter |
-| 进入裁决 | 统一禁用裁决（中断∨禁止，豁免感知 §4.8）、代理权限与 CheckStart、挤出（接管不豁免） |
-| 停止裁决 | 驱动方 Stop（Sign 匹配）、矩阵挤出、状态中断、回滚 |
+| 唯一行为事实表 | ActiveBehaviors：Tag → Sources(Sign)（启动参数由 Proxy 自记,事实表不存） |
+| 进入裁决 | 禁止裁决（账本唯一判据，豁免感知 §4.8）、代理权限与 CheckStart、清场中断（矩阵中断不豁免） |
+| 停止裁决 | 驱动方 Stop（Sign 匹配）、矩阵清场中断（BER_Expelled）、状态中断（BER_Interrupted）、回滚 |
 | 代理管理 | BeginPlay 预建（BehaviorProxyConfigs：常驻门控代理默认启用，事件型随管线隐式启停）；门控差分命令（§4.5/§13.3） |
 | 取消窗口豁免 | BehaviorWaivers（技能驱动，§4.7/§6.1） |
 | 中断/恢复 | 状态禁用的中断与自动恢复（§4.5） |
@@ -129,7 +129,7 @@ UENUM(BlueprintType)
 enum class EBXBehaviorEndReason : uint8
 {
 	BER_Manual = 0,        // 驱动方显式停止
-	BER_Expelled,          // 被行为矩阵挤出（被中断/取代）
+	BER_Expelled,          // 被矩阵中断（停运/取代）
 	BER_Interrupted,       // 被状态中断（可恢复）
 	BER_PredictRollback,   // 客户端预测回滚
 	BER_Cleared,           // 组件清空
@@ -174,34 +174,37 @@ TMap<FGameplayTag, UBXBehaviorProxy*> BehaviorProxies;               // 代理�
 
 ```cpp
 // 全局行为关系（Config=BattleX，各端一致的 ini；序列化格式与编辑器数据源）
+// 写入落点=插件 Config/DefaultBattleX.ini（随插件分发；编辑器侧 SaveConfig 显式传 Filename，
+// 默认落点是项目 Config 会造成两份漂移且项目层遮蔽插件层；读取经 GPluginLayers 合并两端）
 UCLASS(Config=BattleX, DefaultConfig, meta=(DisplayName="BattleX Behavior Relations"))
 class UBXBehaviorSettings : public UDeveloperSettings
 {
 	UPROPERTY(EditAnywhere, Config, Category="Matrix")
-	TArray<FGameplayTag> RelationTags;   // 矩阵轴（支持族Tag如 BXBehavior.Locomotion 整族参与）
+	TArray<FGameplayTag> RelationTags;   // 矩阵轴（支持族Tag分层匹配；当前行为轴为 BXBehavior.* 平铺Tag）
 	UPROPERTY(EditAnywhere, Config, Category="Matrix")
-	TMap<FGameplayTag, FGameplayTagContainer> ExpelRelations;    // 接管：行进入时踢掉列
+	TMap<FGameplayTag, FGameplayTagContainer> ExpelRelations;    // 中断：行进入时停运列中的在位行为
 	UPROPERTY(EditAnywhere, Config, Category="Matrix")
-	TMap<FGameplayTag, FGameplayTagContainer> RejectRelations;   // 禁止：列存在时挡住行
+	TMap<FGameplayTag, FGameplayTagContainer> RejectRelations;   // 禁用：列存在时挡住行
 
 	// ── 静态后处理索引（Transient，启动配置加载后/编辑器变更后 RebuildRelationIndex 重建，运行时只读）──
-	TMap<FGameplayTag, FBXBehaviorRelationRow> RelationRowIndex;      // 行键→{接管列,禁止列}（清场求值/诊断）
+	TMap<FGameplayTag, FBXBehaviorRelationRow> RelationRowIndex;      // 行键→{中断列,禁用列}（清场求值/诊断）
 	TMap<FGameplayTag, FGameplayTagContainer> ForbidDomainsBySource;  // 来源→它禁止的域集合（禁止贡献计算,§4.8）
 };
 ```
 
-| 单元格（两开关组合） | 语义 | 行为 |
+| 单元格（两开关组合，UI 命名） | 语义 | 行为 |
 |--------|------|------|
 | 空（默认，不落数据） | 天然共存 | 双活（移动+瞄准并行）——"并存"是关系的缺席，不是一种关系 |
-| 接管（挤出） | 行踢掉列 | 进入时 InternalStop(列, BER_Expelled)，代理正常 Stop（需求1中断） |
-| 禁止（拒绝） | 列挡住行 | 进入失败（需求1禁用） |
-| 禁止+接管 | 平时禁止，放行时接管 | 两张表同格配置；禁止挡入+挤出生效各管一段——取消窗口的标准配法（§4.7） |
+| 中断 | 行停运列中的在位者 | 进入时 InternalStop(列, BER_Expelled)，代理正常 Stop（需求1中断） |
+| 禁用 | 列挡住行 | 进入失败（需求1禁用） |
+| 禁用并中断 | 平时禁用挡入，放行时中断生效 | 两张表同格配置；挡入+中断各管一段——取消窗口的标准配法（§4.7） |
 
 - 行=想要进入，列=已存在；非对称是特性：(A,B)/(B,A) 独立配置；
-- 层级匹配：轴注册族 Tag（`BXBehavior.Locomotion`）一条覆盖整族；
+- **对角线自关系可配（2026-09-01）**：自禁用=挡同 Tag 重入（第一次攻击期间禁用攻击，直到攻击结束——条目死亡经 `RefreshForbidSources` 自动解除）；自中断=新实例顶掉旧实例（重启语义）；同格双配置在对角线只生效禁用（进入判定先于清场）；族 Tag 轴的自关系=族内互斥（在位成员挡住整族）；
+- 层级匹配：轴可注册族 Tag 一条覆盖整族（当前行为轴为 `BXBehavior.*` 平铺 Tag，族语义保留给未来分层）；
 - **静态后处理不漂移**：ini 运行期只读，索引是只读投影——物化零一致性成本（与动态规则"即时求值不物化"原则不冲突）；
 - 查询沿父链精确键命中：O(链深)，替代 O(R) 全表扫；
-- 编辑器：BattleXEditor DetailCustomization 渲染为矩阵网格（单元格四态循环 空→接管→禁止→禁止+接管，对角线禁用=重复启动语义，图例如碰撞通道矩阵）。
+- 编辑器：BattleXEditor DetailCustomization 渲染为矩阵网格——SGridPanel 内容自适应列宽 + 横向滚动，轴名显示省略 `BXBehavior.` 父族前缀（`BXBehavior.PerfectDodge`→`PerfectDodge`，悬停提示完整名）；单元格四态循环 空→禁用→中断→禁用并中断（含对角线自关系）；轴选择器 `SGameplayTagCombo.Filter` 仅列 `BXBehavior.*` 行为族（根名串经 `GetFilteredGameplayRootTags` 裁剪树根，不显示全量 Tag）；**任何矩阵变更都不走 ForceRefreshDetails 整视图重建（设置页卡顿根源）**——单元格点击 SetText 直改单元格文本，增删轴经 SBox 容器 SetContent 只换网格本体。
 
 ### 4.4 激活与停止管线
 
@@ -211,16 +214,17 @@ InternalStartBehavior(Tag, Sign, Param):
   1. 禁止裁决：IsBehaviorForbidden(Tag) → false（FailReason=ForbiddenBy:域）
   1a. 代理权限检查：代理存在且未启用（被禁止原子的 DisableProxy 关掉）→ false
   2. Proxy->CheckStart(Param) 失败 → false
-  3. 挤出：活跃行为命中接管列（沿父链查行索引）→ 逐个 InternalStop(该条目, BER_Expelled)
-     （接管是动作不是状态，不受豁免影响，无条件执行）
+  3. 清场：活跃行为命中的中断列（沿父链查行索引）→ 逐个 InternalStop(该条目, BER_Expelled)
+     （矩阵中断是动作不是状态，不受豁免影响，无条件执行）
   4. 表更新（新 Sign 追加 / 同 Sign 刷新）；Proxy->StartBehavior(Param)
+     （代理出生即启用,无隐式 Enable/Disable;bEnabledByDefault 字段已删除）
   5. 条目诞生边沿 → RefreshForbidSources(Tag)（禁止贡献登记，§4.8）
   6. 广播 BXEvent.Behavior.Enter {Tag, Sign}
   7. 服务器：MulticastBehaviorEnter；连接数变化时投影快照
 
 InternalStopBehavior(Tag, Sign, Reason, Param):
   1. 查无该 Sign → false；移除来源；仍有其他来源 → true（先停先退）
-  2. Proxy->StopBehavior(Param)；移除条目
+  2. Proxy->StopBehavior()（无参,真停语义置 bStarted=false）；移除条目
   3. 条目死亡边沿 → RefreshForbidSources(Tag)（禁止贡献注销）
   4. 广播 BXEvent.Behavior.Exit {Tag, Sign, Reason}   ← 技能互锁监听点
   5. 服务器：MulticastBehaviorExit
@@ -229,12 +233,13 @@ InternalStopBehavior(Tag, Sign, Reason, Param):
 ```cpp
 // 对外 API：
 bool StartBehavior(const FGameplayTag& Tag, int64 Sign = 0, const FInstancedStruct& Param = {});
-bool StopBehavior(const FGameplayTag& Tag, int64 Sign = 0, const FInstancedStruct& Param = {});
+bool StopBehavior(const FGameplayTag& Tag, int64 Sign = 0);
 bool StopBehaviorAllSources(const FGameplayTag& Tag, ...);            // 全来源退出
 // 重复 Start = 代理重启 + 来源刷新；代理主动结束（动画完/位移到位）→ StopBehavior(Tag, ProxyKey)
+// Stop 参数通道已退役:StopBehavior 组件侧与 Proxy 侧均无参(真停语义,无需参数)
 ```
 
-**所有停止路径（手动/挤出/中断/回滚/清空）都走 InternalStopBehavior**——代理 Stop、事件一个不漏（机制性根治 Stop 链路失效类问题）。
+**所有停止路径（手动/矩阵中断/状态中断/回滚/清空）都走 InternalStopBehavior**——代理 Stop、事件一个不漏（机制性根治 Stop 链路失效类问题）。
 
 ### 4.5 中断（一次性动作，不记账）
 
@@ -296,7 +301,7 @@ InterruptBehavior(域):
 
 ### 4.7 取消窗口与禁止豁免（禁止通道的写入期修饰）
 
-**动机**：取消窗口的本意是"技能运行到某些时刻，**临时取消对互斥行为的禁用**"——这是互斥规则系统应有的原生能力（对规则的豁免），而非"受害方免疫标志"的对偶编码（原 ProtectionEntries：姿态行为默认免疫挤出、窗口期解除免疫——语义等价但概念归属错层，已退役）。
+**动机**：取消窗口的本意是"技能运行到某些时刻，**临时取消对互斥行为的禁用**"——这是互斥规则系统应有的原生能力（对规则的豁免），而非"受害方免疫标志"的对偶编码（原 ProtectionEntries：姿态行为默认免疫矩阵中断、窗口期解除免疫——语义等价但概念归属错层，已退役）。
 
 **机制**：豁免登记在**在位方**，不在进入方——技能只声明"豁免我自己造成的禁止"，放行谁由矩阵的禁止关系决定（技能零新增配置面）。**豁免在写入期折算**：被豁免的在位方不贡献禁止条目（`RefreshForbidSources` 推导时跳过），读取路径零豁免依赖——**账本命中严格等于被禁**：
 
@@ -309,18 +314,18 @@ void RemoveWaiversBySign(int64 InSign);                                         
 bool IsBehaviorWaived(const FGameplayTag& InSubjectTag) const;                        // 族匹配(诊断用)
 ```
 
-- **语义边界一句话：豁免只豁免"禁止"，不豁免"接管"**——禁止关系放行，挤出执行照旧，窗口内谁进来谁接管，窗口外谁也进不来；
+- **语义边界一句话：豁免只豁免"禁用"，不豁免"中断"**——禁用关系放行，中断执行照旧，窗口内谁进来谁顶掉在位者，窗口外谁也进不来；
 - **豁免翻转是第三个记账时刻**：翻转时对匹配豁免域的全部活跃在位方重跑 `RefreshForbidSources`（窗口开=撤回贡献，窗口关=重新贡献），§4.8 收束点⑥；
 - **豁免不产生网络流量**：服务器权威裁决，客户端事实经多播镜像后自然一致；
 - 技能侧参与（§6.1）：窗口边界 `SetBehaviorWaiver(BehaviorTag, SkillID, bInWindow)`，结束 `RemoveWaiversBySign(SkillID)`；`bWaiveOnCancelWindow=false` 关闭豁免语义。
 
-**时序示例**（矩阵 `(A/B/C→S)=禁止+接管`，技能 S 配置窗口 [1s,2s]）：
+**时序示例**（矩阵 `(A/B/C→S)=禁用并中断`，技能 S 配置窗口 [1s,2s]）：
 
 | 时刻 | 事件 | 账本 S 类来源 | 行为系统 |
 |------|------|--------|---------|
-| t=0 | 技能开始，S 活跃 | 空 | A/B/C 被矩阵禁止挡住——禁用来自静态规则，无动态登记 |
+| t=0 | 技能开始，S 活跃 | 空 | A/B/C 被矩阵禁用挡住——禁用来自静态规则，无动态登记 |
 | 1s | 窗口开 | `[(S域, SkillID)]` | S 的禁止贡献撤回，A/B/C 放行 |
-| 1.2s | A 准备开始 | 不变 | CanStart 通过 → 挤出接管 S（Exit, Expelled）→ 技能互锁中断 → A 激活 |
+| 1.2s | A 准备开始 | 不变 | CanStart 通过 → 中断停运 S（Exit, Expelled）→ 技能互锁 → A 激活 |
 | 收束 | 技能结束 | RemoveWaiversBySign → 空 | 来源死亡豁免跟走，零残留 |
 | 2s | （若技能存活）窗口关 | 空 | S 重新贡献禁止，恢复挡入状态 |
 
@@ -339,7 +344,7 @@ bool IsBehaviorForbidden(const FGameplayTag& InBehaviorTag, FGameplayTag* OutBy 
 
 **记账收束——配平契约**：
 
-> 账本中条目 ≡ { (行键R, 在位方B) : B 活跃 ∧ R 的禁止列覆盖 B ∧ B 未被豁免 } ∪ { 动态禁止来源（未解除） }
+> 账本中条目 ≡ { (行键R, 在位方B) : B 活跃 ∧ R 的禁用列覆盖 B ∧ B 未被豁免 } ∪ { 动态禁止来源（未解除） }
 
 **记账点（完整枚举，缺一即鬼影）**：
 
@@ -359,11 +364,11 @@ bool IsBehaviorForbidden(const FGameplayTag& InBehaviorTag, FGameplayTag* OutBy 
 
 | 需求 | 组合 |
 |------|------|
-| 硬直（刹车+锁启动） | Forbid[Locomotion]；若需打断攻击蒙太奇 → 追加 `InterruptBehavior[Attack]`（一次性） |
+| 硬直（刹车+锁启动） | Forbid[Walk/Run/Sprint/Jump/Landed]（移动系平铺，逐条列出）；若需打断攻击蒙太奇 → 追加 `InterruptBehavior[HighPrioritySkill]`（一次性） |
 | 打断（可立刻再出招） | `InterruptBehavior[Attack]`（一次性 Stop；没有恢复，重新 Start 即可） |
 | 聚气只锁（当前打完之后不能打） | `ForbidBehavior[Attack]` |
-| 矩阵禁止贡献 | Forbid（在位方生死自动组合，1~6 号记账点） |
-| 接管 | 对在位者执行 Stop（事实表生命周期，非账本概念） |
+| 矩阵禁用贡献 | Forbid（在位方生死自动组合，1~6 号记账点） |
+| 矩阵中断 | 对在位者执行 Stop（事实表生命周期，非账本概念） |
 
 **代理调用与客户端同步**：禁止原子直接调 `Proxy->DisableProxy/EnableProxy`（幂等）；中断原子直接调 `Proxy->StopBehavior`。控制包=原子重放：`MulticastForbidBehavior(域,来源,Sign) / MulticastUnforbidBehavior(域,来源,Sign) / MulticastInterruptBehavior(域)`，跟随端收到后执行同一个原子函数（账本+代理调用，与服务器同构）。Late Join：快照条目按代理 `IsStarted()` 推导 Flags(bit0)——条目在但代理未启动 → 标记，重建时不自动 Start；Forbid 贡献由重建路径补齐。
 
@@ -534,7 +539,7 @@ InternalEnterState(族内Tag, 外部时长, Sign):
 ### 5.5 禁用行为门控（规则三）
 
 - 配置面：SM 节点与裸状态各持 `InterruptBehaviors`（停运在跑）+ `ForbidBehaviors`（挡启动）两个列表——**原子显式组合**（§4.8 组合表）：硬直两列都配，"打断不锁"只配中断，"聚气只锁"只配禁止；
-- **Tag 层级缓解配置量**：禁 `BXBehavior` 根 = 全行为禁（处决/变形）；禁 `BXBehavior.Locomotion` 族 = 禁移动族（保留攻击）；禁具体 Tag = 单禁；
+- **Tag 层级缓解配置量**：禁 `BXBehavior` 根 = 全行为禁（处决/变形）；禁移动系 = 逐条列出 Walk/Run/Sprint/Jump/Landed（Tag 已平铺，无移动族层）；禁具体 Tag = 单禁；
 - 状态进入管线末步：对命中域的活跃行为执行中断（§4.5）；状态条目彻底移除时执行恢复判定；
 - 多来源状态：任一来源存续即禁用持续（先到先退语义顺延）。
 
@@ -592,7 +597,7 @@ TArray<FBXSkillCancelWindow> CancelWindows;   // 取消窗口 {TimeWindow}
 - **开始**（InternalPlaySkill 成功，含预测路径）：`StartBehavior(BehaviorTag, SkillID)`；EnterStates 逐条 `EnterState(Tag, 时长, SkillID)`；
 - **结束**（CleanSkillTrash 收束，覆盖自然/中断/回滚全部 FinishReason）：`StopBehavior(BehaviorTag, SkillID)` + `ExitState(Tag, SkillID)` 逐条退出 + `RemoveWaiversBySign(SkillID)`——回滚路径必须退出，否则客户端残留；
 - **取消窗口**：SkillComponent Tick 窗口边界 `SetBehaviorWaiver(BehaviorTag, SkillID, bInWindow)`（边界切换才写豁免表，常规帧零开销）+ 广播 CancelWindowChanged（出招表推送触发源）；结束按 SkillID 收束全部豁免；
-- **技能互锁**：技能组件监听 `BXEvent.Behavior.Exit`（Sign=本技能 SkillID 且 Reason∈{BER_Expelled, BER_Interrupted}）→ StopSkill(FinishReason=Interrupt)——技能行为被矩阵挤出或被状态中断，技能即中断；
+- **技能互锁**：技能组件监听 `BXEvent.Behavior.Exit`（Sign=本技能 SkillID 且 Reason∈{BER_Expelled, BER_Interrupted}）→ StopSkill(FinishReason=Interrupt)——技能行为被矩阵清场或被状态中断，技能即中断；
 - **霸体**对硬直：在驱动层解决（受击方计算决定不施加硬直状态/技能），门控层不加豁免——硬直状态一旦进入必禁用其列表内行为。
 
 ### 6.2 状态Task（需求10）
@@ -642,7 +647,7 @@ public:
 
 ## 7. 出招表系统：UBXComboComponent（需求12）
 
-出招表 = 输入驱动的招式图遍历器。决策与执行分离：**组件只做"输入→招式"翻译，从不直接中断技能**——中断是行为矩阵挤出+技能互锁的自动结果。
+出招表 = 输入驱动的招式图遍历器。决策与执行分离：**组件只做"输入→招式"翻译，从不直接中断技能**——技能中断是行为矩阵清场（停运在位者）+技能互锁的自动结果。
 
 ### 7.1 逻辑归属
 
@@ -665,7 +670,7 @@ public:
 OnInput(Light)（EnhancedInput 回调，帧初）:
   1. 缓冲区记录 {Light, 服务器世界时间}
   2. TryResolve：
-     a. BehaviorComponent 查攻击行为活跃？（如 BXBehavior.Attack.SlashA）
+     a. BehaviorComponent 查攻击行为活跃？（如 BXBehavior.HighPrioritySkill）
      b. 活跃 且 CanStartBehavior(SlashB)=true（窗口豁免已放行禁止）→ 匹配边 → PlaySkill(SlashB)
      c. 活跃 且 CanStartBehavior=false（禁止生效）→ 留缓冲，等方向B
      d. 不活跃 → 出基础招（RootEdges）
@@ -684,8 +689,8 @@ SkillComponent Tick 跨入取消窗口边界:
 
 ```
 PlaySkill(SlashB)（预测 + ServerPlaySkill）
-  → StartBehavior(BXBehavior.Attack.SlashB, SkillID_B)
-      → 行为矩阵 (SlashB, SlashA)=禁止+接管，窗口内 SlashA 已豁免禁止 → 放行进入，挤出接管
+  → StartBehavior(BXBehavior.HighPrioritySkill, SkillID_B)
+      → 行为矩阵 (SlashB, SlashA)=禁用并中断，窗口内 SlashA 已豁免禁用 → 放行进入，中断 SlashA
       → BXEvent.Behavior.Exit {SlashA, Sign=SkillID_A, BER_Expelled}
       → 技能互锁 → StopSkill(A, FinishReason=Interrupt)
   → SlashB 时间轴开始
@@ -708,14 +713,14 @@ struct FBXComboEdge
 
 - **服务器校验**（HandleServerPlaySkill 扩展）：B 的前置边要求 A 运行中 **或 A 结束距今 < RTT 余量（200ms 宽限）**——严格窗口校验会误杀两端时间轴毫秒偏差下的合法连招；
 - 连招链式回滚：A 预测被拒 → B 前置失效 → B 校验失败 → 自然链式回滚，无需特判；
-- 边界处理：攻击行为被挤出/中断（BXEvent.Behavior.Exit 攻击族 + BXEvent.State.Enter 受击族）→ 清空输入缓冲（连招意图作废）；冷却拒绝 → PlaySkill 假冷却链路生效，缓冲已消费即丢弃。
+- 边界处理：攻击行为被中断（矩阵清场/状态中断，BXEvent.Behavior.Exit 攻击族 + BXEvent.State.Enter 受击族）→ 清空输入缓冲（连招意图作废）；冷却拒绝 → PlaySkill 假冷却链路生效，缓冲已消费即丢弃。
 
 ## 8. 事件、调试与日志
 
 | Tag | 参数 | 时机 |
 |-----|------|------|
 | BXEvent.Behavior.Enter | {Tag, Sign} | 条目从无到有（含中断恢复） |
-| BXEvent.Behavior.Exit | {Tag, Sign, Reason} | 最后来源退出（挤出/中断/回滚） |
+| BXEvent.Behavior.Exit | {Tag, Sign, Reason} | 最后来源退出（矩阵中断/状态中断/回滚） |
 | BXEvent.State.Enter | {Tag, Sign, Duration} | 条目从无到有 |
 | BXEvent.State.Exit | {Tag, Sign, Reason} | 最后来源退出 |
 | BXEvent.State.PredictResult / BXEvent.Behavior.PredictResult | {Sign, bSuccess} | 预测确认/回滚（客户端本地） |
@@ -741,13 +746,17 @@ TArray<FBXPredictedEntry> GetPredictedEntries(const AActor* Target);            
 
 ```
 BXBehavior                             // 行为根（收编 BXImmBehavior_*）
-  BXBehavior.Locomotion                // 移动族（矩阵轴/禁用族Tag）
-    BXBehavior.Locomotion.Move         //   ← BXBehavior_Locomotion_Move
-    BXBehavior.Locomotion.Rotate       //   ← BXBehavior_Locomotion_Rotate
-    BXBehavior.Locomotion.Jump         //   ← BXImmBehavior_Locomotion_Jump
-    BXBehavior.Locomotion.Landed       //   ← BXImmBehavior_Locomotion_Landed
-  BXBehavior.Attack                    // 攻击族（技能姿态行为：SlashA/SlashB…随内容扩展）
-  （BXBehavior_Root 删除：全行为查询用 BXBehavior 根）
+  （2026-09-01 二次整理：Locomotion/Attack 分层移除，13 个行为 Tag 全部平铺挂在根下）
+  BXBehavior.Walk / Run / Sprint       // 走路 / 跑步 / 冲刺（CMC 主动移动事实暂统一报 Walk，速度分档待移动状态设计）
+  BXBehavior.Jump / Landed             // 跳跃 / 落地（瞬间行为，CMC 上报）
+  BXBehavior.LowPrioritySkill          // 低优先技能（低优先姿态行为域）
+  BXBehavior.HighPrioritySkill         // 高优先技能（高优先姿态行为域，原 Attack 族语义；连招姿态在此）
+  BXBehavior.Defense / Block / Parry   // 防御 / 格挡 / 弹反
+  BXBehavior.Dodge / PerfectDodge      // 闪避 / 极限闪避
+  BXBehavior.ParallelSkill             // 可并行技能（不与其它姿态互斥）
+  （转向不再作为行为：CMC 主动转向事实上报随整理移除，旋转门控仍可经代理注册域实现）
+  （动画 Tag 移出行为族：BXBehavior.PlayMontage.Default → BXMontage.Default）
+  （BXBehavior_Root 保留：全行为查询/矩阵轴选择器过滤用 BXBehavior 根）
 
 BXState                                // 状态根
   BXState.Stun                         // 硬直族（SM_Stun 资产节点域）
@@ -765,33 +774,35 @@ BXEvent                                // 事件根（沿用 BXEvent.* 惯例）
   （BXEvent_Behavior_Move/Rotate/Jump/Landed、BXEvent_ChangeForbiddenBehavior 随旧体系废弃）
 
 新增：BXInput.*（出招表语义输入：Light/Heavy/方向组合，PC 映射层产出）
+新增：BXMontage.*（动画域，自行为族迁出：BXMontage.Default）
 不动：BXAttackType/Force/RPos、BXBodyPart、BXGear*、BXTEvent/Data、BXEvent_Buff/Skill/Projectile_*、
       BXSkillInput_*、BXRelationShip、BXActorType
 ```
 
-迁移要点：Native Tag 改名 = 宏参数 + 全局替换；`Config/Tags/BXGameplayTags.ini` 资产侧 Tag 无冲突不动；行为矩阵轴注册 `BXBehavior.Locomotion` / `BXBehavior.Attack` 族 Tag。
+迁移要点：Native Tag 改名 = 宏参数 + 全局替换；`Config/Tags/BXGameplayTags.ini` 资产侧 Tag 无冲突不动；行为矩阵轴按需注册 `BXBehavior.*` 行为 Tag（已平铺）。
 
-迁移进度：2026-08-29 Jump/Landed 原生 Tag 已迁移（`BXBehavior.Locomotion.Jump/Landed`，常量同步改名 `BXBehavior_Locomotion_Jump/Landed`），BXImmBehavior 前缀退役——族 Tag `BXBehavior.Locomotion` 现覆盖全部四个移动系行为（禁用/矩阵/族查询一致）。内容资产仅 `BP_BXC_Behavior` 的 BehaviorProxyConfigs 序列化了旧 Tag 键，需在编辑器重选；BXStunState_* 等资产侧旧 Tag 仍随资产制作批量迁移。
+迁移进度：2026-08-29 Jump/Landed 原生 Tag 已迁移，BXImmBehavior 前缀退役；**2026-09-01 二次整理**——Locomotion/Attack 分层移除，行为 Tag 平铺为 13 个（Walk/Run/Sprint/Jump/Landed/LowPrioritySkill/HighPrioritySkill/Defense/Block/Parry/Dodge/PerfectDodge/ParallelSkill），动画 Tag 移族至 `BXMontage.Default`，CMC 主动转向事实上报移除、主动移动事实暂统一报 Walk。资产侧需同步：`BP_BXC_Behavior` 的 BehaviorProxyConfigs 按新 Tag 重配（Move/Jump/Landed 代理），技能资产 BehaviorTag 改用 LowPrioritySkill/HighPrioritySkill/ParallelSkill，矩阵轴在设置页重选。
 
 ## 10. 配置示例：受击硬直链 + 攻击取消连招
 
 ```
-行为矩阵（UBXBehaviorSettings，行=想进入，列=已存在；空=天然共存不落数据）：
-  行＼列                    Locomotion(族)   Attack.SlashA
-  BXBehavior.Attack.SlashB       —            禁止+接管
-  Locomotion                     —                —
+行为矩阵（UBXBehaviorSettings，行=想进入，列=已存在；空=天然共存不落数据；对角线自关系可配）：
+  行＼列                          HighPrioritySkill   Landed
+  BXBehavior.HighPrioritySkill       禁用并中断         —
+  BXBehavior.Landed                       —             —
 
-SM_Stun 资产（状态机图，决策树编辑器产出；原子组合示例——硬直需要"停运在跑+锁启动"，两列都配）：
-  [Knockback 节点] Duration=1.0  Forbid=[BXBehavior.Locomotion]
+SM_Stun 资产（状态机图，决策树编辑器产出；原子组合示例——硬直需要"停运在跑+锁启动"，两列都配；
+              移动系 Tag 已平铺，禁移动需逐条列出）：
+  [Knockback 节点] Duration=1.0  Forbid=[BXBehavior.Walk, BXBehavior.Run, BXBehavior.Sprint, BXBehavior.Jump]
       │ 边(TE_OnExpired, 无条件, TransitionPresentation=Montage(AM_KnockdownLoop)) → [Knockdown]
-  [Knockdown 节点] Duration=2.0  Forbid=[BXBehavior.Locomotion, BXBehavior.Attack]  Interrupt=[Attack蒙太奇停运,可选]
+  [Knockdown 节点] Duration=2.0  Forbid=[BXBehavior.Walk, BXBehavior.Run, BXBehavior.Sprint, BXBehavior.Jump, BXBehavior.HighPrioritySkill]  Interrupt=[高优先技能蒙太奇停运,可选]
       │ 边(TE_OnExpired, TransitionPresentation=Montage(AM_GetUp)) → [Recover]
-  [Recover 节点] Duration=1.5  Forbid=[BXBehavior.Locomotion]
+  [Recover 节点] Duration=1.5  Forbid=[BXBehavior.Walk, BXBehavior.Run, BXBehavior.Sprint, BXBehavior.Jump]
       │ 边(TE_OnExpired) → 无出边 → 自然退出(SM空转)
   （Forbid=存续期禁止挡启动,状态退出自动解除;Interrupt=进入时一次性停运,不挡启动不恢复;§4.8 组合表）
 
 攻击技能资产（SlashA）：
-  BehaviorTag          = BXBehavior.Attack.SlashA          // 姿态行为（禁止由矩阵承担，无保护登记）
+  BehaviorTag          = BXBehavior.HighPrioritySkill      // 姿态行为（禁止由矩阵承担，无保护登记）
   EnterStates          = { }                                // 攻击不进状态（硬直才进）
   CancelWindows        = [ { TimeWindow=(0.4, 0.6) } ]      // 取消窗口
   bWaiveOnCancelWindow = true                               // 窗口期豁免自身互斥（放行被拒的接招行为）
@@ -804,15 +815,15 @@ SM_Stun 资产（状态机图，决策树编辑器产出；原子组合示例—
   SlashA 节点: [输入 Light, 窗口内] → SlashB
 ```
 
-**执行链（受击）**：受击技能命中 → EnterState(Knockback, 1.0s, SkillID) → 外部转移进 SM_Stun → 禁止移动族（DisableProxy→CMC 开关刹车+锁启动）→ 1s 到期 → 服务器评估 OnExpired 边 → 转移 Knockdown（顶掉式退出+进入，各端多播跟随，倒地循环动画）→ 2s 到期 → 转移 Recover（起身动画）→ 1.5s 自然退出 → 移动族解禁（EnableProxy→开关放行）→ SM 空转。
+**执行链（受击）**：受击技能命中 → EnterState(Knockback, 1.0s, SkillID) → 外部转移进 SM_Stun → 禁止移动系各 Tag（DisableProxy→CMC 开关刹车+锁启动）→ 1s 到期 → 服务器评估 OnExpired 边 → 转移 Knockdown（顶掉式退出+进入，各端多播跟随，倒地循环动画）→ 2s 到期 → 转移 Recover（起身动画）→ 1.5s 自然退出 → 移动系解禁（EnableProxy→开关放行）→ SM 空转。
 
-**执行链（取消连招）**：SlashA 播放中（矩阵 (SlashB→SlashA)=禁止+接管，前摇期 SlashB 被禁止挡住）→ 0.4~0.6s 窗口 → SetBehaviorWaiver(SlashA域) 豁免禁止（撤回 S 的禁止贡献）→ 玩家按 Light → CanStartBehavior(SlashB) 通过 → 缓冲+匹配边 → PlaySkill(SlashB) → 挤出接管 SlashA → 技能互锁中断 A → B 开始。
+**执行链（取消连招）**：SlashA 播放中（矩阵 (HighPrioritySkill→HighPrioritySkill)=禁用并中断——**对角线自关系**：前摇期同 Tag 新技能被自禁用挡住）→ 0.4~0.6s 窗口 → SetBehaviorWaiver(HighPrioritySkill域) 豁免禁用（撤回 S 的禁止贡献）→ 玩家按 Light → CanStartBehavior(HighPrioritySkill) 通过 → 缓冲+匹配边 → PlaySkill(SlashB) → 清场中断停运 SlashA（自中断=新实例顶掉旧实例）→ 技能互锁中断 A → B 开始。
 
 ## 11. 实施计划
 
 | 阶段 | 状态 | 内容 | 涉及文件 |
 |------|------|------|----------|
-| P1 行为系统 | ✅ 完成 | UBXBehaviorComponent 重写：事实表/矩阵/Agent 接入(BXBAMove等复用)/挂起恢复(遮蔽表方案§4.5)/事件 | Behavior/ 新目录：BXBehaviorComponent.h/cpp、BXBehaviorStructs.h、BXBehaviorEnums.h、BXBehaviorSettings.h/cpp、BXBehaviorFunctionLibrary、BehaviorAgent/ 迁移 |
+| P1 行为系统 | ✅ 完成（遮蔽表/挂起机制已被 v4.5 取代,见 P11） | UBXBehaviorComponent 重写：事实表/矩阵/Agent 接入(BXBAMove等复用)/挂起恢复(遮蔽表方案)/事件 | Behavior/ 新目录：BXBehaviorComponent.h/cpp、BXBehaviorStructs.h、BXBehaviorEnums.h、BXBehaviorSettings.h/cpp、BXBehaviorFunctionLibrary、BehaviorAgent/ 迁移 |
 | P1.5 矩阵编辑器 | ✅ 完成 | UBXBehaviorSettings DetailCustomization（矩阵网格/对角线禁用/图例） | BattleXEditor/CustomLayout/BXBehaviorMatrixCustomization.*，注册于 BattleXEditor.cpp |
 | P2 状态系统 | ✅ 完成 | UBXStateComponent 重写：事实表/时长到期/裸状态配置/禁用门控对接/表现三通道 | State/ 新目录：BXStateComponent.h/cpp、BXStateStructs.h、BXStateEnums.h |
 | P3 状态机资产 | ✅ 完成 | UBXStateMachineAsset/SMStateNode/SMTransitionEdge（决策树派生）+ 实例管理 + 转移评估（OnTick/OnExpired）+ 外部进入整合（族内单活顶掉） | State/StateMachine/ 三件套；决策树编辑器复用（BXStateMachineType 注册节点/边类型） |
@@ -823,7 +834,8 @@ SM_Stun 资产（状态机图，决策树编辑器产出；原子组合示例—
 | P8 迁移清理 | ✅ 完成（代码侧） | 删旧 BXSMStun/旧状态机类、FunctionLibrary/CMC 适配；Tag 树：BXBehavior.* 族已建，BXStunState_* 等旧 Tag 保留，随资产制作批量迁移（§9） | State/StateMachine 清理、BXGameplayTags.h/cpp |
 | P9 行为代理升级 | ✅ 完成（代码侧） | Agent→Proxy：命令模型（Enable/Disable/Start/Stop/Update，§13.1）/默认启用配置与两种代理形态（§13.2）/双禁用位门控下推（§13.3）/CMC 本地开关改造/改名迁移（§13.5）。实现注记：① 挂起位落盘、拒绝位求值即算（RefreshProxyGates 统一差分命令）；② 控制包升格为代理粒度命令——服务器遮蔽新覆盖逐代理发包（含无活跃条目的常驻门控），客户端 HandleClientControlBehavior 置/清挂起位+活跃条目事件流重放，无条目场景（门控常态）位同样生效；③ CanStart 对默认启用代理含 ProxyDisabled 检查（客户端无遮蔽表的预测两端一致性）；④ InternalStart 失败回退隐式启用；⑤ OnRep 兜底清理配对清挂起位 | BXBehaviorProxy.*、BXProxyMove/Rotate/Jump/Landed、BXBehaviorComponent、BXCharacterMovementComponent、蓝图父类重定向 |
 | P10 取消窗口豁免 | ✅ 完成（代码侧） | 取消窗口机制重构（§4.7）：BehaviorWaivers 豁免表替代 ProtectionEntries 保护表（在位方登记——技能传自身 BehaviorTag，放行集合由矩阵拒绝关系决定；挡入豁免/接管不豁免）；矩阵单元格两开关四组合（编辑器四态循环，"并存"正名为空单元格）；FindRelation 按轴可查（新增 BR_ExpelReject）；CanStart 拒绝检查豁免感知（EvaluateRejectRelations，CanStart/CheckForbiddenBehavior/RefreshProxyGates 共用）；技能层 bProtectedBehavior→bWaiveOnCancelWindow、窗口边界 SetBehaviorWaiver、技能开始不再登记保护；霸体不受影响（驱动层语义 §6.1）。豁免不产生网络流量（服务器权威裁决） | BXBehaviorComponent.h/cpp、BXBehaviorEnums/Settings、矩阵编辑器、BXSkillAsset/Manager/Component、BXBehaviorFunctionLibrary |
-| P11 统一禁用账本 | ✅ 设计定稿（代码待实施） | v4.5（§4.8）：**禁止账本**——中断=一次性 Stop 动作（`InterruptBehavior(域)`：对域覆盖代理执行 StopBehavior + 逐来源 BER_Interrupted），不记账不恢复；账本唯一事实=禁止（`ForbidLedger`：`ForbidBehavior/UnforbidBehavior/UnforbidBySign`，矩阵贡献经 `RefreshForbidSources` 九... 六收束点自动组合，豁免写入期折算）；静态矩阵后处理双索引（行索引清场 + 列索引贡献）；Proxy 四函数与操作严格一一对应（禁止→DisableProxy/EnableProxy、中断→StopBehavior、开始→StartBehavior、停止→StopBehavior），无门控重算（`RefreshProxyGates/ProxyGateStates/bEnabledByDefault/bArmedResume` 删除）；控制包=原子重放（MulticastForbid/Unforbid/InterruptBehavior）；CanStart 只看禁止覆盖（`IsBehaviorForbidden`）；状态配置面两列表 Interrupt/Forbid；更名：EvaluateBehaviorDisable→IsBehaviorForbidden、ResumeBehavior 删除、bEnabledByDefault 删除（代理出生即启用） | BXBehaviorEnums/Structs/Settings/Component/BehaviorProxy、矩阵编辑器、BXStateComponent、FunctionLibrary、BXSkillComponent（互锁 Reason）、状态资产 |
+| P11 统一禁用账本 | ✅ 完成（代码侧+审查修复） | v4.5（§4.8）：**禁止账本**——中断=一次性 Stop 动作（`InterruptBehavior(域)`：对域覆盖代理执行 StopBehavior + 逐来源 BER_Interrupted），不记账不恢复；账本唯一事实=禁止（`ForbidLedger`：`ForbidBehavior/UnforbidBehavior/UnforbidBySign`，矩阵贡献经 `RefreshForbidSources` 九... 六收束点自动组合，豁免写入期折算）；静态矩阵后处理双索引（行索引清场 + 列索引贡献）；Proxy 四函数与操作严格一一对应（禁止→DisableProxy/EnableProxy、中断→StopBehavior、开始→StartBehavior、停止→StopBehavior），无门控重算（`RefreshProxyGates/ProxyGateStates/bEnabledByDefault/bArmedResume` 删除）；控制包=原子重放（MulticastForbid/Unforbid/InterruptBehavior）；CanStart 只看禁止覆盖（`IsBehaviorForbidden`）；状态配置面两列表 Interrupt/Forbid；更名：EvaluateBehaviorDisable→IsBehaviorForbidden(IsForbiddenByLedger)、ResumeBehavior 删除、bEnabledByDefault 删除（代理出生即启用）。审查修复：① 幂等语义——重复 Forbid 只短路账本 Contains,**代理 DisableProxy 调用与控制包必达**（重复禁止期间代理可能已被解禁,跳过致裁决与物理脱节）;② `Proxy::StopBehavior()` 去参化（真停语义置 bStarted=false,停止参数通道随恢复语义退役,StopBehaviorWithParameter/FunctionLibrary 参数停止模板删除）;③ 事实表 LastStartParameter 删除（无读者,Proxy 自记参数）;④ `FindProxyForBehavior` 精确优先沿父链族匹配（CanStart 权限/CheckStart 支持按族 Tag）;⑤ 中断对纯事实行为=纯事件（显式决策,无代理配置的行为中断只发事件不代劳终止） | BXBehaviorEnums/Structs/Settings/Component/BehaviorProxy、矩阵编辑器、BXStateComponent、FunctionLibrary、BXSkillComponent（互锁 Reason）、状态资产 |
+| P12 矩阵编辑器修订 | ✅ 完成（2026-09-01 二次重施+增删轴优化） | 四问题修复：① 矩阵网格 SGridPanel 内容自适应列宽（行/列轴名完整显示，废弃固定 140/90px）+ 横向 SScrollBox；轴选择器 `SGameplayTagCombo.Filter=BXBehavior` 仅列行为族 Tag（不显示全量）；② 对角线自关系放开（UI 去掉对角线禁用 + `GetRelation` 删同 Tag 早退）——自禁用=挡同 Tag 重入（条目死亡自动解除），自中断=新实例顶掉旧实例（重启语义），双配置同格在对角线只生效禁用（进入判定先于清场）；③ **任何矩阵变更都不再 ForceRefreshDetails 整视图重建（每次操作卡顿的根源）**——单元格点击 Commit(SaveConfig+RebuildRelationIndex) 后 SetText 直改单元格，增删轴经定制持有的 SBox 容器 `SetContent(MakeMatrixWidget())` 只换网格本体；④ 关系命名修订为**禁用/中断/禁用并中断**（"接管"一词弃用，UMETA DisplayName/单元格文本/页面描述同步；C++ 标识符 BR_Expel/ExpelRelations 未动以保 ini 序列化兼容）；⑤ 行为关系配置写入**插件 Config/DefaultBattleX.ini**（编辑器 Commit 用 `SaveConfig(CPF_Config, *插件ini路径)` + `GConfig->Flush` + 清理项目层残留旧节；SaveConfig 默认落点是项目 Config，会与插件层副本两份漂移且项目层遮蔽插件层；读取仍走 Config=BattleX 的 GPluginLayers 合并链）。**回退史**：本行修订曾完成后被 v4.5 会话以旧版方案覆盖一次（SButton 网格/ForceRefreshDetails 每击重建/对角线禁用/命名 接管→禁止→禁止+接管/页面位于 插件→BattleXBehaviorRelations），2026-09-01 已在其上重新落地并加档③——后续任何会话整段重写矩阵编辑器时，以本行为准校验 | BattleXEditor/CustomLayout/BXBehaviorMatrixCustomization.*、BXBehaviorSettings.h/cpp、BXBehaviorEnums.h |
 
 - P1-P4 纯本地独立编译验证；P5 需 PIE 双端（确认/拒绝/超时三路径 × 行为/状态两组）；P6 末做互锁联调；P7 依赖 P6 的 CancelWindowChanged；
 - RPC 参数全部**按值传递**（UHT 约束，已验证教训）；后续可按技能系统合并经验将 Server Enter/Exit RPC 合并瘦身；
@@ -834,7 +846,7 @@ SM_Stun 资产（状态机图，决策树编辑器产出；原子组合示例—
 
 | # | 决议 |
 |---|------|
-| Q1 互锁粒度 | 技能行为（EnterBehaviors Keys 任一）被挤出或中断 → 技能中断（姿态破即中断） |
+| Q1 互锁粒度 | 技能行为（EnterBehaviors Keys 任一）被矩阵中断或状态中断 → 技能中断（姿态破即中断） |
 | Q2 预测 | 行为/状态均由各自组件统一预测回滚；技能链路 Sign=SkillID 无独立 RPC |
 | Q3 同步通道 | COND_InitialOnly + 显式 Enter/Exit 多播（RunningSkillStates 形态）；确认走多播匹配（非 OnRep 差分）；预测因此可行 |
 | Q4 外部进入时长 | 携带优先，-1 用节点/配置默认（规则二） |
@@ -868,7 +880,7 @@ SM_Stun 资产（状态机图，决策树编辑器产出；原子组合示例—
 | UpdateProxy(DeltaSeconds) | 帧驱动 | bWantsProxyUpdate=true 的代理由组件 Tick 转发（转向插值/轨迹类代理用） |
 | CheckStartBehavior | 判定 | 沿用 |
 
-- Proxy 状态：`bEnabled` / `LastStartParameter`（恢复重放）/ `bWantsProxyUpdate`；`BehaviorFunctions` 位掩码扩位（Native/BP × Enable/Disable/Update 三对新槽位）；
+- Proxy 状态：`bEnabled` / `LastStartParameter`（仅作最近启动参数记录,无恢复重放消费方）/ `bWantsProxyUpdate`；`BehaviorFunctions` 位掩码扩位（Native/BP × Enable/Disable/Update 三对新槽位）；`StopBehavior()` 已去参化（真停语义,重复 Stop 幂等）；
 - **组件是唯一命令源**：Proxy 不自治、不持有禁用来源逻辑——多状态叠加禁用由组件聚合（遮蔽表），最后一个禁用来源退出才发一次 Enable；幂等由组件侧"最后命令值"差分保证。
 
 ### 13.2 组件配置与两种代理形态
@@ -887,15 +899,15 @@ BeginPlay 流程：创建全部实例 → Initialize（代理出生即启用,无
 | 形态 | 例子 | 默认态 | 权限轴驱动方 |
 |------|------|--------|--------------|
 | 常驻型 | Move/Rotate/Jump | 启用 | 门控通道（§13.3） |
-| 事件型 | Attack 姿态、Landed | 禁用 | 管线 Start **隐式启用**、最后来源退出**隐式禁用**——与现状"条目存在即运行"语义天然对齐 |
+| 事件型 | Attack 姿态、Landed | 启用（出生即启用） | 无隐式启停——条目存在即运行,Start/Stop 由事实表生命周期驱动（v4.5:两种形态合并,`bEnabledByDefault` 字段删除） |
 
 ### 13.3 门控通道：双禁用位，一个出口
 
 v4.5 起门控下推简化为**禁止原子直调**：`ForbidBehavior/UnforbidBehavior` 在账本登记/解除后直接对域覆盖代理调 `Proxy->DisableProxy/EnableProxy`（Proxy 内部 bEnabled 幂等兜底），无门控重算、无位落盘；子类未实现 Disable 槽位=纯裁决无物理效果（效果由子类实现决定，§4.8）：
 
 - **中断原子**：对域覆盖代理直接调 `Proxy->StopBehavior`（活动轴停，控制包同构重放）；中断不驱动门控（门控归禁止独占）；
-- **拒绝位**：两端各自由 ActiveBehaviors 重算（客户端行为表经多播镜像一致 + 全局 ini 各端相同），任何表变更收尾触发一次；
-- **出口唯一**：位差分 → `Proxy->EnableProxy/DisableProxy` → Proxy 原生实现推 `UBXCharacterMovementComponent::SetBehaviorMoveBlocked/RotateBlocked/JumpBlocked`；组件不再 `FindComponentByClass` 移动组件，行为系统与移动模块解耦，三轴开关由三个 Proxy 各自认领；
+- **覆盖求值**：禁止原子对域覆盖代理逐个直调（幂等）——无求值时机问题；跟随端账本经控制包同构重放,两端一致；
+- **出口唯一**：`Proxy->EnableProxy/DisableProxy` → Proxy 原生实现推 `UBXCharacterMovementComponent::SetBehaviorMoveBlocked/RotateBlocked/JumpBlocked`；组件不再 `FindComponentByClass` 移动组件，行为系统与移动模块解耦，三轴开关由三个 Proxy 各自认领；
 - **CMC 侧改造**：四处反查改读本地布尔开关（CalcVelocity 加速度清零 / ComputeSlideVector 跳过滑动修正 / PhysicsRotation 停转向 / CanAttemptJump 挡跳跃）；事实上报方向（Start/Stop 上报）原样保留；
 - **静止不抖动**：Move 事实上报 Stop（条目移除）不影响 Proxy 启用态，开关不随事实抖动；
 - 历史注记：早期方案 MirroredSuspensions 镜像集合→"中断位"（v4.1~v4.4）→ v4.5 起门控位整体删除（禁止原子直调代理，无位可落盘）。

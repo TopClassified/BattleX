@@ -39,7 +39,7 @@ FText UBXBehaviorSettings::GetSectionText() const
 FText UBXBehaviorSettings::GetSectionDescription() const
 {
 #define LOCTEXT_NAMESPACE "BXBehaviorSettings"
-	return LOCTEXT("SectionDesc", "行为矩阵:行为域之间的禁止/接管关系配置(轴经页面内按钮添加)");
+		return LOCTEXT("SectionDesc", "行为矩阵:行为域之间的禁用/中断关系配置(轴经页面内按钮添加;对角线=同行为自关系)");
 #undef LOCTEXT_NAMESPACE
 }
 #endif
@@ -64,7 +64,7 @@ void UBXBehaviorSettings::RebuildRelationIndex()
 	RelationRowIndex.Reset();
 	ForbidDomainsBySource.Reset();
 
-	// 行索引:两表按行键合并(同格配置=禁止+接管,各管一段互不遮蔽)
+	// 行索引:两表按行键合并(同格配置=禁用+中断,各管一段互不遮蔽)
 	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : ExpelRelations)
 	{
 		FBXBehaviorRelationRow& Row = RelationRowIndex.FindOrAdd(Pair.Key);
@@ -76,7 +76,7 @@ void UBXBehaviorSettings::RebuildRelationIndex()
 		Row.ForbidColumns.AppendTags(Pair.Value);
 	}
 
-	// 列索引:反排禁止列(来源 → 它禁止的域集合;接管是动作不贡献账本,不入索引)
+	// 列索引:反排禁用列(来源 → 它禁用的域集合;中断是动作不贡献账本,不入索引)
 	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : RejectRelations)
 	{
 		for (int32 i = 0; i < Pair.Value.Num(); ++i)
@@ -88,7 +88,8 @@ void UBXBehaviorSettings::RebuildRelationIndex()
 
 EBXBehaviorRelation UBXBehaviorSettings::GetRelation(const FGameplayTag& InEntering, const FGameplayTag& InExisting) const
 {
-	if (InEntering == InExisting || !InEntering.IsValid() || !InExisting.IsValid())
+	// 同行为自关系可配(对角线):自禁用挡同Tag重入,自中断=新实例顶掉旧实例,不再特殊早退
+	if (!InEntering.IsValid() || !InExisting.IsValid())
 	{
 		return EBXBehaviorRelation::BR_None;
 	}
@@ -105,7 +106,7 @@ void UBXBehaviorSettings::GetExpelTargets(const FGameplayTag& InEntering, TArray
 		return;
 	}
 
-	// 沿父链查行索引(精确键命中穷尽 MatchesTag 的全部行),收集接管列
+	// 沿父链查行索引(精确键命中穷尽 MatchesTag 的全部行),收集中断列
 	FGameplayTag Cursor = InEntering;
 	while (Cursor.IsValid())
 	{
@@ -123,7 +124,7 @@ void UBXBehaviorSettings::GetExpelTargets(const FGameplayTag& InEntering, TArray
 
 EBXBehaviorRelation UBXBehaviorSettings::FindRelation(const FGameplayTag& InEntering, const FGameplayTag& InExisting) const
 {
-	// 两轴独立求值后合并(同格配置时返回禁止+接管,拒绝与挤出各管一段互不遮蔽)
+	// 两轴独立求值后合并(同格配置时返回禁用+中断,拒绝与挤出各管一段互不遮蔽)
 	bool bExpel = false;
 	bool bForbid = false;
 

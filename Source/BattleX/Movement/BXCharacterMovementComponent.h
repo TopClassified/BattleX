@@ -33,11 +33,8 @@ protected:
 
 #pragma region Behavior
 protected:
-	// 正在主动移动
+	// 正在主动移动(边沿状态,驱动主动移动事实上报;暂统一报走路,速度分档待移动状态设计落地)
 	bool bProactiveMoving = false;
-
-	// 正在主动转向
-	bool bProactiveRotating = false;
 
 	// 行为代理下推的门控开关(由UBXProxyMove/Rotate/Jump在Enable/Disable时推送,默认false=允许)
 	// 架构约定:本组件只读本地开关执行物理刹车,不反查行为组件;主动事实上报(Start/Stop)方向保持不变

@@ -27,14 +27,15 @@ enum class EBXBehaviorEndReason : uint8
 
 
 
-// 行为关系类型(矩阵单元格=两开关组合:禁止/接管,空=天然共存不落数据)
+// 行为关系类型(矩阵单元格=禁用/中断两开关组合,空=天然共存不落数据;
+// 对角线自关系可配:自禁用挡同Tag重入,自中断=新实例顶掉旧实例)
 UENUM(BlueprintType)
 enum class EBXBehaviorRelation : uint8
 {
 	BR_None             = 0             UMETA(DisplayName = "空(天然共存)"),
-	BR_Expel                            UMETA(DisplayName = "接管(挤出)"),
-	BR_Forbid                           UMETA(DisplayName = "禁止(挡入)"),
-	BR_ForbidExpel                      UMETA(DisplayName = "禁止+接管"),
+	BR_Expel                            UMETA(DisplayName = "中断"),
+	BR_Forbid                           UMETA(DisplayName = "禁用"),
+	BR_ForbidExpel                      UMETA(DisplayName = "禁用并中断"),
 
 	BR_TMax                             UMETA(Hidden)
 };

@@ -67,6 +67,7 @@ public class BattleXEditor : ModuleRules
                 "TimeManagement",
                 "ApplicationCore",
                 "DeveloperSettings",
+                "Projects",
 
                 "UnrealEd",
                 "ToolMenus",

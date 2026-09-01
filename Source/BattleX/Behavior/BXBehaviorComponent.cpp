@@ -165,7 +165,7 @@ bool UBXBehaviorComponent::CheckActiveBehavior(const FGameplayTag& InBehaviorTag
 		return true;
 	}
 
-	// 族Tag语义(BXBehavior.Locomotion → 查询任一移动族行为活跃)
+	// 族Tag语义(查询Tag自身或其祖先域活跃即命中,如查询 BXBehavior 命中任一行为)
 	for (const TPair<FGameplayTag, FBXBehaviorRuntimeData>& Pair : ActiveBehaviors)
 	{
 		if (Pair.Key.MatchesTag(InBehaviorTag))

@@ -11,15 +11,24 @@ namespace BXGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_State_Enter, "BXEvent.State.Enter", "状态进入(条目从无到有)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_State_Exit, "BXEvent.State.Exit", "状态退出(最后来源退出)");
 
-	// 行为树根与族
+	// 行为族(平铺:全部直接挂在根下,2026-09-01 整理,移除 Locomotion/Attack 分层)
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Root, "BXBehavior", "行为根Tag(持续行为命名空间,激活记录判定用)");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion, "BXBehavior.Locomotion", "移动族Tag(行为矩阵轴/状态禁用族)");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Attack, "BXBehavior.Attack", "攻击族Tag(技能姿态行为域)");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Move, "BXBehavior.Locomotion.Move", "主动移动");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Rotate, "BXBehavior.Locomotion.Rotate", "主动转向");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXPlayMontage_Default, "BXBehavior.PlayMontage.Default", "播放Montage默认Tag");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Jump, "BXBehavior.Locomotion.Jump", "主动跳跃(瞬间行为)");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Locomotion_Landed, "BXBehavior.Locomotion.Landed", "落地(瞬间行为)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Walk, "BXBehavior.Walk", "走路");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Run, "BXBehavior.Run", "跑步");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Sprint, "BXBehavior.Sprint", "冲刺");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Jump, "BXBehavior.Jump", "跳跃(瞬间行为)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Landed, "BXBehavior.Landed", "落地(瞬间行为)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_LowPrioritySkill, "BXBehavior.LowPrioritySkill", "低优先技能(低优先姿态行为域)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_HighPrioritySkill, "BXBehavior.HighPrioritySkill", "高优先技能(高优先姿态行为域)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Defense, "BXBehavior.Defense", "防御");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Block, "BXBehavior.Block", "格挡");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Parry, "BXBehavior.Parry", "弹反");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Dodge, "BXBehavior.Dodge", "闪避");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_PerfectDodge, "BXBehavior.PerfectDodge", "极限闪避");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_ParallelSkill, "BXBehavior.ParallelSkill", "可并行技能(不与其它姿态互斥的姿态行为域)");
+
+	// 动画(已移出行为族,原 BXBehavior.PlayMontage.Default)
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXMontage_Default, "BXMontage.Default", "播放Montage默认Tag");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXDamageType_Default, "BXDamageType.Default", "默认伤害类型");
 

@@ -144,6 +144,7 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 	}
 	
 	// 更新主动移动的状态，并广播事件
+	// 主动移动事实上报暂统一报走路(BXBehavior.Walk);走路/跑步/冲刺的速度分档待移动状态设计落地后在此区分
 	if (UBXEventManager* BXEMgr = UBXEventManager::Get(this))
 	{
 		if (bProactiveMoving)
@@ -152,7 +153,7 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 			{
 				bProactiveMoving = false;
 				// 通知到行为组件，停止主动移动
-				UBXBehaviorFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move);
+				UBXBehaviorFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Walk);
 			}
 		}
 		else
@@ -161,7 +162,7 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 			{
 				bProactiveMoving = true;
 				// 通知到行为组件，开始主动移动
-				UBXBehaviorFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Move);
+				UBXBehaviorFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Walk);
 			}
 		}	
 	}
@@ -188,27 +189,11 @@ void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 	
 	if (!(bOrientRotationToMovement || bUseControllerDesiredRotation) || bBehaviorRotateBlocked)
 	{
-		// 停止主动转向状态
-		if (bProactiveRotating)
-		{
-			bProactiveRotating = false;
-			// 通知到行为组件，停止主动转向
-			UBXBehaviorFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
-		}
-		
 		return;
 	}
 
 	if (!HasValidData() || (!CharacterOwner->Controller && !bRunPhysicsWithNoController))
 	{
-		// 停止主动转向状态
-		if (bProactiveRotating)
-		{
-			bProactiveRotating = false;
-			// 通知到行为组件，停止主动转向
-			UBXBehaviorFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
-		}
-		
 		return;
 	}
 
@@ -320,24 +305,6 @@ void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		
 		DesiredRotation.DiagnosticCheckNaN(TEXT("CharacterMovementComponent::PhysicsRotation(): DesiredRotation"));
 		MoveUpdatedComponent( FVector::ZeroVector, DesiredRotation, /*bSweep*/ false );
-
-		// 开始主动转向状态
-		if (!bProactiveRotating)
-		{
-			bProactiveRotating = true;
-			// 通知到行为组件，开始主动转向
-			UBXBehaviorFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
-		}
-	}
-	else
-	{
-		// 停止主动转向状态
-		if (bProactiveRotating)
-		{
-			bProactiveRotating = false;
-			// 通知到行为组件，停止主动转向
-			UBXBehaviorFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Rotate);
-		}
 	}
 }
 
@@ -365,7 +332,7 @@ void UBXCharacterMovementComponent::ProcessLanded(const FHitResult& Hit, float r
 	}
 
 	// 通知到行为组件，落地
-	UBXBehaviorFunctionLibrary::StartBehaviorWithParameter<FHitResult>(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Landed, Hit);
+	UBXBehaviorFunctionLibrary::StartBehaviorWithParameter<FHitResult>(GetOwner(), BXGameplayTags::BXBehavior_Landed, Hit);
 	
 	StartNewPhysics(remainingTime, Iterations);
 }
@@ -399,7 +366,7 @@ bool UBXCharacterMovementComponent::DoJump(bool bReplayingMoves)
 		SetMovementMode(MOVE_Falling);
 
 		// 通知到行为组件，跳跃
-		UBXBehaviorFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Locomotion_Jump);
+		UBXBehaviorFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Jump);
 		
 		return true;
 	}
