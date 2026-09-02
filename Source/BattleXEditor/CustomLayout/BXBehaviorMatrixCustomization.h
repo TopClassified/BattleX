@@ -7,14 +7,19 @@
 
 class IDetailLayoutBuilder;
 class UBXBehaviorSettings;
+class SBorder;
 class STextBlock;
+struct FButtonStyle;
 
 
 // UBXBehaviorSettings的Detail定制:行为关系渲染为矩阵网格
 // 轴经"+添加矩阵轴"(GameplayTag选择器)添加,点击表头轴名删除;
 // 单元格四态循环:空→禁用→中断→禁用并中断(含对角线自关系:自禁用挡同Tag重入,自中断=新实例顶掉旧实例);
 // 任何变更(单元格/增删轴)都不走ForceRefreshDetails(整视图重建是设置页卡顿根源):
-// 单元格点击直改单元格文本,增删轴经SBox容器SetContent只换网格本体
+// 单元格点击直改单元格文本,增删轴经SBox容器SetContent只换网格本体;
+// 冻结行头/列头(常驻可见):显式列宽/行高下三块面板(表头条/标签列/网格体)跨面板对齐,
+// 表头条横向位移由网格体横向滚动回调驱动,标签列与网格体同处纵向滚动器天然同步;
+// 单元格悬停时其行头/列头与单元格本身全部黄底黑字高亮,一眼定位当前在配哪两个行为的关系
 class FBXBehaviorSettingsCustomization : public IDetailCustomization
 {
 public:
@@ -52,14 +57,20 @@ private:
 	// 单元格文本
 	FText GetCellText(int32 InRowIndex, int32 InColumnIndex) const;
 
+	// 单元格按钮样式:空=默认,禁用=蓝,中断=红,禁+中=紫(着色副本缓存在定制实例上,指针须长期存活)
+	const FButtonStyle* GetCellButtonStyle(uint8 InRelation);
+
 	// 变更落盘:保存配置+重建运行时索引(无视图重建,轻量可高频)
 	void Commit(UBXBehaviorSettings* InSettings);
 
-	// 行为关系配置的目标 ini:插件 Config/DefaultBattleX.ini(随插件分发;找不到插件时返回空,Commit 回退默认落点)
-	static FString GetPluginConfigIniPath();
-
 	// 重建矩阵网格本体(SBox容器SetContent换内容,不重建Details整视图)
 	void RebuildMatrixGrid();
+
+	// 悬停联动:单元格悬停时将其行头/列头染黄,一目了然当前在配哪两个行为的关系
+	void HandleCellHovered(int32 InRowIndex, int32 InColumnIndex);
+
+	// 悬停退出:恢复行头/列头常态配色
+	void HandleCellUnhovered(int32 InRowIndex, int32 InColumnIndex);
 
 private:
 	TWeakObjectPtr<UBXBehaviorSettings> CachedSettings;
@@ -69,4 +80,25 @@ private:
 
 	// 单元格文本控件缓存(键=(行<<32)|列;单元格点击后SetText直改,避免整视图重建)
 	TMap<uint64, TWeakPtr<STextBlock>> CellTextWidgets;
+
+	// 单元格按钮缓存(键=(行<<32)|列;点击后按关系切换着色样式)
+	TMap<uint64, TWeakPtr<SButton>> CellButtonWidgets;
+
+	// 单元格着色样式缓存(键=关系位码;样式副本被 SButton 指针引用,须随定制实例存活)
+	TMap<uint8, TSharedPtr<FButtonStyle>> CellButtonStyles;
+
+	// 单元格悬停高亮覆盖层缓存(键=(行<<32)|列;悬停时点亮黄色覆盖层)
+	TMap<uint64, TWeakPtr<SBorder>> CellHighlightWidgets;
+
+	// 行头/列头文本控件缓存(键=行/列索引;悬停时文字染黑)
+	TMap<int32, TWeakPtr<STextBlock>> RowLabelWidgets;
+	TMap<int32, TWeakPtr<STextBlock>> ColumnHeaderWidgets;
+
+	// 行头/列头黄底高亮层缓存(键=行/列索引;悬停时点亮黄底)
+	TMap<int32, TWeakPtr<SBorder>> RowLabelHighlightWidgets;
+	TMap<int32, TWeakPtr<SBorder>> ColumnHeaderHighlightWidgets;
+
+	// 当前悬停的单元格(INDEX_NONE=无)
+	int32 HoveredRowIndex = INDEX_NONE;
+	int32 HoveredColumnIndex = INDEX_NONE;
 };

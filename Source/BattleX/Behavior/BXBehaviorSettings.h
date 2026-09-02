@@ -21,7 +21,7 @@ public:
 	UPROPERTY(Transient)
 	FGameplayTagContainer ExpelColumns;
 
-	// 禁用列(列存在时挡住行,豁免写入期折算)
+	// 禁用列(行在位期间禁用列中的行为,豁免写入期折算)
 	UPROPERTY(Transient)
 	FGameplayTagContainer ForbidColumns;
 };
@@ -46,6 +46,9 @@ public:
 	virtual FText GetSectionDescription() const override;
 #endif
 
+	// 行为关系配置的目标 ini:插件 Config/DefaultBattleX.ini(随插件分发;找不到插件时返回空)
+	static FString GetPluginConfigIniPath();
+
 	virtual void PostInitProperties() override;
 	virtual void PostReloadConfig(class FProperty* PropertyThatWasLoaded) override;
 
@@ -53,7 +56,7 @@ public:
 	void RebuildRelationIndex();
 
 	// 查询两个行为的关系(带族Tag层级匹配:轴上注册的族Tag整族参与关系判定;
-	// 两张表同格配置时返回禁用+中断,拒绝与挤出各管一段互不遮蔽;
+	// 两张表同格配置时返回禁用+中断,互不遮蔽;
 	// 对角线自关系可配:自禁用挡同Tag重入,自中断=新实例顶掉旧实例)
 	EBXBehaviorRelation GetRelation(const FGameplayTag& InEntering, const FGameplayTag& InExisting) const;
 
@@ -76,7 +79,8 @@ public:
 	UPROPERTY(EditAnywhere, Config, Category = "Matrix")
 	TMap<FGameplayTag, FGameplayTagContainer> ExpelRelations;
 
-	// 禁用关系:列存在时挡住行(在位方被豁免时不执行——折算发生在账本写入期)
+	// 禁用关系:行在位期间禁用列中的行为(用户语义:行=该行为开始时中断列+在位期间禁用列;
+	// 豁免写入期折算——在位方被豁免时其禁用贡献不入账本)
 	UPROPERTY(EditAnywhere, Config, Category = "Matrix")
 	TMap<FGameplayTag, FGameplayTagContainer> RejectRelations;
 
@@ -85,7 +89,7 @@ protected:
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, FBXBehaviorRelationRow> RelationRowIndex;
 
-	// 列索引:来源(潜在在位方)Tag → 它禁止的域集合(禁止贡献计算,§4.8)
+	// 列索引:禁用来源(在位行为)→ 它禁用的域集合(行=来源,列=被禁域;禁止贡献计算,§4.8)
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, FGameplayTagContainer> ForbidDomainsBySource;
 };

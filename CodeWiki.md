@@ -486,7 +486,7 @@ Task 的显示名和分类使用引擎自带的蓝图元数据字段，**不使�
 
 #### `UBXBehaviorComponent` ([BXBehaviorComponent.h](Source/BattleX/Behavior/BXBehaviorComponent.h))
 
-行为管理组件，通过 GameplayTag 标识行为（行为族 `BXBehavior.*` 已平铺 13 Tag：Walk/Run/Sprint/Jump/Landed/LowPrioritySkill/HighPrioritySkill/Defense/Block/Parry/Dodge/PerfectDodge/ParallelSkill，如 `BXBehavior.Dodge`）。
+行为管理组件，通过 GameplayTag 标识行为（行为族 `BXBehavior.*` 已平铺 13 Tag：Walk/Run/Sprint/Jump/Landed/LowSkill/HighSkill/Defense/Block/Parry/Dodge/PerfectDodge/ParallelSkill，如 `BXBehavior.Dodge`）。
 
 **核心数据结构**：
 - `ActiveBehaviors`：行为事实表 `TMap<Tag, FBXBehaviorRuntimeData>`（多来源 `Sources(Sign)` 叠加，最后来源退出条目死亡；同 Tag 重复 Start = 追加来源/重启语义）
@@ -499,7 +499,7 @@ Task 的显示名和分类使用引擎自带的蓝图元数据字段，**不使�
 
 **门控下推（CMC 解耦）**：禁止/中断原子直调域覆盖代理 `DisableProxy/EnableProxy/StopBehavior`（`FindProxyForBehavior` 精确命中优先、沿父链族匹配）；Proxy 原生实现推 `UBXCharacterMovementComponent::SetBehaviorMoveBlocked/RotateBlocked/JumpBlocked` 本地开关。移动组件只读开关执行物理刹车（加速度清零/停转向/挡跳跃），**不反查行为组件**；主动事实上报（Start/Stop）方向保留。
 
-**关系矩阵**（[BXBehaviorSettings.h](Source/BattleX/Behavior/BXBehaviorSettings.h)，`Config=BattleX`）：全局行为关系两开关组合——**禁用**（RejectRelations：列存在挡行，豁免写入期折算）/ **中断**（ExpelRelations：行进入时停运列中的在位者，不受豁免影响）/ **禁用并中断**（同格双配置，取消窗口标准配法）；空单元格=天然共存不落数据；**对角线自关系可配**（自禁用=挡同 Tag 重入直到条目死亡，自中断=新实例顶掉旧实例）。静态后处理双索引（行索引 `RelationRowIndex` 清场求值 + 列索引 `ForbidDomainsBySource` 禁止贡献计算），ini 运行期只读零漂移。**配置落插件 Config/DefaultBattleX.ini**（编辑器侧 SaveConfig 显式 Filename，随插件分发）。编辑器侧由 [BXBehaviorMatrixCustomization.cpp](Source/BattleXEditor/CustomLayout/BXBehaviorMatrixCustomization.cpp) 渲染为矩阵网格（SGridPanel 自适应列宽、轴名省略 `BXBehavior.` 前缀、单元格四态循环 空→禁用→中断→禁用并中断、点击直改单元格不走整视图重建）。
+**关系矩阵**（[BXBehaviorSettings.h](Source/BattleX/Behavior/BXBehaviorSettings.h)，`Config=BattleX`）：全局行为关系两开关组合——**禁用**（RejectRelations：行在位期间禁用列中的行为，豁免写入期折算）/ **中断**（ExpelRelations：行进入时停运列中的在位者，不受豁免影响）/ **禁用并中断**（同格双配置，连招自重启标准配法）；空单元格=天然共存不落数据；**对角线自关系可配**（自禁用=挡同 Tag 重入直到条目死亡，自中断=新实例顶掉旧实例）。静态后处理双索引（行索引 `RelationRowIndex` 清场求值 + 列索引 `ForbidDomainsBySource` 禁止贡献计算——键=行(禁用来源)、值=其禁用列），ini 运行期只读零漂移，重建时自动丢弃不在轴内的键与列。**配置落插件 Config/DefaultBattleX.ini**（读写均直连文件：编辑器 SaveConfig 显式 Filename、设置类 PostInitProperties LoadConfig 直读，随插件分发）。编辑器侧由 [BXBehaviorMatrixCustomization.cpp](Source/BattleXEditor/CustomLayout/BXBehaviorMatrixCustomization.cpp) 渲染为矩阵网格（SGridPanel 自适应列宽、轴名省略 `BXBehavior.` 前缀、单元格四态循环 空→禁用→中断→禁用并中断、点击直改单元格不走整视图重建）。
 
 **API**：`CheckActiveBehavior`（族 Tag 语义）/ `IsBehaviorDisabled`（账本查询转发）/ `CanStartBehavior`（纯查询：账本禁止/代理权限/CheckStart，出招表预检）/ `StartBehavior` / `StartBehaviorWithParameter`（按值收参 + MoveTemp，对齐 PlaySkillWithInputData 惯例）/ `StopBehavior` / `StopBehaviorAllSources` / `InterruptBehaviorsConflicting`（技能链清场：按中断列停运在位者，BER_Expelled）；**禁用原子**：`ForbidBehavior` / `UnforbidBehavior` / `UnforbidBySign`（账本登记+代理直调+控制包）；**中断原子**：`InterruptBehavior(域)`（一次性停运，不记账不恢复）；豁免：`SetBehaviorWaiver` / `RemoveWaiversBySign` / `IsBehaviorWaived`；网络入口 `StartBehaviorNet` / `StopBehaviorNet`（仅预测路径显式使用，CMC 高频路径与技能链路走本地 API）。
 

@@ -1,6 +1,8 @@
 #include "BXBehaviorSettings.h"
 
 #include "BXGameplayTags.h"
+#include "Interfaces/IPluginManager.h"
+#include "Misc/ConfigCacheIni.h"
 
 
 
@@ -48,6 +50,14 @@ void UBXBehaviorSettings::PostInitProperties()
 {
 	Super::PostInitProperties();
 
+	// 行为关系配置直读插件 ini(绕过 BattleX 自定义链的层级合并——裸键数组跨层合并会退化为末值,
+	// 表现为重启后只剩最后添加的轴;插件文件是本类唯一事实源)。路径解析失败时保持默认链读取
+	const FString PluginIniPath = GetPluginConfigIniPath();
+	if (!PluginIniPath.IsEmpty())
+	{
+		LoadConfig(nullptr, *PluginIniPath);
+	}
+
 	// 配置加载完成后重建后处理索引
 	RebuildRelationIndex();
 }
@@ -59,10 +69,74 @@ void UBXBehaviorSettings::PostReloadConfig(class FProperty* PropertyThatWasLoade
 	RebuildRelationIndex();
 }
 
+FString UBXBehaviorSettings::GetPluginConfigIniPath()
+{
+	// 行为关系配置随插件分发:插件 Config/DefaultBattleX.ini(读写均直连该文件,不经层级合并)
+	if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("BattleX")))
+	{
+		return FPaths::Combine(Plugin->GetBaseDir(), TEXT("Config"), TEXT("DefaultBattleX.ini"));
+	}
+	return FString();
+}
+
 void UBXBehaviorSettings::RebuildRelationIndex()
 {
 	RelationRowIndex.Reset();
 	ForbidDomainsBySource.Reset();
+
+	// 清理:丢弃不在矩阵轴内的键与列(改名/删轴残留——编辑器矩阵只渲染轴,这些条目不可见无法手清)
+	FGameplayTagContainer AxisContainer;
+	AxisContainer.AppendTags(RelationTags);
+	auto IsAxisRelated = [&AxisContainer](const FGameplayTag& Tag)
+	{
+		return AxisContainer.MatchesTag(Tag) || Tag.MatchesAny(AxisContainer);
+	};
+	{
+		TArray<FGameplayTag> StaleExpelKeys;
+		TArray<FGameplayTag> StaleRejectKeys;
+		for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : ExpelRelations)
+		{
+			if (!IsAxisRelated(Pair.Key))
+			{
+				StaleExpelKeys.Add(Pair.Key);
+			}
+		}
+		for (const FGameplayTag& StaleKey : StaleExpelKeys)
+		{
+			ExpelRelations.Remove(StaleKey);
+		}
+		for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : RejectRelations)
+		{
+			if (!IsAxisRelated(Pair.Key))
+			{
+				StaleRejectKeys.Add(Pair.Key);
+			}
+		}
+		for (const FGameplayTag& StaleKey : StaleRejectKeys)
+		{
+			RejectRelations.Remove(StaleKey);
+		}
+		for (TPair<FGameplayTag, FGameplayTagContainer>& Pair : ExpelRelations)
+		{
+			for (int32 i = Pair.Value.Num() - 1; i >= 0; --i)
+			{
+				if (!IsAxisRelated(Pair.Value.GetByIndex(i)))
+				{
+					Pair.Value.RemoveTag(Pair.Value.GetByIndex(i));
+				}
+			}
+		}
+		for (TPair<FGameplayTag, FGameplayTagContainer>& Pair : RejectRelations)
+		{
+			for (int32 i = Pair.Value.Num() - 1; i >= 0; --i)
+			{
+				if (!IsAxisRelated(Pair.Value.GetByIndex(i)))
+				{
+					Pair.Value.RemoveTag(Pair.Value.GetByIndex(i));
+				}
+			}
+		}
+	}
 
 	// 行索引:两表按行键合并(同格配置=禁用+中断,各管一段互不遮蔽)
 	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : ExpelRelations)
@@ -76,12 +150,13 @@ void UBXBehaviorSettings::RebuildRelationIndex()
 		Row.ForbidColumns.AppendTags(Pair.Value);
 	}
 
-	// 列索引:反排禁用列(来源 → 它禁用的域集合;中断是动作不贡献账本,不入索引)
+	// 列索引:行=禁用来源(在位行为),列=被禁域(用户语义:行在位期间禁用其列;
+	// 行开始时中断列由行索引承载,中断是动作不贡献账本)
 	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : RejectRelations)
 	{
 		for (int32 i = 0; i < Pair.Value.Num(); ++i)
 		{
-			ForbidDomainsBySource.FindOrAdd(Pair.Value.GetByIndex(i)).AddTag(Pair.Key);
+			ForbidDomainsBySource.FindOrAdd(Pair.Key).AddTag(Pair.Value.GetByIndex(i));
 		}
 	}
 }
@@ -124,7 +199,7 @@ void UBXBehaviorSettings::GetExpelTargets(const FGameplayTag& InEntering, TArray
 
 EBXBehaviorRelation UBXBehaviorSettings::FindRelation(const FGameplayTag& InEntering, const FGameplayTag& InExisting) const
 {
-	// 两轴独立求值后合并(同格配置时返回禁用+中断,拒绝与挤出各管一段互不遮蔽)
+	// 中断:进入者(InEntering)的中断列命中在位者(InExisting)——两遍:精确键+族行
 	bool bExpel = false;
 	bool bForbid = false;
 
@@ -136,15 +211,16 @@ EBXBehaviorRelation UBXBehaviorSettings::FindRelation(const FGameplayTag& InEnte
 		}
 	}
 
-	if (const FGameplayTagContainer* Container = RejectRelations.Find(InEntering))
+	// 禁用(用户语义:行在位期间禁用其列):在位者(InExisting)命中的行,其禁用列覆盖进入者(InEntering)
+	if (const FGameplayTagContainer* Container = RejectRelations.Find(InExisting))
 	{
-		if (InExisting.MatchesAny(*Container))
+		if (InEntering.MatchesAny(*Container))
 		{
 			bForbid = true;
 		}
 	}
 
-	// 族Tag方向匹配:行Tag为族,进入行为为其子Tag时继承关系
+	// 族行两遍:进入者继承族行的中断列 / 在位者继承族行的禁用列
 	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : ExpelRelations)
 	{
 		if (!bExpel && InEntering.MatchesTag(Pair.Key) && InExisting.MatchesAny(Pair.Value))
@@ -155,7 +231,7 @@ EBXBehaviorRelation UBXBehaviorSettings::FindRelation(const FGameplayTag& InEnte
 
 	for (const TPair<FGameplayTag, FGameplayTagContainer>& Pair : RejectRelations)
 	{
-		if (!bForbid && InEntering.MatchesTag(Pair.Key) && InExisting.MatchesAny(Pair.Value))
+		if (!bForbid && InExisting.MatchesTag(Pair.Key) && InEntering.MatchesAny(Pair.Value))
 		{
 			bForbid = true;
 		}

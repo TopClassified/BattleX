@@ -7,6 +7,7 @@
 #include "Behavior/BXBehaviorFunctionLibrary.h"
 #include "GameFramework/Character.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "TimerManager.h"
 
 
 
@@ -333,7 +334,20 @@ void UBXCharacterMovementComponent::ProcessLanded(const FHitResult& Hit, float r
 
 	// 通知到行为组件，落地
 	UBXBehaviorFunctionLibrary::StartBehaviorWithParameter<FHitResult>(GetOwner(), BXGameplayTags::BXBehavior_Landed, Hit);
-	
+
+	// 落地行为定时自动停止(可配时长;每次落地重置计时,Stop 幂等)
+	if (LandedBehaviorDuration > 0.0f)
+	{
+		TWeakObjectPtr<UBXCharacterMovementComponent> WeakThis(this);
+		GetWorld()->GetTimerManager().SetTimer(LandedBehaviorTimerHandle, FTimerDelegate::CreateLambda([WeakThis]()
+		{
+			if (WeakThis.IsValid())
+			{
+				UBXBehaviorFunctionLibrary::StopBehavior(WeakThis->GetOwner(), BXGameplayTags::BXBehavior_Landed);
+			}
+		}), LandedBehaviorDuration, false);
+	}
+
 	StartNewPhysics(remainingTime, Iterations);
 }
 

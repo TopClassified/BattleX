@@ -53,6 +53,7 @@ public class BattleX : ModuleRules
 				"Slate",
 				"SlateCore",
 				"DeveloperSettings",
+				"Projects",
 			}
 		);
 		
