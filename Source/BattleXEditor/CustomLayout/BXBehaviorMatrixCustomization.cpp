@@ -26,8 +26,235 @@
 #include "SGameplayTagCombo.h"
 #include "Styling/CoreStyle.h"
 #include "Misc/ConfigCacheIni.h"
+#include "DragAndDrop/DecoratedDragDropOp.h"
 
 #define LOCTEXT_NAMESPACE "BXBehaviorMatrix"
+
+// 矩阵统一行高(标签列/数据行/表头条一致,纵向滚动时跨面板逐行对齐;行头控件内部同样引用)
+constexpr float MatrixRowHeight = 30.0f;
+
+// ── 行头拖拽排序 ──
+// 轴拖拽操作:行头拖出时生成,携带源轴索引;FDecoratedDragDropOp 提供跟随光标的轴名提示
+class FBXAxisDragDropOp : public FDecoratedDragDropOp
+{
+public:
+	DRAG_DROP_OPERATOR_TYPE(FBXAxisDragDropOp, FDecoratedDragDropOp)
+
+	// 被拖拽轴在 RelationTags 中的源索引
+	int32 SourceIndex = INDEX_NONE;
+
+	static TSharedRef<FBXAxisDragDropOp> New(int32 InSourceIndex, const FText& InAxisName)
+	{
+		TSharedRef<FBXAxisDragDropOp> Operation = MakeShareable(new FBXAxisDragDropOp());
+		Operation->SourceIndex = InSourceIndex;
+		Operation->CurrentHoverText = InAxisName;
+		Operation->Construct();
+		return Operation;
+	}
+};
+
+// 可拖拽行头:按下左键启动拖拽检测(未过阈值不产生拖拽),拖过阈值生成轴拖拽操作;
+// 悬停拖拽按落点在本行头上/下半场点亮顶部/底部插入指示线,松手执行轴移动(行头与列头同轴同步);
+// 行头整体视觉(标签/悬停高亮/插入指示线)在此内部组装,宿主经 GetLabel/GetHighlight 登记悬停联动缓存
+class SBXDraggableAxisHeader : public SCompoundWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SBXDraggableAxisHeader)
+		: _SourceIndex(INDEX_NONE)
+		{}
+		// 本行头对应的轴索引(RelationTags 下标)
+		SLATE_ARGUMENT(int32, SourceIndex)
+		// 轴显示名(标签文本+拖拽跟随光标文本共用)
+		SLATE_ARGUMENT(FText, LabelText)
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs, FBXBehaviorSettingsCustomization* InOwner)
+	{
+		Owner = InOwner;
+		SourceIndex = InArgs._SourceIndex;
+		LabelText = InArgs._LabelText;
+
+		// 标签文本(悬停联动染黑,常态=标准前景;HitTestInvisible 让输入穿透到本控件)
+		Label = SNew(STextBlock)
+			.Text(LabelText)
+			.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+			.ColorAndOpacity(FSlateColor::UseForeground())
+			.Visibility(EVisibility::HitTestInvisible);
+
+		// 黄底高亮层(悬停联动点亮;垫在文字下层)
+		Highlight = SNew(SBorder)
+			.BorderImage(FCoreStyle::Get().GetBrush(TEXT("WhiteBrush")))
+			.ColorAndOpacity(FLinearColor(1.0f, 0.82f, 0.0f, 1.0f))
+			.Visibility(EVisibility::Hidden)
+			[
+				SNew(SBox)
+			];
+
+		// 顶部/底部插入指示线(悬停拖拽按落点半场点亮,3px 亮蓝条)
+		auto MakeInsertLine = []() -> TSharedPtr<SBorder>
+		{
+			return SNew(SBorder)
+				.BorderImage(FCoreStyle::Get().GetBrush(TEXT("WhiteBrush")))
+				.ColorAndOpacity(FLinearColor(0.2f, 0.55f, 1.0f, 0.95f))
+				.Visibility(EVisibility::Hidden)
+				[
+					SNew(SBox)
+				];
+		};
+		InsertAboveLine = MakeInsertLine();
+		InsertBelowLine = MakeInsertLine();
+
+		ChildSlot
+		[
+			SNew(SBox)
+			.HeightOverride(MatrixRowHeight)
+			[
+				SNew(SOverlay)
+				+ SOverlay::Slot()
+				.HAlign(HAlign_Fill)
+				.VAlign(VAlign_Fill)
+				[
+					Highlight.ToSharedRef()
+				]
+				+ SOverlay::Slot()
+				.HAlign(HAlign_Center)
+				.VAlign(VAlign_Center)
+				[
+					Label.ToSharedRef()
+				]
+				+ SOverlay::Slot()
+				.HAlign(HAlign_Fill)
+				.VAlign(VAlign_Top)
+				.Padding(FMargin(2.0f, 0.0f))
+				[
+					SNew(SBox)
+					.HeightOverride(3.0f)
+					[
+						InsertAboveLine.ToSharedRef()
+					]
+				]
+				+ SOverlay::Slot()
+				.HAlign(HAlign_Fill)
+				.VAlign(VAlign_Bottom)
+				.Padding(FMargin(2.0f, 0.0f))
+				[
+					SNew(SBox)
+					.HeightOverride(3.0f)
+					[
+						InsertBelowLine.ToSharedRef()
+					]
+				]
+			]
+		];
+	}
+
+	// 按下左键即启动拖拽检测(阈值内松手只是无效按下,不影响悬停/提示)
+	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+		{
+			return FReply::Handled().DetectDrag(SharedThis(this), EKeys::LeftMouseButton);
+		}
+		return FReply::Unhandled();
+	}
+
+	// 拖过阈值:生成轴拖拽操作(跟随光标显示轴名)
+	virtual FReply OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		if (MouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
+		{
+			return FReply::Handled().BeginDragDrop(FBXAxisDragDropOp::New(SourceIndex, LabelText));
+		}
+		return FReply::Unhandled();
+	}
+
+	// 悬停拖拽:按落点位于本行头上/下半场点亮对应插入指示线;悬停源行头自身不显示(放回原位)
+	virtual FReply OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
+	{
+		const FBXAxisDragDropOp* Operation = GetAxisDragOp(DragDropEvent);
+		if (!Operation)
+		{
+			return FReply::Unhandled();
+		}
+
+		const bool bInsertBelow = IsPointerInLowerHalf(MyGeometry, DragDropEvent);
+		const bool bIsSourceHeader = (Operation->SourceIndex == SourceIndex);
+		if (InsertAboveLine.IsValid())
+		{
+			InsertAboveLine->SetVisibility(!bIsSourceHeader && !bInsertBelow ? EVisibility::HitTestInvisible : EVisibility::Hidden);
+		}
+		if (InsertBelowLine.IsValid())
+		{
+			InsertBelowLine->SetVisibility(!bIsSourceHeader && bInsertBelow ? EVisibility::HitTestInvisible : EVisibility::Hidden);
+		}
+		return FReply::Handled();
+	}
+
+	// 离开/拖拽收尾(引擎对取消路径也向已悬停控件补发OnDragLeave):熄灭插入指示线
+	virtual void OnDragLeave(const FDragDropEvent& DragDropEvent) override
+	{
+		if (InsertAboveLine.IsValid())
+		{
+			InsertAboveLine->SetVisibility(EVisibility::Hidden);
+		}
+		if (InsertBelowLine.IsValid())
+		{
+			InsertBelowLine->SetVisibility(EVisibility::Hidden);
+		}
+	}
+
+	// 松手:源轴移到本行头槽位(落点上/下半场=插到其前/其后),宿主 Commit+换网格
+	virtual FReply OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
+	{
+		const FBXAxisDragDropOp* Operation = GetAxisDragOp(DragDropEvent);
+		if (!Operation || !Owner)
+		{
+			return FReply::Unhandled();
+		}
+
+		const bool bInsertBelow = IsPointerInLowerHalf(MyGeometry, DragDropEvent);
+		Owner->MoveAxis(Operation->SourceIndex, SourceIndex + (bInsertBelow ? 1 : 0));
+		return FReply::Handled();
+	}
+
+	// 悬停抓手光标(可拖拽的视觉暗示)
+	virtual FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override
+	{
+		return FCursorReply::Cursor(EMouseCursor::GrabHand);
+	}
+
+	// 悬停联动缓存登记入口(宿主 HandleCellHovered 染黄/染黑用)
+	TSharedRef<STextBlock> GetLabel() const { return Label.ToSharedRef(); }
+	TSharedRef<SBorder> GetHighlight() const { return Highlight.ToSharedRef(); }
+
+private:
+	// 从拖拽事件取本编辑器的轴拖拽操作(外部拖拽/其它类型返回nullptr)
+	static const FBXAxisDragDropOp* GetAxisDragOp(const FDragDropEvent& DragDropEvent)
+	{
+		const TSharedPtr<FDragDropOperation> Operation = DragDropEvent.GetOperation();
+		if (Operation.IsValid() && Operation->IsOfType<FBXAxisDragDropOp>())
+		{
+			return static_cast<const FBXAxisDragDropOp*>(Operation.Get());
+		}
+		return nullptr;
+	}
+
+	// 落点是否在本行头下半场(上半场=插到其前,下半场=插到其后)
+	static bool IsPointerInLowerHalf(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent)
+	{
+		const FVector2D LocalPosition = MyGeometry.AbsoluteToLocal(DragDropEvent.GetScreenSpacePosition());
+		return LocalPosition.Y > MyGeometry.GetLocalSize().Y * 0.5f;
+	}
+
+	FBXBehaviorSettingsCustomization* Owner = nullptr;
+	int32 SourceIndex = INDEX_NONE;
+	FText LabelText;
+	TSharedPtr<STextBlock> Label;
+	TSharedPtr<SBorder> Highlight;
+	// 顶部/底部插入指示线(3px亮蓝条,Hidden 常态)
+	TSharedPtr<SBorder> InsertAboveLine;
+	TSharedPtr<SBorder> InsertBelowLine;
+};
 
 TSharedRef<IDetailCustomization> FBXBehaviorSettingsCustomization::MakeInstance()
 {
@@ -114,8 +341,7 @@ TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
 		return FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(FStringView(*InText), GridFont).X;
 	};
 
-	// 常态行高(标签列/数据行/表头条统一,纵向滚动时跨面板逐行对齐)
-	constexpr float RowHeight = 30.0f;
+	// 常态行高统一用文件级 MatrixRowHeight(标签列/数据行/表头条一致,纵向滚动时跨面板逐行对齐)
 
 	// 行为命名约定:显示名≤16字符——表格按 16 字符统一列宽(标签列/数据列同宽,"禁+中"等单元格文本远小于该宽度)
 	const float ColumnWidth = MeasureText(TEXT("ABCDEFGHIJKLMNOP")) + 36.0f;
@@ -127,7 +353,7 @@ TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
 		[
 			SNew(SBox)
 			.WidthOverride(ColumnWidth)
-			.HeightOverride(RowHeight)
+			.HeightOverride(MatrixRowHeight)
 			.HAlign(HAlign_Center)
 			.VAlign(VAlign_Center)
 			[
@@ -163,7 +389,7 @@ TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
 			[
 				SNew(SBox)
 				.WidthOverride(ColumnWidth)
-				.HeightOverride(RowHeight)
+				.HeightOverride(MatrixRowHeight)
 				.VAlign(VAlign_Fill)
 				[
 					SNew(SOverlay)
@@ -204,45 +430,19 @@ TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
 
 	for (int32 Row = 0; Row < AxisNum; ++Row)
 	{
-		// 行头文本(顶层常驻显示;悬停高亮联动染黑,常态=标准前景;HitTestInvisible 让悬停穿透)
-		TSharedRef<STextBlock> RowLabel = SNew(STextBlock)
-			.Text(FText::FromString(GetAxisDisplayName(Settings->RelationTags[Row])))
-			.Font(GridFont)
-			.ColorAndOpacity(FSlateColor::UseForeground())
-			.Visibility(EVisibility::HitTestInvisible);
-		RowLabelWidgets.Add(Row, RowLabel);
-
-		// 行头黄底高亮层(悬停联动点亮;垫在文字下层)
-		TSharedRef<SBorder> RowLabelHighlight = SNew(SBorder)
-			.BorderImage(FCoreStyle::Get().GetBrush(TEXT("WhiteBrush")))
-			.ColorAndOpacity(FLinearColor(1.0f, 0.82f, 0.0f, 1.0f))
-			.Visibility(EVisibility::Hidden)
-			[
-				SNew(SBox)
-			];
-		RowLabelHighlightWidgets.Add(Row, RowLabelHighlight);
+		// 行头(可拖拽重排序:标签/悬停高亮/插入指示线由行头控件内部组装;
+		// 列头与本行头同索引,随 RelationTags 同步移动)
+		TSharedRef<SBXDraggableAxisHeader> RowHeader = SNew(SBXDraggableAxisHeader, this)
+			.SourceIndex(Row)
+			.LabelText(FText::FromString(GetAxisDisplayName(Settings->RelationTags[Row])))
+			.ToolTipText(FText::FromString(FString::Printf(TEXT("完整名: %s\n拖拽可调整轴顺序(行头与列头同步移动)"), *Settings->RelationTags[Row].ToString())));
+		RowLabelWidgets.Add(Row, RowHeader->GetLabel());
+		RowLabelHighlightWidgets.Add(Row, RowHeader->GetHighlight());
 
 		LabelColumn->AddSlot()
 			.AutoHeight()
 			[
-				SNew(SBox)
-				.HeightOverride(RowHeight)
-				.ToolTipText(FText::FromString(FString::Printf(TEXT("完整名: %s"), *Settings->RelationTags[Row].ToString())))
-				[
-					SNew(SOverlay)
-					+ SOverlay::Slot()
-					.HAlign(HAlign_Fill)
-					.VAlign(VAlign_Fill)
-					[
-						RowLabelHighlight
-					]
-					+ SOverlay::Slot()
-					.HAlign(HAlign_Center)
-					.VAlign(VAlign_Center)
-					[
-						RowLabel
-					]
-				]
+				RowHeader
 			];
 
 		TSharedRef<SHorizontalBox> BodyRow = SNew(SHorizontalBox);
@@ -282,7 +482,7 @@ TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
 				[
 					SNew(SBox)
 					.WidthOverride(ColumnWidth)
-					.HeightOverride(RowHeight)
+					.HeightOverride(MatrixRowHeight)
 					.VAlign(VAlign_Fill)
 					[
 						SNew(SOverlay)
@@ -312,7 +512,7 @@ TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
 			.AutoHeight()
 			[
 				SNew(SBox)
-				.HeightOverride(RowHeight)
+				.HeightOverride(MatrixRowHeight)
 				.VAlign(VAlign_Fill)
 				[
 					BodyRow
@@ -413,7 +613,7 @@ TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
 			.Padding(12.0f, 0.0f)
 			[
 				SNew(STextBlock)
-				.Text(LOCTEXT("AxisHint", "点击表头轴名可删除该轴;单元格点击循环:空→禁用→中断→禁用并中断(对角线=同行为自关系)"))
+				.Text(LOCTEXT("AxisHint", "拖拽行头调整轴顺序(行列同步);点击列头删除该轴;单元格点击循环:空→禁用→中断→禁用并中断(对角线=同行为自关系)"))
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 			]
@@ -486,6 +686,31 @@ void FBXBehaviorSettingsCustomization::RebuildMatrixGrid()
 	{
 		MatrixContainer->SetContent(MakeMatrixWidget());
 	}
+}
+
+void FBXBehaviorSettingsCustomization::MoveAxis(int32 InFromIndex, int32 InInsertSlot)
+{
+	UBXBehaviorSettings* Settings = GetSettings();
+	if (!Settings || !Settings->RelationTags.IsValidIndex(InFromIndex))
+	{
+		return;
+	}
+
+	// 插入槽位钳到合法区间[0,Num];源自身两侧(原位前/原位后)=位置未变,不动配置不落盘
+	const int32 InsertSlot = FMath::Clamp(InInsertSlot, 0, Settings->RelationTags.Num());
+	if (InFromIndex == InsertSlot || InFromIndex + 1 == InsertSlot)
+	{
+		return;
+	}
+
+	// 原数组槽位换算到移除后的插入下标:源在槽位左侧时,槽位前元素整体左移一位;
+	// 列头与行头共用本数组,移动后行列两轴同步;关系配置按Tag键存储,与顺序无关零迁移
+	const FGameplayTag MovedTag = Settings->RelationTags[InFromIndex];
+	Settings->RelationTags.RemoveAt(InFromIndex);
+	Settings->RelationTags.Insert(MovedTag, (InFromIndex < InsertSlot) ? InsertSlot - 1 : InsertSlot);
+
+	Commit(Settings);
+	RebuildMatrixGrid();
 }
 
 void FBXBehaviorSettingsCustomization::HandleCellHovered(int32 InRowIndex, int32 InColumnIndex)

@@ -1,6 +1,7 @@
 #include "BXBehaviorSettings.h"
 
 #include "BXGameplayTags.h"
+#include "GameplayTagsManager.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/ConfigCacheIni.h"
 
@@ -58,15 +59,17 @@ void UBXBehaviorSettings::PostInitProperties()
 		LoadConfig(nullptr, *PluginIniPath);
 	}
 
-	// 配置加载完成后重建后处理索引
-	RebuildRelationIndex();
+	// 配置加载完成后标脏(不在此重建):PostInitProperties 运行于 CDO 创建阶段(ProcessNewlyLoadedUObjects),
+	// 此时原生 GameplayTag 尚未注册进管理器,亲缘匹配不可用且清残留会误删族相关条目;首次查询时懒重建
+	bRelationIndexStale = true;
 }
 
 void UBXBehaviorSettings::PostReloadConfig(class FProperty* PropertyThatWasLoaded)
 {
 	Super::PostReloadConfig(PropertyThatWasLoaded);
 
-	RebuildRelationIndex();
+	// 同 PostInitProperties:配置重载只标脏,首次查询时懒重建
+	bRelationIndexStale = true;
 }
 
 FString UBXBehaviorSettings::GetPluginConfigIniPath()
@@ -79,17 +82,40 @@ FString UBXBehaviorSettings::GetPluginConfigIniPath()
 	return FString();
 }
 
+void UBXBehaviorSettings::EnsureRelationIndexFresh() const
+{
+	if (bRelationIndexStale)
+	{
+		// 查询只发生在行为组件运行期(引擎与Tag树必然就绪);编辑器Commit走显式RebuildRelationIndex不受此影响
+		const_cast<UBXBehaviorSettings*>(this)->RebuildRelationIndex();
+	}
+}
+
 void UBXBehaviorSettings::RebuildRelationIndex()
 {
+	// 消费脏标记(显式重建同样视为最新)
+	bRelationIndexStale = false;
+
 	RelationRowIndex.Reset();
 	ForbidDomainsBySource.Reset();
 
 	// 清理:丢弃不在矩阵轴内的键与列(改名/删轴残留——编辑器矩阵只渲染轴,这些条目不可见无法手清)
 	FGameplayTagContainer AxisContainer;
-	AxisContainer.AppendTags(RelationTags);
+	// 5.8 容器无 AppendTags(TArray) 重载,逐条 AddTag
+	for (const FGameplayTag& AxisTag : RelationTags)
+	{
+		AxisContainer.AddTag(AxisTag);
+	}
 	auto IsAxisRelated = [&AxisContainer](const FGameplayTag& Tag)
 	{
-		return AxisContainer.MatchesTag(Tag) || Tag.MatchesAny(AxisContainer);
+		// 未注册Tag(改名/删轴残留——正是本函数要清的对象)先短路:5.8 MatchesAny 对"有效但未注册"的Tag
+		// 会触发引擎 ensureMsgf 中断;残留本就按"与轴无亲缘"清掉,语义一致
+		if (!UGameplayTagsManager::Get().FindTagNode(Tag).IsValid())
+		{
+			return false;
+		}
+		// 5.8 容器 MatchesTag 已移除,HasTag(显式+父链表)实现与之完全一致
+		return AxisContainer.HasTag(Tag) || Tag.MatchesAny(AxisContainer);
 	};
 	{
 		TArray<FGameplayTag> StaleExpelKeys;
@@ -163,6 +189,8 @@ void UBXBehaviorSettings::RebuildRelationIndex()
 
 EBXBehaviorRelation UBXBehaviorSettings::GetRelation(const FGameplayTag& InEntering, const FGameplayTag& InExisting) const
 {
+	EnsureRelationIndexFresh();
+
 	// 同行为自关系可配(对角线):自禁用挡同Tag重入,自中断=新实例顶掉旧实例,不再特殊早退
 	if (!InEntering.IsValid() || !InExisting.IsValid())
 	{
@@ -174,6 +202,8 @@ EBXBehaviorRelation UBXBehaviorSettings::GetRelation(const FGameplayTag& InEnter
 
 void UBXBehaviorSettings::GetExpelTargets(const FGameplayTag& InEntering, TArray<FGameplayTag>& OutTags) const
 {
+	EnsureRelationIndexFresh();
+
 	OutTags.Reset();
 
 	if (!InEntering.IsValid())

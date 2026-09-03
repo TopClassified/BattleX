@@ -348,7 +348,25 @@ void UBXCharacterMovementComponent::ProcessLanded(const FHitResult& Hit, float r
 		}), LandedBehaviorDuration, false);
 	}
 
-	StartNewPhysics(remainingTime, Iterations);
+		StartNewPhysics(remainingTime, Iterations);
+}
+
+void UBXCharacterMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
+
+	// 滞空持续行为事实上报:进入Falling开始,离开Falling(落地/游泳/飞行等)停止,Sign=0系统常驻来源,生命周期归CMC驱动
+	if (MovementMode == MOVE_Falling)
+	{
+		if (PreviousMovementMode != MOVE_Falling)
+		{
+			UBXBehaviorFunctionLibrary::StartBehavior(GetOwner(), BXGameplayTags::BXBehavior_Falling);
+		}
+	}
+	else if (PreviousMovementMode == MOVE_Falling)
+	{
+		UBXBehaviorFunctionLibrary::StopBehavior(GetOwner(), BXGameplayTags::BXBehavior_Falling);
+	}
 }
 
 bool UBXCharacterMovementComponent::CanAttemptJump() const

@@ -186,7 +186,7 @@ class UBXBehaviorSettings : public UDeveloperSettings
 	UPROPERTY(EditAnywhere, Config, Category="Matrix")
 	TMap<FGameplayTag, FGameplayTagContainer> RejectRelations;   // 禁用：行在位期间禁用列中的行为（用户语义：行=开始时中断列+在位期间禁用列）
 
-	// ── 静态后处理索引（Transient，启动配置加载后/编辑器变更后 RebuildRelationIndex 重建，运行时只读）──
+	// ── 静态后处理索引（Transient，懒重建：配置加载只标脏，首次查询/编辑器变更时 RebuildRelationIndex，运行时只读）──
 	TMap<FGameplayTag, FBXBehaviorRelationRow> RelationRowIndex;      // 行键→{中断列,禁用列}（清场求值/诊断）
 	TMap<FGameplayTag, FGameplayTagContainer> ForbidDomainsBySource;  // 来源→它禁止的域集合（禁止贡献计算,§4.8）
 };
@@ -203,8 +203,9 @@ class UBXBehaviorSettings : public UDeveloperSettings
 - **对角线自关系可配（2026-09-01）**：自禁用=挡同 Tag 重入（第一次攻击期间禁用攻击，直到攻击结束——条目死亡经 `RefreshForbidSources` 自动解除）；自中断=新实例顶掉旧实例（重启语义）；同格双配置在对角线只生效禁用（进入判定先于清场）；族 Tag 轴的自关系=族内互斥（在位成员挡住整族）；
 - 层级匹配：轴可注册族 Tag 一条覆盖整族（当前行为轴为 `BXBehavior.*` 平铺 Tag，族语义保留给未来分层）；
 - **静态后处理不漂移**：ini 运行期只读，索引是只读投影——物化零一致性成本（与动态规则"即时求值不物化"原则不冲突）；
+- **索引懒重建（2026-09-03）**：启动时序约束——PostInitProperties 运行于 CDO 创建阶段（ProcessNewlyLoadedUObjects），此刻原生 GameplayTag 尚未注册进管理器，亲缘匹配不可用且清残留会把"族相关但非精确"的合法条目误删（之后编辑器落盘即真实数据丢失）；因此配置加载/ini 重载只置脏标记 `bRelationIndexStale`，三个查询入口（GetRelation/GetExpelTargets/FindForbidDomains）前置 `EnsureRelationIndexFresh` 首查懒重建（一次 bool 判断开销）；编辑器 Commit 仍走显式 RebuildRelationIndex；**未注册 Tag 先短路**（`FindTagNode` 无效直接按"与轴无亲缘"返回 false）——5.8 的 `FGameplayTag::MatchesAny` 对有效但未注册的 Tag 触发 ensureMsgf 中断，而改名残留恰是清理逻辑要删的对象，短路等价旧匹配语义；
 - 查询沿父链精确键命中：O(链深)，替代 O(R) 全表扫；
-- 编辑器：BattleXEditor DetailCustomization 渲染为矩阵网格——**冻结行头/列头（常驻可见）**：表头条/标签列/网格体三面板用统一列宽/行高（按行为命名约定显示名 ≤16 字符量宽定宽+余量，网格文本统一 9pt，文字四向居中）跨面板对齐，轴名显示省略 `BXBehavior.` 父族前缀（`BXBehavior.PerfectDodge`→`PerfectDodge`，悬停提示完整名）；表头条横向位移由网格体横向滚动回调驱动（`OnUserScrolled`→`SetRenderTransform` 反向平移+裁剪容器），标签列与网格体同处纵向滚动器纵向天然同步、横向钉住；**纵横双向滚动**（外纵向+内横向嵌套 SScrollBox，滚动条经 `ExternalScrollbar` 外接钉在视口右缘/底缘；内层 `ConsumeMouseWheel::Never` 让纵向滚轮穿透给外层；轴数 ≥10 时给 400px 固定高度视口，行少保持自然高度随设置页滚动）；单元格四态循环 空→禁用→中断→禁+中（UI 缩写，含对角线自关系），按钮按关系着色（禁用=蓝/中断=红/禁+中=紫，`SetButtonStyle` + 按关系缓存的着色样式副本，空=默认样式）；单元格悬停时行头/列头/单元格三者全部**黄底黑字**（表头条与标签列为"交互层+黄底高亮层+文字顶层"三层结构，`OnHovered/OnUnhovered` 联动高亮层 `SetVisibility` 与文字 `SetColorAndOpacity`；SButton 无颜色 setter、5.8 无 SetRenderTranslate/HitTestInvisible 参数——见 ue58 迁移记忆），一眼定位当前配置的两个行为；轴选择器 `SGameplayTagCombo.Filter` 仅列 `BXBehavior.*` 行为族（根名串经 `GetFilteredGameplayRootTags` 裁剪树根，不显示全量 Tag）；**任何矩阵变更都不走 ForceRefreshDetails 整视图重建（设置页卡顿根源）**——单元格点击 SetText 直改单元格文本，增删轴经 SBox 容器 SetContent 只换网格本体。
+- 编辑器：BattleXEditor DetailCustomization 渲染为矩阵网格——**冻结行头/列头（常驻可见）**：表头条/标签列/网格体三面板用统一列宽/行高（按行为命名约定显示名 ≤16 字符量宽定宽+余量，网格文本统一 9pt，文字四向居中）跨面板对齐，轴名显示省略 `BXBehavior.` 父族前缀（`BXBehavior.PerfectDodge`→`PerfectDodge`，悬停提示完整名）；表头条横向位移由网格体横向滚动回调驱动（`OnUserScrolled`→`SetRenderTransform` 反向平移+裁剪容器），标签列与网格体同处纵向滚动器纵向天然同步、横向钉住；**纵横双向滚动**（外纵向+内横向嵌套 SScrollBox，滚动条经 `ExternalScrollbar` 外接钉在视口右缘/底缘；内层 `ConsumeMouseWheel::Never` 让纵向滚轮穿透给外层；轴数 ≥10 时给 400px 固定高度视口，行少保持自然高度随设置页滚动）；单元格四态循环 空→禁用→中断→禁+中（UI 缩写，含对角线自关系），按钮按关系着色（禁用=蓝/中断=红/禁+中=紫，`SetButtonStyle` + 按关系缓存的着色样式副本，空=默认样式）；单元格悬停时行头/列头/单元格三者全部**黄底黑字**（表头条与标签列为"交互层+黄底高亮层+文字顶层"三层结构，`OnHovered/OnUnhovered` 联动高亮层 `SetVisibility` 与文字 `SetColorAndOpacity`；SButton 无颜色 setter、5.8 无 SetRenderTranslate/HitTestInvisible 参数——见 ue58 迁移记忆），一眼定位当前配置的两个行为；**行头拖拽排序（2026-09-03）**：行头为可拖拽控件 SBXDraggableAxisHeader（按下 DetectDrag 过阈值生成 `FBXAxisDragDropOp`，继承 FDecoratedDragDropOp，光标跟随轴名），悬停拖拽按落点在目标行头上/下半场点亮其顶部/底部 3px 蓝色插入指示线（下半场=插到其后，支持"移到最后一行"），拖回源行头自身不显示指示线且 Drop 原位短路不落盘——松手 `MoveAxis`：插入槽位钳制+原位前后短路，RemoveAt/Insert 重排 `RelationTags` 后 Commit+换网格，**行头与列头同轴自动同步**（两轴共用 RelationTags 数组、关系按 Tag 键存储与顺序无关零迁移）；ESC 取消/丢别处安全（引擎取消路径向悬停控件补发 OnDragLeave，指示线不残留）；行高 30 提升为文件级 `MatrixRowHeight` 常量供行头控件与三面板共用防错位；轴选择器 `SGameplayTagCombo.Filter` 仅列 `BXBehavior.*` 行为族（根名串经 `GetFilteredGameplayRootTags` 裁剪树根，不显示全量 Tag）；**任何矩阵变更都不走 ForceRefreshDetails 整视图重建（设置页卡顿根源）**——单元格点击 SetText 直改单元格文本，增删轴经 SBox 容器 SetContent 只换网格本体。
 
 ### 4.4 激活与停止管线
 

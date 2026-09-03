@@ -55,6 +55,10 @@ public:
 	// 静态后处理:由二维表重建双索引(启动/ini重载/编辑器变更后调用;运行期只读零漂移)
 	void RebuildRelationIndex();
 
+	// 索引懒重建:启动早期(CDO创建阶段)GameplayTag树尚未注册,亲缘匹配不可用且会误删族相关条目,
+	// 配置加载/重载只标脏,首次查询(引擎就绪后)才真正重建
+	void EnsureRelationIndexFresh() const;
+
 	// 查询两个行为的关系(带族Tag层级匹配:轴上注册的族Tag整族参与关系判定;
 	// 两张表同格配置时返回禁用+中断,互不遮蔽;
 	// 对角线自关系可配:自禁用挡同Tag重入,自中断=新实例顶掉旧实例)
@@ -64,7 +68,7 @@ public:
 	void GetExpelTargets(const FGameplayTag& InEntering, TArray<FGameplayTag>& OutTags) const;
 
 	// 查询某来源(潜在在位方)禁止的域集合(禁止贡献计算用;调用方沿父链逐级查询)
-	const FGameplayTagContainer* FindForbidDomains(const FGameplayTag& InSourceTag) const { return ForbidDomainsBySource.Find(InSourceTag); }
+	const FGameplayTagContainer* FindForbidDomains(const FGameplayTag& InSourceTag) const { EnsureRelationIndexFresh(); return ForbidDomainsBySource.Find(InSourceTag); }
 
 protected:
 	// 关系查值(行Tag→列Tag),无配置返回空
@@ -92,4 +96,7 @@ protected:
 	// 列索引:禁用来源(在位行为)→ 它禁用的域集合(行=来源,列=被禁域;禁止贡献计算,§4.8)
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, FGameplayTagContainer> ForbidDomainsBySource;
+
+	// 索引脏标记(非序列化状态):配置加载/重载时置脏,首次查询或显式RebuildRelationIndex时消费
+	mutable bool bRelationIndexStale = true;
 };

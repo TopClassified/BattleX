@@ -18,6 +18,7 @@ namespace BXGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Sprint, "BXBehavior.Sprint", "冲刺");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Jump, "BXBehavior.Jump", "跳跃(瞬间行为)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Landed, "BXBehavior.Landed", "落地(瞬间行为)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Falling, "BXBehavior.Falling", "下落(滞空持续行为,进入MOVE_Falling开始,离开自动停止)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_LowSkill, "BXBehavior.LowSkill", "低优先技能(低优先姿态行为域)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_HighSkill, "BXBehavior.HighSkill", "高优先技能(高优先姿态行为域)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Defense, "BXBehavior.Defense", "防御");

@@ -2,7 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "TimerHandle.h"
+// TimerHandle.h 在 Engine/Classes/Engine/ 下,Engine 模块内部可同级包含,外部插件须带 Engine/ 前缀
+#include "Engine/TimerHandle.h"
 
 #include "BXStructs.h"
 
@@ -88,7 +89,11 @@ public:
 	
 	// 跳跃
 	virtual bool DoJump(bool bReplayingMoves) override;
-	
+
+protected:
+	// 移动模式变更(滞空事实上报:进入MOVE_Falling开始,离开自动停止)
+	virtual void OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode) override;
+
 #pragma endregion Override
 
 
