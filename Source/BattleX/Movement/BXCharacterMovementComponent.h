@@ -38,8 +38,14 @@ protected:
 	// 正在主动移动(边沿状态,驱动主动移动事实上报;暂统一报走路,速度分档待移动状态设计落地)
 	bool bProactiveMoving = false;
 
-	// 落地行为自动停止时长(秒;<=0 表示落地行为常驻不自动停)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0.0", ForceUnits="s"))
+	// 正在下坠(滞空∧速度沿重力方向;逐帧边沿状态,驱动下坠行为上报与跳跃行为收束)
+	bool bDescending = false;
+
+	// 滞空行为事实边沿维护(Tick每帧物理推进后调用)
+	void UpdateFallingBehavior();
+
+	// 落地行为自动停止时长(秒;使用时下限钳0.05禁止常驻——Landed在位禁用列过广,常驻=落地后全锁死)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin="0.05", ForceUnits="s"))
 	float LandedBehaviorDuration = 0.1f;
 
 	// 落地行为自动停止计时器(每次落地重置)
