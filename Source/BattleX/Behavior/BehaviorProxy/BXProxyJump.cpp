@@ -11,7 +11,7 @@ bool UBXProxyJump::NativeEnableProxy()
 	{
 		if (UBXCharacterMovementComponent* MovementComp = ProxyOwner->FindComponentByClass<UBXCharacterMovementComponent>())
 		{
-			MovementComp->SetBehaviorJumpBlocked(false);
+			MovementComp->ClearJumpBlocked(TEXT("ProxyJump"));
 		}
 	}
 
@@ -24,7 +24,7 @@ bool UBXProxyJump::NativeDisableProxy()
 	{
 		if (UBXCharacterMovementComponent* MovementComp = ProxyOwner->FindComponentByClass<UBXCharacterMovementComponent>())
 		{
-			MovementComp->SetBehaviorJumpBlocked(true);
+			MovementComp->AddJumpBlocked(true, TEXT("ProxyJump"));
 		}
 	}
 

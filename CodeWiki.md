@@ -1,7 +1,7 @@
 # BattleX Code Wiki
 
 > 高性能动作游戏技能系统 · Unreal Engine 5 插件
-> 仓库根：`BattleX/`  ·  版本：1.6 (Beta)  ·  引擎版本：UE 5.8  ·  文档更新日期：2026-08-28
+> 仓库根：`BattleX/`  ·  版本：1.6 (Beta)  ·  引擎版本：UE 5.8  ·  文档更新日期：2026-09-04
 
 ---
 
@@ -142,6 +142,7 @@ BattleX/
     │   ├── Lock/                # 锁定系统（占位）
     │   ├── Movement/            # 角色移动与 RootMotion
     │   ├── Net/                 # 网络同步基础（同步枚举、RPC结构、技能复制快照）
+    │   ├── OperateStack/        # 通用操作记录栈（核心模板BXOperateStack + 蓝图包装与类型库BXOperateStackTypes：bool/float/int32薄壳+结构体通配栈）
     │   ├── Projectile/          # 子弹系统（资产、管理器、求解器、RPC组件，无Actor化）
     │   ├── Skill/               # 技能系统（资产、管理器、组件、枚举、结构，复用Timeline/Task）
     │   ├── State/               # 状态系统（状态组件、状态机资产/实例、状态枚举/结构）
@@ -227,6 +228,17 @@ Tag 的 ini 搜索路径在 `FBattleXModule::StartupModule` 中注册为 `Battle
 - **几何数学**：`AreCollinear`、`PointToSegment/Circle/Rectangle/Sphere/Capsule/Cylinder/Box`、`SegmentToSegment/Sphere/Capsule/Box`
 - **组件查找**：`GetSceneComponentBySocketName`、`GetSceneComponentByNameAndClass`
 - **调试绘制（编辑器）**：`DrawDebugBoxInEditor` 等
+
+#### 通用操作记录栈（[BXOperateStack.h](Source/BattleX/OperateStack/BXOperateStack.h) + [BXOperateStackTypes.h](Source/BattleX/OperateStack/BXOperateStackTypes.h)）
+
+纯 C++ 结构体模板（无 UObject/反射，核心头文件无 UHT），裁决多系统对同一竞争资源的写冲突（参考 KGCore `UOperateStack` 分层覆盖模型）：
+
+- **模型**：修改者 `Push(目标值, 修改者名, 优先级)` 拿到句柄 ID；当前生效值恒等于**栈顶**（优先级最高，同优先级后压者胜）；`RemoveByID(句柄)` / `RemoveByModifier(修改者名)` 移除后生效值**回落到余下栈顶**而非盲目恢复旧值，天然免疫写入顺序竞态；栈底 [0] 是基线记录（ID 恒为 0，不可移除），`Initialize` 登记/重登记基线，`PopToOrigin` 一键回落
+- **定位**：最基础的记录簿——只记账不回写，生效值由持有方经 `GetEffectiveValue()` / `GetTopRecord()` 自行读取应用（条目 `FBXOperateRecord<T>`：UniqueID / Modifier / Value / Priority；另有 `ReplaceByID` / `HasModifier` / `GetDebugString` 等查询）
+- **蓝图访问（双轨，UHT 不支持模板 USTRUCT）**：**基础类型**（bool/float/int32）每类一个薄壳 USTRUCT + 独立库类承载同名四节点 `Initialize` / `Push` / `RemoveByID` / `GetEffectiveValue`（Category=OperateStack；BP 无重载不可同库，新基础类型=复制薄壳样板）：`UBXOperateStackLibrary` / `UBXOperateStackFloatLibrary` / `UBXOperateStackIntLibrary`；**结构体**走 `FBXOperateStackStruct`（核心=`TBXOperateStack<FInstancedStruct>`，类型擦除由 FInstancedStruct 承载）+ `UBXOperateStackStructLibrary` 的 CustomThunk 通配节点（`CustomStructureParam`，引脚连什么结构体就是什么类型），一个包装覆盖全部结构体类型。UHT 要求 BP 函数参数类型必须 BlueprintType——通配占位结构体 `FBXOperateStackAny` 亦不例外
+- **类型锚点**：一个栈一种值类型——基线（Initialize）锚定类型，Push 错型拒绝（返回 0）、GetEffectiveValue 错型返回 false 不写出参
+- **约定**：仅游戏线程使用（纯数据无锁）；句柄 ID 每栈只增不复用（防重新 Initialize 后旧句柄误命中新记录）
+- **首个使用者**：CMC 门控开关（见 [4.7](#47-movement-移动系统)）
 
 ---
 
@@ -637,8 +649,8 @@ Bitflags 枚举：`EBXEquipGearFunction`、`EBXUseGearFunction`、`EBXChangeGear
 #### `UBXCharacterMovementComponent` ([BXCharacterMovementComponent.h](Source/BattleX/Movement/BXCharacterMovementComponent.h))
 
 继承 `UCharacterMovementComponent`。新增：
-- `bProactiveMoving` / `bProactiveRotating`：主动移动/旋转标志（事实上报：加速度有无驱动向行为组件 Start/Stop 上报 `BXBehavior.Locomotion.Move/Rotate`）
-- **行为门控本地开关**：`bBehaviorMoveBlocked` / `bBehaviorRotateBlocked` / `bBehaviorJumpBlocked`——由行为代理（`UBXProxyMove/Rotate/Jump` 的 Enable/Disable）**下推**，`CalcVelocity`（加速度清零）/ `ComputeSlideVector`（跳过滑动修正）/ `PhysicsRotation`（停转向）/ `CanAttemptJump`（挡跳跃）四处只读本地开关执行物理刹车；**本组件不反查行为组件**（P9 门控下推架构，事实经 `UBXBehaviorFunctionLibrary::Start/StopBehavior` 单向上报保留）
+- `bProactiveMoving`：主动移动标志（事实上报：加速度有无驱动向行为组件 Start/Stop 上报 `BXBehavior.Walk`；Root Motion/RootMotionSource 期间不算主动移动；主动转向事实上报已移除）
+- **门控开关（基础服务，命名不带 Behavior）**：`bMoveBlocked` / `bRotateBlocked` / `bJumpBlocked` + 三条 `TBXOperateStack<bool>` 操作记录栈（`MoveBlockStack` 等，构造期 `Initialize(false)` 登记基线）。任何系统按自己的标识登记/注销：`Add*Blocked(bInBlocked, InModifier)` 登记并返回句柄（生效值=栈顶自动刷新开关）、`Remove*Blocked(InID)` 按句柄移除、`Clear*Blocked(InModifier)` 按修改者注销。行为代理（`UBXProxyMove/Rotate/Jump`）Enable=Clear 自己的记录、Disable=Add(true)（修改者名固定 `ProxyMove/ProxyRotate/ProxyJump`），多系统并存禁止时先退出者回落不踩余下禁止。`CalcVelocity`（加速度清零）/ `ComputeSlideVector`（跳过滑动修正）/ `PhysicsRotation`（停转向）/ `CanAttemptJump`（挡跳跃）四处只读本地开关执行物理刹车；**本组件不反查行为组件**（P9 门控下推架构，事实经 `UBXBehaviorFunctionLibrary::Start/StopBehavior` 单向上报保留）
 - **轨迹历史缓冲**：`TrajectoryPoints`（默认记录 20s），`RecordTime`，`CleanInterval`/`CleanTimer` 周期清理
 - `GetHistoryTransformByTime(InTime)`：按时间查询历史 Transform（供 `UBXTProcessor::GetTargetTransformByWorldTime` 使用）
 
@@ -1851,6 +1863,7 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 | 基础设施 | [BXManager.h](Source/BattleX/BXManager.h) / [BXSubSystem.h](Source/BattleX/BXSubSystem.h) / [BXSettings.h](Source/BattleX/BXSettings.h) |
 | Tag 词汇表 | [BXGameplayTags.h](Source/BattleX/BXGameplayTags.h) |
 | 工具函数 | [BXFunctionLibrary.h](Source/BattleX/BXFunctionLibrary.h) |
+| 操作记录栈 | [BXOperateStack.h](Source/BattleX/OperateStack/BXOperateStack.h) / [BXOperateStackTypes.h](Source/BattleX/OperateStack/BXOperateStackTypes.h) |
 | 时间轴核心 | [BXTLAsset.h](Source/BattleX/Timeline/BXTLAsset.h) / [BXTLManager.h](Source/BattleX/Timeline/BXTLManager.h) / [BXTLComponent.h](Source/BattleX/Timeline/BXTLComponent.h) / [BXTLStructs.h](Source/BattleX/Timeline/BXTLStructs.h) |
 | 技能系统 | [BXSkillAsset.h](Source/BattleX/Skill/BXSkillAsset.h) / [BXSkillManager.h](Source/BattleX/Skill/BXSkillManager.h) / [BXSkillComponent.h](Source/BattleX/Skill/BXSkillComponent.h) / [BXSkillStructs.h](Source/BattleX/Skill/BXSkillStructs.h) / [BXSkillEnums.h](Source/BattleX/Skill/BXSkillEnums.h) |
 | 网络同步 | [BXNetEnums.h](Source/BattleX/Net/BXNetEnums.h) / [BXNetStructs.h](Source/BattleX/Net/BXNetStructs.h) / [BXSkillReplicated.h](Source/BattleX/Net/BXSkillReplicated.h) / [BXTLReplicated.h](Source/BattleX/Timeline/BXTLReplicated.h) / [BXBuffReplicated.h](Source/BattleX/Buff/BXBuffReplicated.h) |
@@ -1931,6 +1944,8 @@ InternalGetBestNode(WorldCtx, Template, StructType, ParamAddr)
 | `UNiagaraComponent::bAutoDestroy` | public | `SetAutoDestroy(bool)` |
 
 ### C.2 API 签名变化
+
+- **`DECLARE_FUNCTION`/`DEFINE_FUNCTION`（CustomThunk）**：签名新增 `UObject* Context` 首参（`static void func(UObject* Context, FFrame& Stack, RESULT_DECL)`），旧版两参签名不可用；经宏声明即可自动适配。静态 CustomThunk 函数的 `DECLARE_FUNCTION` 内联体放头文件类内（先例 KismetArrayLibrary）。
 
 - **RPC `_Validate`/`_Implementation`**：UHT 生成声明按值传递，cpp 定义必须与之一致（`const&` 定义会触发 C2511）。UBXProjectileComponent 的 7 个 RPC 定义已改为按值签名。
 - **`ISequencerInputHandler::OnCursorQuery`**：首参由 `TSharedRef<const SWidget>` 改为 `const SWidget&`（FTimeSliderController 重写与 STrackArea 调用处同步更新）。

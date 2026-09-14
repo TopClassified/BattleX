@@ -11,7 +11,7 @@ bool UBXProxyRotate::NativeEnableProxy()
 	{
 		if (UBXCharacterMovementComponent* MovementComp = ProxyOwner->FindComponentByClass<UBXCharacterMovementComponent>())
 		{
-			MovementComp->SetBehaviorRotateBlocked(false);
+			MovementComp->ClearRotateBlocked(TEXT("ProxyRotate"));
 		}
 	}
 
@@ -24,7 +24,7 @@ bool UBXProxyRotate::NativeDisableProxy()
 	{
 		if (UBXCharacterMovementComponent* MovementComp = ProxyOwner->FindComponentByClass<UBXCharacterMovementComponent>())
 		{
-			MovementComp->SetBehaviorRotateBlocked(true);
+			MovementComp->AddRotateBlocked(true, TEXT("ProxyRotate"));
 		}
 	}
 

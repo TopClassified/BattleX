@@ -9,6 +9,9 @@
 ## 接口设计规则
 - `UBXSkillComponent::PlayXxx` 接口的业务参数（如 InLockParts、InAimLocation）必须放在参数列表前面且无默认值，调用方需显式传递；InInstigator 和 InTriggerer 放在参数列表最后，默认值为 nullptr。
 
+## 代码格式规范
+- 多行注释使用 `/* */` 包裹；单行注释仍用 `//`。
+
 ## Task 系统规则
 - 每一个 Task 都有两个默认事件：Start（BXTEvent.Start）和 End（BXTEvent.End），`UBXTProcessor::StartTask/EndTask` 末尾无条件调用 AddPendingTask 触发；Task 的 Events 映射表应预置这两个条目。
 - 仅注册配置文件中声明的蓝图派生 Task 类（如 BP_BXT_PlayAnimation）会显示在编辑器创建菜单中，原生 C++ Task 类不显示。
@@ -68,7 +71,7 @@
 ## 行为 Proxy 体系要点（P9，详见 StateBehaviorSystemDesign.md §13）
 - **UBXBehaviorAgent 已改名 UBXBehaviorProxy**（目录 BehaviorAgent/→BehaviorProxy/，UBXBADefault*→UBXProxyMove/Rotate/Jump/Landed，枚举 BAF_*→BPF_*）。双轴命令：EnableProxy/DisableProxy（权限轴，持有基层开关）+ Start/Stop（活动轴）+ UpdateProxy（bWantsProxyUpdate 时组件 Tick 转发）；权限/活动簿记（bEnabled/bStarted/bArmedResume 恢复重放武装）在基类，派生类只重写 Native/Script 槽位。BehaviorFunctions 默认值 341→5461（追加 Native/BP 启用·禁用·更新三对槽位）。
 - 组件配置 `BehaviorProxyConfigs: TMap<Tag, FBXBehaviorProxyConfig{ProxyClass, bEnabledByDefault}>`：常驻门控代理（Move/Rotate/Jump）默认启用；事件型（Attack 姿态/Landed）默认禁用、管线 Start 隐式启用（失败回退 Disable）、最后来源退出隐式禁用（InternalStart/Stop 尾部 RefreshProxyGates 归一化）。
-- **门控下推（CMC 不再反查行为组件）**：RefreshProxyGates 双禁用位差分命令——中断位落盘（服务器账本中断来源翻转逐代理 SetProxyInterruptBit(true)/客户端控制包 MulticastControlBehavior 直控）、禁止位求值即算 → 差分 → Proxy Enable/Disable → `CMC::SetBehaviorMoveBlocked/RotateBlocked/JumpBlocked`；CMC 四处（CalcVelocity 加速度清零/ComputeSlideVector/PhysicsRotation 停转向/CanAttemptJump）只读本地开关，事实上报方向（Start/Stop 上报）不变。
+- **门控下推（CMC 不再反查行为组件）**：RefreshProxyGates 双禁用位差分命令——中断位落盘（服务器账本中断来源翻转逐代理 SetProxyInterruptBit(true)/客户端控制包 MulticastControlBehavior 直控）、禁止位求值即算 → 差分 → Proxy Enable/Disable → CMC 禁止开关是**基础服务，命名不带 Behavior**：`bMoveBlocked/bRotateBlocked/bJumpBlocked` + 三条 `TBXOperateStack<bool>` 操作记录栈（OperateStack/BXOperateStack.h），`AddMoveBlocked(bInBlocked, InModifier)` 登记修改记录返回句柄（生效值=栈顶自动刷新开关）、`RemoveMoveBlocked(InID)` 按句柄移除、`ClearMoveBlocked(InModifier)` 按修改者注销（代理 Enable=Clear 自己的记录不踩其他系统、Disable=Add(true)，修改者名固定 "ProxyMove/ProxyRotate/ProxyJump"，外部系统同样按自己的标识登记/注销）；CMC 四处（CalcVelocity 加速度清零/ComputeSlideVector/PhysicsRotation 停转向/CanAttemptJump）只读本地开关，事实上报方向（Start/Stop 上报）不变。
 - **客户端无账本 Suspend 镜像**：中断事实由控制包按代理粒度承载，无活跃条目的常驻门控同样生效（这是与 P5 时代的关键差异——控制包从"镜像条目停转"升格为"代理命令"）；CanStart 对默认启用代理含 ProxyDisabled 检查保证预测两端一致；LateJoin 中断条目置位禁用代理，OnRep 兜底清理配对清中断位（防镜像残留永久禁挡）。
 - 蓝图迁移：旧 BP Agent 父类需手动重定向到 UBXBehaviorProxy 派生类（类已改名，旧资产会加载报错）；组件 Details 面板 BehaviorAgentConfigs 数据随类型变更丢弃，需按新 FBXBehaviorProxyConfig 结构重新配置（bEnabledByDefault=Move/Rotate/Jump 三项）。
 
@@ -97,6 +100,13 @@
 - 控制包=原子重放：`MulticastForbidBehavior/UnforbidBehavior(域,来源,Sign)` + `MulticastInterruptBehavior(域)`，跟随端收到后执行同一个原子函数（账本+代理，与服务器同构）；LateJoin 快照条目按代理 `IsStarted()` 推导 `BX_SYNC_FLAG_BEHAVIOR_STOPPED`——标记条目重建时不自动 Start。
 - 更名清单：`SuspendByForbiddenTag→InterruptBehavior`（单参数）、`ResumeByForbiddenTag/ResumeBehavior` 删除、`IsBehaviorSuspended/IsBehaviorInterrupted` 删除、`CheckForbiddenBehavior→IsBehaviorDisabled`、`bSuspendBit→删除`（无门控位）、`BR_Reject→BR_Forbid`/`BR_ExpelReject→BR_ForbidExpel`、`BER_Suspended→BER_Interrupted`、`BER_Resumed` 删除、`BX_SYNC_FLAG_BEHAVIOR_SUSPENDED→BX_SYNC_FLAG_BEHAVIOR_STOPPED`（语义=代理未启动）、`Proxy::StopBehavior` 去参化（真停语义置 bStarted=false）、`StopBehaviorWithParameter/FunctionLibrary 参数停止模板` 删除、事实表 `LastStartParameter` 删除（Proxy 自记参数）。
 - 技能侧：`bWaiveOnCancelWindow` 语义不变；互锁监听 Reason 为 `BER_Expelled/BER_Interrupted`；技能开始不登记任何禁用（禁止由矩阵承担）。
+
+## 操作记录栈要点
+- `OperateStack/BXOperateStack.h` 为纯 C++ 模板核心（无 UHT、无 .cpp，头文件即全部）；蓝图包装与类型库在 `OperateStack/BXOperateStackTypes.h/.cpp`（含 bool/float/int32/struct 四种包装）。
+- 蓝图双轨：**基础类型**（bool/float/int）每类一个薄壳 USTRUCT + 独立库类承载同名四节点（Initialize/Push/RemoveByID/GetEffectiveValue，Category=OperateStack；BP 无重载不可同库，新基础类型=复制薄壳样板）；**结构体**走 `FBXOperateStackStruct`（核心=`TBXOperateStack<FInstancedStruct>`，类型擦除由 FInstancedStruct 承载）+ CustomThunk 通配节点（CustomStructureParam，先例 KGCore execInitOS / UKismetArrayLibrary 内联 DECLARE_FUNCTION），一个包装覆盖全部结构体类型。
+- 一个栈一种值类型：基线（Initialize）锚定类型，Push 错型拒绝（返回 0）、GetEffectiveValue 错型返回 false 不写出参。
+- UFUNCTION 不可挂 USTRUCT（UhtFunctionParser 的 UFUNCTIONKeyword 只注册 Class/Interface 等作用域）；5.8 的 DECLARE_FUNCTION/DEFINE_FUNCTION 签名已含 UObject* Context 首参（用宏即可）。
+- 首个使用者：CMC 门控开关 `bMoveBlocked/bRotateBlocked/bJumpBlocked` + 三条 `TBXOperateStack<bool>`（Add/Remove/Clear*Blocked 三件套，见 P9 门控下推）。
 
 ## 工程经验
 - 事件系统（BXEventManager）使用 TSet 替代 TArray 存储 GlobalTargetMap/SingleKeyMap/SingleTargetMap，提升注册/注销性能。

@@ -2,10 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/CharacterMovementComponent.h"
-// TimerHandle.h 在 Engine/Classes/Engine/ 下,Engine 模块内部可同级包含,外部插件须带 Engine/ 前缀
 #include "Engine/TimerHandle.h"
 
 #include "BXStructs.h"
+#include "OperateStack/BXOperateStack.h"
 
 #include "BXCharacterMovementComponent.generated.h"
 
@@ -18,6 +18,8 @@ class BATTLEX_API UBXCharacterMovementComponent : public UCharacterMovementCompo
 	
 #pragma region Important
 public:
+	UBXCharacterMovementComponent();
+
 	virtual void TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction) override;
 	
 protected:
@@ -51,28 +53,57 @@ protected:
 	// 落地行为自动停止计时器(每次落地重置)
 	FTimerHandle LandedBehaviorTimerHandle;
 
-	// 行为代理下推的门控开关(由UBXProxyMove/Rotate/Jump在Enable/Disable时推送,默认false=允许)
+#pragma endregion Behavior
+
+
+
+#pragma region BlockGate
+protected:
+	// 门控开关(基础服务,操作记录栈的生效值,任何系统经Add/Remove/ClearBlocked登记/移除/注销,默认false=允许)
 	// 架构约定:本组件只读本地开关执行物理刹车,不反查行为组件;主动事实上报(Start/Stop)方向保持不变
 	UPROPERTY(Transient, BlueprintReadOnly)
-	bool bBehaviorMoveBlocked = false;
+	bool bMoveBlocked = false;
 
 	UPROPERTY(Transient, BlueprintReadOnly)
-	bool bBehaviorRotateBlocked = false;
+	bool bRotateBlocked = false;
 
 	UPROPERTY(Transient, BlueprintReadOnly)
-	bool bBehaviorJumpBlocked = false;
+	bool bJumpBlocked = false;
+
+	// 三条禁止的操作记录栈(记录谁声明了何种目标值;生效值=栈顶,自动刷新到上述开关)
+	TBXOperateStack<bool> MoveBlockStack;
+	TBXOperateStack<bool> RotateBlockStack;
+	TBXOperateStack<bool> JumpBlockStack;
 
 public:
-	// 设置主动移动禁止(移动代理门控下推专用,勿在别处刷写)
-	void SetBehaviorMoveBlocked(bool bInBlocked) { bBehaviorMoveBlocked = bInBlocked; }
+	// 登记主动移动禁止的修改记录(InModifier=修改者标识;生效值=栈顶,自动刷新bMoveBlocked;返回句柄ID供RemoveByID)
+	int64 AddMoveBlocked(bool bInBlocked, FName InModifier);
 
-	// 设置主动转向禁止(转向代理门控下推专用,勿在别处刷写)
-	void SetBehaviorRotateBlocked(bool bInBlocked) { bBehaviorRotateBlocked = bInBlocked; }
+	// 登记主动转向禁止的修改记录(InModifier=修改者标识;生效值=栈顶,自动刷新bRotateBlocked;返回句柄ID供RemoveByID)
+	int64 AddRotateBlocked(bool bInBlocked, FName InModifier);
 
-	// 设置跳跃禁止(跳跃代理门控下推专用,勿在别处刷写)
-	void SetBehaviorJumpBlocked(bool bInBlocked) { bBehaviorJumpBlocked = bInBlocked; }
+	// 登记跳跃禁止的修改记录(InModifier=修改者标识;生效值=栈顶,自动刷新bJumpBlocked;返回句柄ID供RemoveByID)
+	int64 AddJumpBlocked(bool bInBlocked, FName InModifier);
 
-#pragma endregion Behavior
+	// 按句柄移除主动移动禁止记录(生效值回落到余下栈顶;基线与未命中返回false)
+	bool RemoveMoveBlocked(int64 InID);
+
+	// 按句柄移除主动转向禁止记录(生效值回落到余下栈顶;基线与未命中返回false)
+	bool RemoveRotateBlocked(int64 InID);
+
+	// 按句柄移除跳跃禁止记录(生效值回落到余下栈顶;基线与未命中返回false)
+	bool RemoveJumpBlocked(int64 InID);
+
+	// 注销修改者的移动禁止记录(生效值回落到余下栈顶;无记录静默)
+	void ClearMoveBlocked(FName InModifier);
+
+	// 注销修改者的转向禁止记录(生效值回落到余下栈顶;无记录静默)
+	void ClearRotateBlocked(FName InModifier);
+
+	// 注销修改者的跳跃禁止记录(生效值回落到余下栈顶;无记录静默)
+	void ClearJumpBlocked(FName InModifier);
+
+#pragma endregion BlockGate
 
 
 

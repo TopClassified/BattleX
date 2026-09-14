@@ -12,6 +12,13 @@
 
 
 #pragma region Important
+UBXCharacterMovementComponent::UBXCharacterMovementComponent()
+{
+	MoveBlockStack.Initialize(false, TEXT("MoveBlock"));
+	RotateBlockStack.Initialize(false, TEXT("RotateBlock"));
+	JumpBlockStack.Initialize(false, TEXT("JumpBlock"));
+}
+
 void UBXCharacterMovementComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -47,6 +54,89 @@ void UBXCharacterMovementComponent::TickComponent(float DeltaTime, enum ELevelTi
 }
 
 #pragma endregion Important
+
+
+
+#pragma region BlockGate
+int64 UBXCharacterMovementComponent::AddMoveBlocked(bool bInBlocked, FName InModifier)
+{
+	const int64 NewID = MoveBlockStack.Push(bInBlocked, InModifier);
+	bMoveBlocked = MoveBlockStack.GetEffectiveValue();
+	return NewID;
+}
+
+int64 UBXCharacterMovementComponent::AddRotateBlocked(bool bInBlocked, FName InModifier)
+{
+	const int64 NewID = RotateBlockStack.Push(bInBlocked, InModifier);
+	bRotateBlocked = RotateBlockStack.GetEffectiveValue();
+	return NewID;
+}
+
+int64 UBXCharacterMovementComponent::AddJumpBlocked(bool bInBlocked, FName InModifier)
+{
+	const int64 NewID = JumpBlockStack.Push(bInBlocked, InModifier);
+	bJumpBlocked = JumpBlockStack.GetEffectiveValue();
+	return NewID;
+}
+
+bool UBXCharacterMovementComponent::RemoveMoveBlocked(int64 InID)
+{
+	if (!MoveBlockStack.RemoveByID(InID))
+	{
+		return false;
+	}
+
+	bMoveBlocked = MoveBlockStack.GetEffectiveValue();
+	return true;
+}
+
+bool UBXCharacterMovementComponent::RemoveRotateBlocked(int64 InID)
+{
+	if (!RotateBlockStack.RemoveByID(InID))
+	{
+		return false;
+	}
+
+	bRotateBlocked = RotateBlockStack.GetEffectiveValue();
+	return true;
+}
+
+bool UBXCharacterMovementComponent::RemoveJumpBlocked(int64 InID)
+{
+	if (!JumpBlockStack.RemoveByID(InID))
+	{
+		return false;
+	}
+
+	bJumpBlocked = JumpBlockStack.GetEffectiveValue();
+	return true;
+}
+
+void UBXCharacterMovementComponent::ClearMoveBlocked(FName InModifier)
+{
+	if (MoveBlockStack.RemoveByModifier(InModifier))
+	{
+		bMoveBlocked = MoveBlockStack.GetEffectiveValue();
+	}
+}
+
+void UBXCharacterMovementComponent::ClearRotateBlocked(FName InModifier)
+{
+	if (RotateBlockStack.RemoveByModifier(InModifier))
+	{
+		bRotateBlocked = RotateBlockStack.GetEffectiveValue();
+	}
+}
+
+void UBXCharacterMovementComponent::ClearJumpBlocked(FName InModifier)
+{
+	if (JumpBlockStack.RemoveByModifier(InModifier))
+	{
+		bJumpBlocked = JumpBlockStack.GetEffectiveValue();
+	}
+}
+
+#pragma endregion BlockGate
 
 
 
@@ -103,7 +193,7 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 	bool bVelocityOverMax = IsExceedingMaxSpeed(MaxSpeed);
 
 	// 禁止主动移动(行为代理下推开关),将寻路和输入的加速度标记为零向量
-	if (bBehaviorMoveBlocked)
+	if (bMoveBlocked)
 	{
 		Acceleration = FVector::ZeroVector;
 		bZeroAcceleration = true;
@@ -183,7 +273,7 @@ void UBXCharacterMovementComponent::CalcVelocity(float DeltaTime, float Friction
 FVector UBXCharacterMovementComponent::ComputeSlideVector(const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const
 {
 	// 移动被禁(行为代理下推开关)时不参与滑动修正
-	if (bBehaviorMoveBlocked)
+	if (bMoveBlocked)
 	{
 		return Delta;
 	}
@@ -199,7 +289,7 @@ void UBXCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		return;
 	}
 	
-	if (!(bOrientRotationToMovement || bUseControllerDesiredRotation) || bBehaviorRotateBlocked)
+	if (!(bOrientRotationToMovement || bUseControllerDesiredRotation) || bRotateBlocked)
 	{
 		return;
 	}
@@ -405,7 +495,7 @@ void UBXCharacterMovementComponent::UpdateFallingBehavior()
 bool UBXCharacterMovementComponent::CanAttemptJump() const
 {
 	// 跳跃被禁走行为代理下推开关
-	return !bBehaviorJumpBlocked && !bWantsToCrouch && IsMovingOnGround();
+	return !bJumpBlocked && !bWantsToCrouch && IsMovingOnGround();
 }
 
 bool UBXCharacterMovementComponent::DoJump(bool bReplayingMoves)
