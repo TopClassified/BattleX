@@ -1,6 +1,6 @@
 #include "BXTLAssetFactory.h"
 
-#include "BattleXTimelineEditor.h"
+#include "BattleXEditorSettings.h"
 
 #include "BXTLAsset.h"
 #include "BXSkillAsset.h" 
@@ -19,7 +19,7 @@ UObject* UBXTLAssetFactory::FactoryCreateNew(UClass* Class, UObject* InParent, F
 	UBXTLAsset* NewTimeline = NewObject<UBXTLAsset>(InParent, Class, Name, Flags | RF_Transactional);
 	if (NewTimeline)
 	{
-		const UBattleXTimelineEditor* EdSettings = GetDefault<UBattleXTimelineEditor>();
+		const UBattleXEditorSettings* EdSettings = GetDefault<UBattleXEditorSettings>();
 
 		UClass* PlayerType = EdSettings->PlayerType.Get() ? EdSettings->PlayerType.Get() : UBXTLPreviewActor::StaticClass();
 		UClass* TargetType = EdSettings->TargetType.Get() ? EdSettings->TargetType.Get() : UBXTLPreviewActor::StaticClass();
@@ -56,7 +56,7 @@ UObject* UBXSkillAssetFactory::FactoryCreateNew(UClass* Class, UObject* InParent
 	UBXSkillAsset* NewSkill = NewObject<UBXSkillAsset>(InParent, Class, Name, Flags | RF_Transactional);
 	if (NewSkill)
 	{
-		const UBattleXTimelineEditor* EdSettings = GetDefault<UBattleXTimelineEditor>();
+		const UBattleXEditorSettings* EdSettings = GetDefault<UBattleXEditorSettings>();
 
 		UClass* PlayerType = EdSettings->PlayerType.Get() ? EdSettings->PlayerType.Get() : UBXTLPreviewActor::StaticClass();
 		UClass* TargetType = EdSettings->TargetType.Get() ? EdSettings->TargetType.Get() : UBXTLPreviewActor::StaticClass();

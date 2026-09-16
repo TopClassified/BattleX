@@ -1,12 +1,8 @@
-#include "BXBehaviorMatrixCustomization.h"
+#include "SBXBehaviorRelationMatrix.h"
 
 #include "Behavior/BXBehaviorSettings.h"
 #include "BXGameplayTags.h"
 
-#include "DetailLayoutBuilder.h"
-#include "DetailCategoryBuilder.h"
-#include "DetailWidgetRow.h"
-#include "IDetailsView.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SNullWidget.h"
 #include "Widgets/Layout/SBox.h"
@@ -14,23 +10,21 @@
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SScrollBar.h"
 #include "Widgets/SOverlay.h"
-#include "Layout/Clipping.h"
 #include "Rendering/SlateRenderTransform.h"
 #include "Fonts/FontMeasure.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/SWindow.h"
-#include "Widgets/Layout/SBorder.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameplayTagContainer.h"
 #include "SGameplayTagCombo.h"
 #include "Styling/CoreStyle.h"
-#include "Misc/ConfigCacheIni.h"
 #include "DragAndDrop/DecoratedDragDropOp.h"
 
-#define LOCTEXT_NAMESPACE "BXBehaviorMatrix"
+#define LOCTEXT_NAMESPACE "SBXBehaviorRelationMatrix"
 
 // 矩阵统一行高(标签列/数据行/表头条一致,纵向滚动时跨面板逐行对齐;行头控件内部同样引用)
+// 注意:同模块unity build下文件级符号须带自身前缀防跨cpp撞名(状态矩阵侧为StateMatrixRowHeight)
 constexpr float MatrixRowHeight = 30.0f;
 
 // ── 行头拖拽排序 ──
@@ -68,7 +62,7 @@ public:
 		SLATE_ARGUMENT(FText, LabelText)
 	SLATE_END_ARGS()
 
-	void Construct(const FArguments& InArgs, FBXBehaviorSettingsCustomization* InOwner)
+	void Construct(const FArguments& InArgs, SBXBehaviorRelationMatrix* InOwner)
 	{
 		Owner = InOwner;
 		SourceIndex = InArgs._SourceIndex;
@@ -246,7 +240,7 @@ private:
 		return LocalPosition.Y > MyGeometry.GetLocalSize().Y * 0.5f;
 	}
 
-	FBXBehaviorSettingsCustomization* Owner = nullptr;
+	SBXBehaviorRelationMatrix* Owner = nullptr;
 	int32 SourceIndex = INDEX_NONE;
 	FText LabelText;
 	TSharedPtr<STextBlock> Label;
@@ -256,56 +250,26 @@ private:
 	TSharedPtr<SBorder> InsertBelowLine;
 };
 
-TSharedRef<IDetailCustomization> FBXBehaviorSettingsCustomization::MakeInstance()
+void SBXBehaviorRelationMatrix::Construct(const FArguments& InArgs, UBXBehaviorSettings* InSettings)
 {
-	return MakeShareable(new FBXBehaviorSettingsCustomization());
-}
+	CachedSettings = InSettings ? InSettings : GetMutableDefault<UBXBehaviorSettings>();
 
-void FBXBehaviorSettingsCustomization::CustomizeDetails(IDetailLayoutBuilder& InDetailBuilder)
-{
-	// 缓存设置对象(矩阵读写直接走配置CDO)
-	// GetDetailsViewSharedPtr返回TSharedPtr需用->(旧GetDetailsView返回裸指针已于5.5弃用);
-	// Project Settings页面选中对象可能不含Settings实例(如页面无属性可显示时),回退CDO保证矩阵始终可用
-	const TArray<TWeakObjectPtr<UObject>>& Objects = InDetailBuilder.GetDetailsViewSharedPtr()->GetSelectedObjects();
-	CachedSettings = nullptr;
-	for (const TWeakObjectPtr<UObject>& Object : Objects)
-	{
-		if (UBXBehaviorSettings* Settings = Cast<UBXBehaviorSettings>(Object.Get()))
-		{
-			CachedSettings = Settings;
-			break;
-		}
-	}
-	if (!CachedSettings.IsValid())
-	{
-		CachedSettings = GetMutableDefault<UBXBehaviorSettings>();
-	}
-
-	// 矩阵网格容器:后续增删轴只SetContent换网格本体,任何变更都不走ForceRefreshDetails
+	// 矩阵网格容器:后续增删轴只SetContent换网格本体,任何变更都不重建宿主Details视图
 	MatrixContainer = SNew(SBox);
 	MatrixContainer->SetContent(MakeMatrixWidget());
 
-	// 关系字段收编为矩阵:仅隐藏三个原始属性,保留分类本体显示自定义矩阵行
-	// (引擎BuildCategories对HideCategory的分类整体跳过——含自定义行,原实现因此从不渲染;
-	//  HideProperty保留分类可见性,自定义行才会出现)
-	InDetailBuilder.HideProperty(GET_MEMBER_NAME_CHECKED(UBXBehaviorSettings, RelationTags));
-	InDetailBuilder.HideProperty(GET_MEMBER_NAME_CHECKED(UBXBehaviorSettings, ExpelRelations));
-	InDetailBuilder.HideProperty(GET_MEMBER_NAME_CHECKED(UBXBehaviorSettings, RejectRelations));
-
-	IDetailCategoryBuilder& MatrixCategory = InDetailBuilder.EditCategory("Matrix");
-	MatrixCategory.AddCustomRow(LOCTEXT("MatrixRow", "关系矩阵"))
-		.WholeRowContent()
-		[
-			MatrixContainer.ToSharedRef()
-		];
+	ChildSlot
+	[
+		MatrixContainer.ToSharedRef()
+	];
 }
 
-UBXBehaviorSettings* FBXBehaviorSettingsCustomization::GetSettings() const
+UBXBehaviorSettings* SBXBehaviorRelationMatrix::GetSettings() const
 {
-	return CachedSettings.Get();
+	return CachedSettings;
 }
 
-FString FBXBehaviorSettingsCustomization::GetAxisDisplayName(const FGameplayTag& InTag) const
+FString SBXBehaviorRelationMatrix::GetAxisDisplayName(const FGameplayTag& InTag) const
 {
 	// 矩阵轴全部位于 BXBehavior.* 行为族下,UI 显示省略父族前缀;族外 Tag 原样显示
 	FString TagString = InTag.GetTagName().ToString();
@@ -313,7 +277,7 @@ FString FBXBehaviorSettingsCustomization::GetAxisDisplayName(const FGameplayTag&
 	return TagString;
 }
 
-TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
+TSharedRef<SWidget> SBXBehaviorRelationMatrix::MakeMatrixWidget()
 {
 	CellTextWidgets.Reset();
 	CellHighlightWidgets.Reset();
@@ -398,7 +362,7 @@ TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
 					.VAlign(VAlign_Fill)
 					[
 						SNew(SButton)
-						.OnClicked(FOnClicked::CreateRaw(this, &FBXBehaviorSettingsCustomization::OnRemoveAxisClicked, ColIndexForHeader))
+						.OnClicked(FOnClicked::CreateRaw(this, &SBXBehaviorRelationMatrix::OnRemoveAxisClicked, ColIndexForHeader))
 						.ToolTipText(FText::FromString(FString::Printf(TEXT("完整名: %s\n点击删除该轴(连带清除其全部关系配置)"), *Settings->RelationTags[Col].ToString())))
 					]
 					+ SOverlay::Slot()
@@ -453,7 +417,7 @@ TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
 
 			// 单元格文本(顶层常驻显示;悬停高亮联动染黑,常态=标准前景;HitTestInvisible 让点击穿透到按钮)
 			TSharedRef<STextBlock> CellText = SNew(STextBlock)
-				.Text(this, &FBXBehaviorSettingsCustomization::GetCellText, RowIndex, ColIndex)
+				.Text(this, &SBXBehaviorRelationMatrix::GetCellText, RowIndex, ColIndex)
 				.Font(GridFont)
 				.ColorAndOpacity(FSlateColor::UseForeground())
 				.Visibility(EVisibility::HitTestInvisible);
@@ -462,7 +426,7 @@ TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
 			// 单元格按钮(悬停回调联动行头/列头/本格高亮;底色按关系着色:空=默认,禁用=蓝,中断=红,禁+中=紫)
 			TSharedRef<SButton> CellButton = SNew(SButton)
 				.ButtonStyle(GetCellButtonStyle(GetCellRelation(RowIndex, ColIndex)))
-				.OnClicked(FOnClicked::CreateRaw(this, &FBXBehaviorSettingsCustomization::OnCellClicked, RowIndex, ColIndex))
+				.OnClicked(FOnClicked::CreateRaw(this, &SBXBehaviorRelationMatrix::OnCellClicked, RowIndex, ColIndex))
 				.OnHovered(FSimpleDelegate::CreateLambda([this, RowIndex, ColIndex]() { HandleCellHovered(RowIndex, ColIndex); }))
 				.OnUnhovered(FSimpleDelegate::CreateLambda([this, RowIndex, ColIndex]() { HandleCellUnhovered(RowIndex, ColIndex); }));
 			CellButtonWidgets.Add((uint64(RowIndex) << 32) | uint32(ColIndex), CellButton);
@@ -604,7 +568,7 @@ TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
 			[
 				SNew(SButton)
 				.Text(LOCTEXT("AddAxis", "+ 添加矩阵轴"))
-				.OnClicked(FOnClicked::CreateRaw(this, &FBXBehaviorSettingsCustomization::OnAddAxisClicked))
+				.OnClicked(FOnClicked::CreateRaw(this, &SBXBehaviorRelationMatrix::OnAddAxisClicked))
 				.ToolTipText(LOCTEXT("AddAxisTip", "弹出GameplayTag选择器,仅列出 BXBehavior.* 行为族Tag(如 BXBehavior.Dodge)"))
 			]
 			+ SHorizontalBox::Slot()
@@ -645,42 +609,18 @@ TSharedRef<SWidget> FBXBehaviorSettingsCustomization::MakeMatrixWidget()
 	return MatrixBox;
 }
 
-void FBXBehaviorSettingsCustomization::Commit(UBXBehaviorSettings* InSettings)
+void SBXBehaviorRelationMatrix::Commit()
 {
-	if (!InSettings)
-	{
-		return;
-	}
-
 	// 变更落盘+重建运行时索引(轻量,单元格点击高频路径;不动视图)
-	// 行为关系配置写入插件 Config 目录(随插件分发):SaveConfig 默认落点是项目 Config/DefaultBattleX.ini,
-	// 与插件层副本形成两份漂移;显式传 Filename 落插件文件(读取侧 PostInitProperties 亦直读该文件)
-	const TCHAR* SectionName = TEXT("/Script/BattleX.BXBehaviorSettings");
-	const FString PluginIniPath = UBXBehaviorSettings::GetPluginConfigIniPath();
-	if (!PluginIniPath.IsEmpty())
+	if (UBXBehaviorSettings* Settings = GetSettings())
 	{
-		InSettings->SaveConfig(CPF_Config, *PluginIniPath);
-		GConfig->Flush(false, *PluginIniPath);
-
-		// 迁移清理:默认落点(项目 DefaultBattleX.ini)若残留本类旧节,清掉并落盘——项目层同节会以更高优先级遮蔽插件层
-		const FString ProjectIniPath = GConfig->GetConfigFilename(TEXT("BattleX"));
-		if (!ProjectIniPath.Equals(PluginIniPath) && GConfig->DoesSectionExist(SectionName, ProjectIniPath))
-		{
-			GConfig->EmptySection(SectionName, ProjectIniPath);
-			GConfig->Flush(false, ProjectIniPath);
-		}
+		Settings->SaveToPluginConfig();
 	}
-	else
-	{
-		InSettings->SaveConfig();
-	}
-
-	InSettings->RebuildRelationIndex();
 }
 
-void FBXBehaviorSettingsCustomization::RebuildMatrixGrid()
+void SBXBehaviorRelationMatrix::RebuildMatrixGrid()
 {
-	// 增删轴后只换网格本体(SBox SetContent),不走ForceRefreshDetails——
+	// 增删轴后只换网格本体(SBox SetContent),不重建宿主Details视图——
 	// 整视图重建要重跑全部属性反射枚举+定制+设置页重排,是设置页卡顿根源
 	if (MatrixContainer.IsValid())
 	{
@@ -688,7 +628,7 @@ void FBXBehaviorSettingsCustomization::RebuildMatrixGrid()
 	}
 }
 
-void FBXBehaviorSettingsCustomization::MoveAxis(int32 InFromIndex, int32 InInsertSlot)
+void SBXBehaviorRelationMatrix::MoveAxis(int32 InFromIndex, int32 InInsertSlot)
 {
 	UBXBehaviorSettings* Settings = GetSettings();
 	if (!Settings || !Settings->RelationTags.IsValidIndex(InFromIndex))
@@ -709,11 +649,11 @@ void FBXBehaviorSettingsCustomization::MoveAxis(int32 InFromIndex, int32 InInser
 	Settings->RelationTags.RemoveAt(InFromIndex);
 	Settings->RelationTags.Insert(MovedTag, (InFromIndex < InsertSlot) ? InsertSlot - 1 : InsertSlot);
 
-	Commit(Settings);
+	Commit();
 	RebuildMatrixGrid();
 }
 
-void FBXBehaviorSettingsCustomization::HandleCellHovered(int32 InRowIndex, int32 InColumnIndex)
+void SBXBehaviorRelationMatrix::HandleCellHovered(int32 InRowIndex, int32 InColumnIndex)
 {
 	// 先恢复上一次的行头/列头/单元格配色,再点亮当前行/列的黄底黑字
 	HandleCellUnhovered(HoveredRowIndex, HoveredColumnIndex);
@@ -753,7 +693,7 @@ void FBXBehaviorSettingsCustomization::HandleCellHovered(int32 InRowIndex, int32
 	}
 }
 
-void FBXBehaviorSettingsCustomization::HandleCellUnhovered(int32 InRowIndex, int32 InColumnIndex)
+void SBXBehaviorRelationMatrix::HandleCellUnhovered(int32 InRowIndex, int32 InColumnIndex)
 {
 	if (InRowIndex == INDEX_NONE && InColumnIndex == INDEX_NONE)
 	{
@@ -796,7 +736,7 @@ void FBXBehaviorSettingsCustomization::HandleCellUnhovered(int32 InRowIndex, int
 	}
 }
 
-FReply FBXBehaviorSettingsCustomization::OnAddAxisClicked()
+FReply SBXBehaviorRelationMatrix::OnAddAxisClicked()
 {
 	UBXBehaviorSettings* Settings = GetSettings();
 	if (!Settings)
@@ -804,7 +744,7 @@ FReply FBXBehaviorSettingsCustomization::OnAddAxisClicked()
 		return FReply::Unhandled();
 	}
 
-	// 弹出独立窗口内的Tag选择器(SGameplayTagCombo,选择后经OnAxisTagSelected落轴)
+	// 弹出独立窗口内的Tag选择器(SGameplayTagCombo,选择后落轴)
 	TSharedRef<SWindow> PickerWindow = SNew(SWindow)
 		.Title(LOCTEXT("AddAxisWindowTitle", "选择矩阵轴(行为/族Tag)"))
 		.SizingRule(ESizingRule::Autosized)
@@ -842,7 +782,7 @@ FReply FBXBehaviorSettingsCustomization::OnAddAxisClicked()
 					if (UBXBehaviorSettings* SettingsPtr = WeakSettings.Get())
 					{
 						SettingsPtr->RelationTags.AddUnique(SelectedTag);
-						Commit(SettingsPtr);
+						SettingsPtr->SaveToPluginConfig();
 						RebuildMatrixGrid();
 					}
 
@@ -858,12 +798,7 @@ FReply FBXBehaviorSettingsCustomization::OnAddAxisClicked()
 	return FReply::Handled();
 }
 
-void FBXBehaviorSettingsCustomization::OnAxisTagSelected(const FGameplayTag& InTag)
-{
-	// lambda路径直接处理,保留空实现以满足声明(未来需要非模态选择器时启用)
-}
-
-FReply FBXBehaviorSettingsCustomization::OnRemoveAxisClicked(int32 InAxisIndex)
+FReply SBXBehaviorRelationMatrix::OnRemoveAxisClicked(int32 InAxisIndex)
 {
 	UBXBehaviorSettings* Settings = GetSettings();
 	if (!Settings || !Settings->RelationTags.IsValidIndex(InAxisIndex))
@@ -885,15 +820,15 @@ FReply FBXBehaviorSettingsCustomization::OnRemoveAxisClicked(int32 InAxisIndex)
 		Pair.Value.RemoveTag(AxisTag);
 	}
 
-	// 移除轴本体并收尾(只换网格本体,不重建Details整视图)
+	// 移除轴本体并收尾(只换网格本体,不重建宿主Details视图)
 	Settings->RelationTags.RemoveAt(InAxisIndex);
-	Commit(Settings);
+	Commit();
 	RebuildMatrixGrid();
 
 	return FReply::Handled();
 }
 
-FReply FBXBehaviorSettingsCustomization::OnCellClicked(int32 InRowIndex, int32 InColumnIndex)
+FReply SBXBehaviorRelationMatrix::OnCellClicked(int32 InRowIndex, int32 InColumnIndex)
 {
 	UBXBehaviorSettings* Settings = GetSettings();
 	if (!Settings || !Settings->RelationTags.IsValidIndex(InRowIndex) || !Settings->RelationTags.IsValidIndex(InColumnIndex))
@@ -943,9 +878,9 @@ FReply FBXBehaviorSettingsCustomization::OnCellClicked(int32 InRowIndex, int32 I
 		Settings->RejectRelations.FindOrAdd(RowTag).AddTag(ColTag);
 	}
 
-	Commit(Settings);
+	Commit();
 
-	// 直改单元格文本(不走ForceRefreshDetails:整视图重建是矩阵卡顿根源)
+	// 直改单元格文本(不重建视图:整视图重建是矩阵卡顿根源)
 	if (TSharedPtr<STextBlock> CellText = CellTextWidgets.FindRef((uint64(InRowIndex) << 32) | uint32(InColumnIndex)).Pin())
 	{
 		CellText->SetText(GetCellText(InRowIndex, InColumnIndex));
@@ -960,7 +895,7 @@ FReply FBXBehaviorSettingsCustomization::OnCellClicked(int32 InRowIndex, int32 I
 	return FReply::Handled();
 }
 
-uint8 FBXBehaviorSettingsCustomization::GetCellRelation(int32 InRowIndex, int32 InColumnIndex) const
+uint8 SBXBehaviorRelationMatrix::GetCellRelation(int32 InRowIndex, int32 InColumnIndex) const
 {
 	UBXBehaviorSettings* Settings = GetSettings();
 	if (!Settings)
@@ -998,7 +933,7 @@ uint8 FBXBehaviorSettingsCustomization::GetCellRelation(int32 InRowIndex, int32 
 	return Relation;
 }
 
-FText FBXBehaviorSettingsCustomization::GetCellText(int32 InRowIndex, int32 InColumnIndex) const
+FText SBXBehaviorRelationMatrix::GetCellText(int32 InRowIndex, int32 InColumnIndex) const
 {
 	switch (GetCellRelation(InRowIndex, InColumnIndex))
 	{
@@ -1013,7 +948,7 @@ FText FBXBehaviorSettingsCustomization::GetCellText(int32 InRowIndex, int32 InCo
 	}
 }
 
-const FButtonStyle* FBXBehaviorSettingsCustomization::GetCellButtonStyle(uint8 InRelation)
+const FButtonStyle* SBXBehaviorRelationMatrix::GetCellButtonStyle(uint8 InRelation)
 {
 	// 空=默认按钮样式
 	if (InRelation == 0)
@@ -1021,7 +956,7 @@ const FButtonStyle* FBXBehaviorSettingsCustomization::GetCellButtonStyle(uint8 I
 		return &FCoreStyle::Get().GetWidgetStyle<FButtonStyle>("Button");
 	}
 
-	// 着色样式副本按关系缓存(样式指针被 SButton 引用,须随定制实例存活)
+	// 着色样式副本按关系缓存(样式指针被 SButton 引用,须随控件实例存活)
 	if (const TSharedPtr<FButtonStyle>* Cached = CellButtonStyles.Find(InRelation))
 	{
 		return Cached->Get();

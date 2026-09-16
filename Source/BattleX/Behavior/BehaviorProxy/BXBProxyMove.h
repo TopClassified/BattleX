@@ -4,13 +4,13 @@
 
 #include "BXBehaviorProxy.h"
 
-#include "BXProxyMove.generated.h"
+#include "BXBProxyMove.generated.h"
 
 
 
 // 移动代理(常驻型门控):启用/禁用推UBXCharacterMovementComponent本地开关,移动组件只读开关执行物理刹车
 UCLASS(Blueprintable, BlueprintType)
-class BATTLEX_API UBXProxyMove : public UBXBehaviorProxy
+class BATTLEX_API UBXBProxyMove : public UBXBehaviorProxy
 {
 	GENERATED_BODY()
 

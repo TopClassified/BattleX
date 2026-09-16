@@ -4,13 +4,13 @@
 
 #include "BXBehaviorProxy.h"
 
-#include "BXProxyRotate.generated.h"
+#include "BXBProxyRotate.generated.h"
 
 
 
 // 转向代理(常驻型门控):启用/禁用推UBXCharacterMovementComponent本地开关,移动组件只读开关停物理转向
 UCLASS(Blueprintable, BlueprintType)
-class BATTLEX_API UBXProxyRotate : public UBXBehaviorProxy
+class BATTLEX_API UBXBProxyRotate : public UBXBehaviorProxy
 {
 	GENERATED_BODY()
 

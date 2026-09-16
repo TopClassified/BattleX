@@ -86,13 +86,9 @@ public:
 	UPROPERTY(EditDefaultsOnly)
 	float Duration = -1.0f;
 
-	// 存续期中断的行为(停运在跑,不挡启动;Tag层级)
+	// 状态代理类(条目从无到有→StartState/最后来源退出→StopState的物理执行体;空=纯姿态状态无物理操作)
 	UPROPERTY(EditDefaultsOnly)
-	FGameplayTagContainer InterruptBehaviors;
-
-	// 存续期禁止的行为(挡启动;Tag层级)
-	UPROPERTY(EditDefaultsOnly)
-	FGameplayTagContainer ForbidBehaviors;
+	TSubclassOf<UBXStateProxy> StateProxyClass;
 
 #if WITH_EDITOR
 public:

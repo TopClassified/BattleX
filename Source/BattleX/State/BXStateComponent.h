@@ -8,6 +8,7 @@
 #include "BXStateStructs.h"
 #include "StateMachine/BXStateMachineAsset.h"
 #include "StateMachine/BXStateMachineInstance.h"
+#include "StateProxy/BXStateProxy.h"
 #include "Net/BXStateBehaviorReplicated.h"
 
 #include "BXStateComponent.generated.h"
@@ -48,6 +49,10 @@ protected:
 	// 状态机实例(BeginPlay按资产创建)
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UBXStateMachineInstance>> StateMachineInstances;
+
+	// 状态代理实例(BeginPlay按SM节点/裸状态配置预建,组件生命周期内复用;键=状态Tag一一对应,无族匹配)
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "State")
+	TMap<FGameplayTag, TObjectPtr<UBXStateProxy>> StateProxies;
 
 	// 状态→状态机实例映射(外部进入路由用)
 	UPROPERTY(Transient)
@@ -160,8 +165,20 @@ protected:
 	// 查询状态Tag所属状态机实例
 	UBXStateMachineInstance* FindMachineByStateTag(const FGameplayTag& InStateTag) const;
 
-	// 查询状态配置(族内节点或裸状态配置:时长+中断/禁止两列表)
+	// 查询状态配置(族内节点或裸状态配置:时长;门控两列表来自全局状态矩阵)
 	bool GetStateBehaviorConfig(const FGameplayTag& InStateTag, float& OutDuration, FGameplayTagContainer& OutInterrupt, FGameplayTagContainer& OutForbid) const;
+
+	// 查询全局状态矩阵的门控两列表(行键=状态Tag;进入/退出/顶掉快照/转移快照共用)
+	void GetGlobalBehaviorGates(const FGameplayTag& InStateTag, FGameplayTagContainer& OutInterrupt, FGameplayTagContainer& OutForbid) const;
+
+	// 查询状态代理(精确Tag;状态代理键与状态Tag一一对应,无族匹配)
+	UBXStateProxy* FindStateProxy(const FGameplayTag& InStateTag) const;
+
+	// 启动状态代理(条目从无到有路径统一入口:本地进入/跟随进入/LateJoin重建;物理效果须幂等——重入即重启)
+	void StartStateProxy(const FGameplayTag& InStateTag);
+
+	// 停止状态代理(条目死亡路径统一入口:全部退出原因含预测回滚均停——物理必须对称还原)
+	void StopStateProxy(const FGameplayTag& InStateTag);
 
 #pragma endregion Internal
 

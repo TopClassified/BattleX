@@ -22,9 +22,8 @@
 #include "ComponentVisualizers/BXShapeComponentVisualizer.h"
 #include "CustomLayout/BXBoneSelectorCustomization.h"
 #include "CustomLayout/BXFunctionSelectorCustomization.h"
-#include "CustomLayout/BXBehaviorMatrixCustomization.h"
-
-#include "Behavior/BXBehaviorSettings.h"
+#include "CustomLayout/BXSettingsCustomization.h"
+#include "BXSettings.h"
 
 
 
@@ -69,8 +68,8 @@ void FBattleXEditorModule::StartupModule()
 	FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 	PropertyModule.RegisterCustomPropertyTypeLayout(FBXBoneSelector::StaticStruct()->GetFName(), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FBXBoneSelectorCustomization::MakeInstance));
 	PropertyModule.RegisterCustomPropertyTypeLayout(FBXFunctionSelector::StaticStruct()->GetFName(), FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FBXFunctionSelectorCustomization::MakeInstance));
-	// 行为关系矩阵定制(UBXBehaviorSettings的关系字段渲染为矩阵网格)
-	PropertyModule.RegisterCustomClassLayout(UBXBehaviorSettings::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FBXBehaviorSettingsCustomization::MakeInstance));
+	// BattleX页面定制(注入行为/状态两个关系矩阵——两个关系设置类已关闭自动注册无独立页面)
+	PropertyModule.RegisterCustomClassLayout(UBXSettings::StaticClass()->GetFName(), FOnGetDetailCustomizationInstance::CreateStatic(&FBXSettingsCustomization::MakeInstance));
 
 	// 初始化编辑器样式(原实现从未调用,StyleInstance恒为null,图标等样式整体失效)
 	FBXTLEditorStyle::Initialize();
@@ -92,7 +91,7 @@ void FBattleXEditorModule::ShutdownModule()
 		FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 		PropertyModule.UnregisterCustomPropertyTypeLayout(FBXBoneSelector::StaticStruct()->GetFName());
 		PropertyModule.UnregisterCustomPropertyTypeLayout(FBXFunctionSelector::StaticStruct()->GetFName());
-		PropertyModule.UnregisterCustomClassLayout(UBXBehaviorSettings::StaticClass()->GetFName());
+		PropertyModule.UnregisterCustomClassLayout(UBXSettings::StaticClass()->GetFName());
 	}
 }
 

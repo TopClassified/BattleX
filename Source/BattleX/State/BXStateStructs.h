@@ -12,6 +12,7 @@
 class UAnimMontage;
 class UBXSkillAsset;
 class UBXTLAsset;
+class UBXStateProxy;
 
 
 
@@ -171,14 +172,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	float Duration = -1.0f;
 
-	// 存续期中断的行为(停运在跑,不挡启动;Tag层级:禁BXBehavior根=全禁,禁族Tag=禁族)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	FGameplayTagContainer InterruptBehaviors;
-
-	// 存续期禁止的行为(挡启动;Tag层级同上)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
-	FGameplayTagContainer ForbidBehaviors;
-
 	// 进入表现
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	FBXStatePresentation EntryPresentation;
@@ -186,4 +179,8 @@ public:
 	// 退出表现(预测回滚强制不触发)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	FBXStatePresentation ExitPresentation;
+
+	// 状态代理类(条目从无到有→StartState/最后来源退出→StopState的物理执行体;空=纯标记状态无物理操作)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	TSubclassOf<UBXStateProxy> StateProxyClass;
 };

@@ -16,6 +16,7 @@ namespace BXGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Walk, "BXBehavior.Walk", "走路");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Run, "BXBehavior.Run", "跑步");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Sprint, "BXBehavior.Sprint", "冲刺");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Rotate, "BXBehavior.Rotate", "转向(纯门控域Tag:无CMC事实上报,作为旋转代理注册域,Forbid/矩阵经此路由到bRotateBlocked)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Jump, "BXBehavior.Jump", "跳跃(瞬间行为)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Landed, "BXBehavior.Landed", "落地(瞬间行为)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Falling, "BXBehavior.Falling", "下坠(滞空持续行为:MOVE_Falling且速度不逆重力方向时开始,离开模式或速度转向上时停止)");

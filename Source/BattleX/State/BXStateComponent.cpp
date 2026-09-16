@@ -7,6 +7,7 @@
 #include "BXConditionManager.h"
 #include "BXSettings.h"
 #include "BXNetStructs.h"
+#include "BXStateBehaviorSettings.h"
 #include "Behavior/BXBehaviorComponent.h"
 #include "Skill/BXSkillComponent.h"
 #include "Skill/BXSkillAsset.h"
@@ -94,6 +95,16 @@ void UBXStateComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	{
 		UpdatePredictedStateTimeouts(DeltaTime);
 	}
+
+	// 状态代理帧更新转发(已开始且声明需要的代理;代理容器BeginPlay预建后只读,回调增删状态表不影响遍历)
+	for (const TPair<FGameplayTag, TObjectPtr<UBXStateProxy>>& Pair : StateProxies)
+	{
+		UBXStateProxy* Proxy = Pair.Value;
+		if (IsValid(Proxy) && Proxy->WantsStateUpdate() && Proxy->IsStarted())
+		{
+			Proxy->UpdateState(DeltaTime);
+		}
+	}
 }
 
 void UBXStateComponent::BeginPlay()
@@ -131,6 +142,49 @@ void UBXStateComponent::BeginPlay()
 		EventMgr->DefineEvent(BXGameplayTags::BXEvent_State_Exit, FBXEventStateChanged::StaticStruct());
 	}
 
+	// 预建状态代理实例(SM节点配置优先、裸状态配置兜底,与GetStateBehaviorConfig查询序一致;同Tag不重复建)
+	{
+		TMap<FGameplayTag, TSubclassOf<UBXStateProxy>> ProxyClasses;
+		for (const TObjectPtr<UBXStateMachineInstance>& Instance : StateMachineInstances)
+		{
+			if (!IsValid(Instance) || !IsValid(Instance->Asset))
+			{
+				continue;
+			}
+
+			FGameplayTagContainer StateTags;
+			Instance->Asset->CollectStateTags(StateTags);
+			for (int32 i = 0; i < StateTags.Num(); ++i)
+			{
+				if (const UBXSMStateNode* Node = Instance->Asset->FindStateNode(StateTags.GetByIndex(i)))
+				{
+					if (Node->StateProxyClass)
+					{
+						ProxyClasses.Add(StateTags.GetByIndex(i), Node->StateProxyClass);
+					}
+				}
+			}
+		}
+		for (const TPair<FGameplayTag, FBXStateConfig>& Pair : StateConfigs)
+		{
+			if (Pair.Value.StateProxyClass && !ProxyClasses.Contains(Pair.Key))
+			{
+				ProxyClasses.Add(Pair.Key, Pair.Value.StateProxyClass);
+			}
+		}
+		for (const TPair<FGameplayTag, TSubclassOf<UBXStateProxy>>& Pair : ProxyClasses)
+		{
+			UBXStateProxy* NewProxy = NewObject<UBXStateProxy>(this, Pair.Value);
+			if (!IsValid(NewProxy))
+			{
+				continue;
+			}
+
+			NewProxy->Initialize();
+			StateProxies.Add(Pair.Key, NewProxy);
+		}
+	}
+
 	Super::BeginPlay();
 }
 
@@ -165,6 +219,20 @@ void UBXStateComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	StateMachineInstances.Empty();
 	StateToMachineMap.Empty();
 	PredictedStates.Empty();
+
+	// 释放状态代理(在跑实例先停再逆初始化,与行为组件EndPlay对称)
+	for (const TPair<FGameplayTag, TObjectPtr<UBXStateProxy>>& Pair : StateProxies)
+	{
+		if (!IsValid(Pair.Value))
+		{
+			continue;
+		}
+
+		Pair.Value->StopState();
+		Pair.Value->Deinitialize();
+		Pair.Value->MarkAsGarbage();
+	}
+	StateProxies.Empty();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -222,26 +290,8 @@ bool UBXStateComponent::DoesStateDisableBehavior(const FGameplayTag& InStateTag,
 		return false;
 	}
 
-	// 族内节点查状态机资产(TObjectPtr值表:Find返回TObjectPtr指针,不可按裸指针二级指针接收)
-	if (const TObjectPtr<UBXStateMachineInstance>* FindResult = StateToMachineMap.Find(InStateTag))
-	{
-		const UBXStateMachineInstance* Instance = *FindResult;
-		if (Instance && Instance->Asset)
-		{
-			if (const UBXSMStateNode* Node = Instance->Asset->FindStateNode(InStateTag))
-			{
-				return Node->InterruptBehaviors.HasTag(InBehaviorTag) || Node->ForbidBehaviors.HasTag(InBehaviorTag);
-			}
-		}
-	}
-
-	// 裸状态查配置
-	if (const FBXStateConfig* Config = StateConfigs.Find(InStateTag))
-	{
-		return Config->InterruptBehaviors.HasTag(InBehaviorTag) || Config->ForbidBehaviors.HasTag(InBehaviorTag);
-	}
-
-	return false;
+	// 门控两列表查全局状态矩阵(节点/裸状态上的两列表已移除)
+	return GetDefault<UBXStateBehaviorSettings>()->DoesStateGateBehavior(InStateTag, InBehaviorTag);
 }
 
 bool UBXStateComponent::EnterState(const FGameplayTag& InStateTag, int64 InSign, float InDuration)
@@ -530,22 +580,15 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 		return false;
 	}
 
-	// 解析时长与门控列表(规则二:外部携带时长优先,≤0用节点/配置默认;门控列表始终查静态配置)
+	// 解析时长与门控列表(规则二:外部携带时长优先,≤0用节点/配置默认;门控两列表始终查全局状态矩阵)
 	float ResolvedDuration = InDuration;
 	FGameplayTagContainer InterruptBehaviors;
 	FGameplayTagContainer ForbidBehaviors;
 	{
 		float DefaultDuration = -1.0f;
-		FGameplayTagContainer DefaultInterrupt;
-		FGameplayTagContainer DefaultForbid;
-		if (GetStateBehaviorConfig(InStateTag, DefaultDuration, DefaultInterrupt, DefaultForbid))
+		if (GetStateBehaviorConfig(InStateTag, DefaultDuration, InterruptBehaviors, ForbidBehaviors) && InDuration <= 0.0f)
 		{
-			if (InDuration <= 0.0f)
-			{
-				ResolvedDuration = DefaultDuration;
-			}
-			InterruptBehaviors = MoveTemp(DefaultInterrupt);
-			ForbidBehaviors = MoveTemp(DefaultForbid);
+			ResolvedDuration = DefaultDuration;
 		}
 	}
 
@@ -568,14 +611,7 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 			// 顶掉当前节点状态(SER_External)
 			// 缓存旧Tag与禁用列表:首个来源退出时InternalExitState会置空CurrentNode,循环内重复解引用会崩溃
 			DisplacedStateTag = Machine->CurrentNode->StateTag;
-			if (Machine->Asset)
-			{
-				if (const UBXSMStateNode* OldNode = Machine->Asset->FindStateNode(DisplacedStateTag))
-				{
-					DisplacedInterrupt = OldNode->InterruptBehaviors;
-					DisplacedForbid = OldNode->ForbidBehaviors;
-				}
-			}
+			GetGlobalBehaviorGates(DisplacedStateTag, DisplacedInterrupt, DisplacedForbid);
 
 			TArray<FBXStateSource> Sources;
 			if (const FBXStateRuntimeData* CurrentData = ActiveStates.Find(DisplacedStateTag))
@@ -607,10 +643,13 @@ bool UBXStateComponent::InternalEnterState(const FGameplayTag& InStateTag, int64
 		Data.Sources.Add(FBXStateSource(InSign, ResolvedDuration));
 	}
 
-	// 条目从无到有才执行门控/表现/事件
+	// 条目从无到有才执行门控/代理/表现/事件
 	if (bNewEntry)
 	{
 		ApplyBehaviorGates(InterruptBehaviors, ForbidBehaviors, InStateTag);
+
+		// 状态代理启动(物理执行臂:先于表现——表现技能/蒙太奇依赖物理设置就位,如滞空Flying模式)
+		StartStateProxy(InStateTag);
 
 		// 族内进入表现由ExecuteTransition按转移边统一触发,此处仅裸状态触发配置的进入表现
 		if (!Machine)
@@ -660,31 +699,26 @@ bool UBXStateComponent::InternalExitState(const FGameplayTag& InStateTag, int64 
 	// 移除条目
 	ActiveStates.Remove(InStateTag);
 
-	// 静态配置查询(表现与门控解除共用)
-	FGameplayTagContainer InterruptBehaviors;
-	FGameplayTagContainer ForbidBehaviors;
+	// 状态代理停止(条目死亡即停,先于表现——表现监听者重入状态时代理按"先还原再重启"次序,
+	// 放到表现之后会误停监听者刚重启的新实例;不随bDeferBehaviorRelease延迟——物理直调无账本,
+	// 转移路径先还原旧状态物理再设置新状态物理,同帧完成无抖动)
+	StopStateProxy(InStateTag);
+
+	// 状态机当前节点置空(SM空转;Machine提升到函数域——下方表现判定还需区分族内/裸状态)
 	UBXStateMachineInstance* Machine = FindMachineByStateTag(InStateTag);
 	if (Machine)
 	{
-		if (Machine->Asset)
-		{
-			if (const UBXSMStateNode* Node = Machine->Asset->FindStateNode(InStateTag))
-			{
-				InterruptBehaviors = Node->InterruptBehaviors;
-				ForbidBehaviors = Node->ForbidBehaviors;
-			}
-		}
-
-		// 状态机当前节点置空(SM空转)
 		if (Machine->CurrentNode && Machine->CurrentNode->StateTag == InStateTag)
 		{
 			Machine->CurrentNode = nullptr;
 		}
 	}
-	else if (const FBXStateConfig* Config = StateConfigs.Find(InStateTag))
+
+	// 门控列表查全局状态矩阵(禁用解除用;中断是一次性动作无解除不查)
+	FGameplayTagContainer ForbidBehaviors;
 	{
-		InterruptBehaviors = Config->InterruptBehaviors;
-		ForbidBehaviors = Config->ForbidBehaviors;
+		FGameplayTagContainer UnusedInterrupt;
+		GetGlobalBehaviorGates(InStateTag, UnusedInterrupt, ForbidBehaviors);
 	}
 
 	// 表现(预测回滚强制不触发;仅裸状态触发配置的退出表现)
@@ -925,10 +959,13 @@ bool UBXStateComponent::ExecuteTransition(UBXStateMachineInstance* InMachine, UB
 		}
 	}
 
-	// 旧状态门控集合快照(退出前收集:延迟解除用)
+	// 旧状态Tag与禁用列快照(退出前收集:延迟解除用;门控查全局状态矩阵,中断列无解除不取)
 	const FGameplayTag CurrentTag = InMachine->CurrentNode->StateTag;
-	const FGameplayTagContainer OldInterrupt = InMachine->CurrentNode->InterruptBehaviors;
-	const FGameplayTagContainer OldForbid = InMachine->CurrentNode->ForbidBehaviors;
+	FGameplayTagContainer OldForbid;
+	{
+		FGameplayTagContainer UnusedInterrupt;
+		GetGlobalBehaviorGates(CurrentTag, UnusedInterrupt, OldForbid);
+	}
 
 	// 退出当前(全部来源;抑制Exit表现;禁止解除延迟到新状态登记后:共享禁用Tag经账本多重登记保持,独占Tag解除,无解禁→再禁抖动)
 	ExitStateAllSourcesInternal(CurrentTag, InReason, true, true);
@@ -1142,7 +1179,10 @@ UBXStateMachineInstance* UBXStateComponent::FindMachineByStateTag(const FGamepla
 
 bool UBXStateComponent::GetStateBehaviorConfig(const FGameplayTag& InStateTag, float& OutDuration, FGameplayTagContainer& OutInterrupt, FGameplayTagContainer& OutForbid) const
 {
-	// 族内节点(TObjectPtr值表:Find返回TObjectPtr指针,不可按裸指针二级指针接收)
+	// 门控两列表:全局状态矩阵(唯一配置面,节点/裸状态两列表已移除;含无时长来源的纯门控行)
+	GetGlobalBehaviorGates(InStateTag, OutInterrupt, OutForbid);
+
+	// 默认时长:族内节点(TObjectPtr值表:Find返回TObjectPtr指针,不可按裸指针二级指针接收)
 	if (const TObjectPtr<UBXStateMachineInstance>* FindResult = StateToMachineMap.Find(InStateTag))
 	{
 		const UBXStateMachineInstance* Instance = *FindResult;
@@ -1151,8 +1191,6 @@ bool UBXStateComponent::GetStateBehaviorConfig(const FGameplayTag& InStateTag, f
 			if (const UBXSMStateNode* Node = Instance->Asset->FindStateNode(InStateTag))
 			{
 				OutDuration = Node->Duration;
-				OutInterrupt = Node->InterruptBehaviors;
-				OutForbid = Node->ForbidBehaviors;
 				return true;
 			}
 		}
@@ -1162,12 +1200,43 @@ bool UBXStateComponent::GetStateBehaviorConfig(const FGameplayTag& InStateTag, f
 	if (const FBXStateConfig* Config = StateConfigs.Find(InStateTag))
 	{
 		OutDuration = Config->Duration;
-		OutInterrupt = Config->InterruptBehaviors;
-		OutForbid = Config->ForbidBehaviors;
 		return true;
 	}
 
 	return false;
+}
+
+void UBXStateComponent::GetGlobalBehaviorGates(const FGameplayTag& InStateTag, FGameplayTagContainer& OutInterrupt, FGameplayTagContainer& OutForbid) const
+{
+	GetDefault<UBXStateBehaviorSettings>()->GetStateBehaviorGates(InStateTag, OutInterrupt, OutForbid);
+}
+
+UBXStateProxy* UBXStateComponent::FindStateProxy(const FGameplayTag& InStateTag) const
+{
+	if (const TObjectPtr<UBXStateProxy>* FindResult = StateProxies.Find(InStateTag))
+	{
+		return *FindResult;
+	}
+
+	return nullptr;
+}
+
+void UBXStateComponent::StartStateProxy(const FGameplayTag& InStateTag)
+{
+	UBXStateProxy* Proxy = FindStateProxy(InStateTag);
+	if (Proxy)
+	{
+		Proxy->StartState();
+	}
+}
+
+void UBXStateComponent::StopStateProxy(const FGameplayTag& InStateTag)
+{
+	UBXStateProxy* Proxy = FindStateProxy(InStateTag);
+	if (Proxy)
+	{
+		Proxy->StopState();
+	}
 }
 
 #pragma endregion Internal
@@ -1306,6 +1375,9 @@ void UBXStateComponent::OnRep_RunningStateStates(TArray<FBXStateReplicatedState>
 			UE_LOG(BXSTATE, Log, TEXT("UBXStateComponent::OnRep_RunningStateStates: entry vanished, fallback cleanup. State=%s"), *OldState.StateTag.ToString());
 			ActiveStates.Remove(OldState.StateTag);
 
+			// 状态代理对称还原(物理效果不随RPC乱序悬挂;后续到达的Exit多播因条目已移除自然短路)
+			StopStateProxy(OldState.StateTag);
+
 			// SM CurrentNode镜像清理
 			if (UBXStateMachineInstance* Machine = FindMachineByStateTag(OldState.StateTag))
 			{
@@ -1332,6 +1404,7 @@ void UBXStateComponent::HandleClientStateEnter(const FGameplayTag& InStateTag, i
 	}
 
 	// 表更新(权威事实镜像:不做门控、不做SM顶掉——转移评估仅服务器执行)
+	const bool bNewEntry = !ActiveStates.Contains(InStateTag);
 	FBXStateRuntimeData& Data = ActiveStates.FindOrAdd(InStateTag);
 	Data.Tag = InStateTag;
 	Data.Sources.Add(FBXStateSource(InSign, InDuration));
@@ -1346,6 +1419,13 @@ void UBXStateComponent::HandleClientStateEnter(const FGameplayTag& InStateTag, i
 				Machine->CurrentNode = TargetNode;
 			}
 		}
+	}
+
+	// 状态代理跟随启动(物理效果各端本地执行;行为门控走控制包原子重放故不在此执行,
+	// 状态代理无控制包通道,随条目直接驱动——与服务器InternalEnterState同构)
+	if (bNewEntry)
+	{
+		StartStateProxy(InStateTag);
 	}
 
 	// 本地事件广播(表现层监听者各端驱动;非权威端不再转发多播)
@@ -1390,6 +1470,10 @@ void UBXStateComponent::RebuildStateFromState(const FBXStateReplicatedState& InS
 			Machine->CurrentNode = Machine->Asset->FindStateNode(InState.StateTag);
 		}
 	}
+
+	// 状态代理静默启动(LateJoin物理恢复:如滞空的Flying模式,不启动则新连入端角色直接落地双端漂移;
+	// 不发事件不触表现与门控镜像语义一致——物理设置非表达层)
+	StartStateProxy(InState.StateTag);
 }
 
 #pragma endregion Internal Net

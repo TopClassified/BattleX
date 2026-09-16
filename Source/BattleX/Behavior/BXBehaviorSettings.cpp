@@ -7,6 +7,36 @@
 
 
 
+void UBXBehaviorSettings::SaveToPluginConfig()
+{
+	// 变更落盘+重建运行时索引(轻量,单元格点击高频路径)
+	// 行为关系配置写入插件 Config 目录(随插件分发):SaveConfig 默认落点是项目 Config/DefaultBattleX.ini,
+	// 与插件层副本形成两份漂移;显式传 Filename 落插件文件(读取侧 PostInitProperties 亦直读该文件)
+	const TCHAR* ConfigSectionName = TEXT("/Script/BattleX.BXBehaviorSettings");
+	const FString PluginIniPath = GetPluginConfigIniPath();
+	if (!PluginIniPath.IsEmpty())
+	{
+		SaveConfig(CPF_Config, *PluginIniPath);
+		GConfig->Flush(false, *PluginIniPath);
+
+		// 迁移清理:默认落点(项目 DefaultBattleX.ini)若残留本类旧节,清掉并落盘——项目层同节会以更高优先级遮蔽插件层
+		const FString ProjectIniPath = GConfig->GetConfigFilename(TEXT("BattleX"));
+		if (!ProjectIniPath.Equals(PluginIniPath) && GConfig->DoesSectionExist(ConfigSectionName, ProjectIniPath))
+		{
+			GConfig->EmptySection(ConfigSectionName, ProjectIniPath);
+			GConfig->Flush(false, ProjectIniPath);
+		}
+	}
+	else
+	{
+		SaveConfig();
+	}
+
+	RebuildRelationIndex();
+}
+
+
+
 UBXBehaviorSettings::UBXBehaviorSettings()
 {
 }

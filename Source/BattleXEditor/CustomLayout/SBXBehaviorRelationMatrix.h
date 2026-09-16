@@ -1,35 +1,35 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "IDetailCustomization.h"
+#include "Widgets/SCompoundWidget.h"
 #include "GameplayTagContainer.h"
 #include "Internationalization/Text.h"
 
-class IDetailLayoutBuilder;
 class UBXBehaviorSettings;
 class SBorder;
+class SBox;
 class STextBlock;
 struct FButtonStyle;
 
 
-// UBXBehaviorSettings的Detail定制:行为关系渲染为矩阵网格
+
+// 行为关系矩阵控件(操作UBXBehaviorSettings;2026-09-16起由UBXSettings的BattleX页面定制注入——
+// 该设置类已关闭自动注册无独立页面,矩阵直接操作其CDO,变更经SaveToPluginConfig直写插件ini)
 // 轴经"+添加矩阵轴"(GameplayTag选择器)添加,点击列头删除;行头拖拽排序(行列同步跟随);
 // 单元格四态循环:空→禁用→中断→禁用并中断(含对角线自关系:自禁用挡同Tag重入,自中断=新实例顶掉旧实例);
-// 任何变更(单元格/增删轴)都不走ForceRefreshDetails(整视图重建是设置页卡顿根源):
+// 任何变更(单元格/增删轴)都不走ForceRefreshDetails/整视图重建:
 // 单元格点击直改单元格文本,增删轴经SBox容器SetContent只换网格本体;
 // 冻结行头/列头(常驻可见):显式列宽/行高下三块面板(表头条/标签列/网格体)跨面板对齐,
 // 表头条横向位移由网格体横向滚动回调驱动,标签列与网格体同处纵向滚动器天然同步;
-// 单元格悬停时其行头/列头与单元格本身全部黄底黑字高亮,一眼定位当前在配哪两个行为的关系;
-// 行头可拖拽排序:拖到目标行头上/下半场=插到其前/其后,行头与列头同轴同步移动(两轴共用RelationTags数组,
-// 关系配置按Tag键存储与顺序无关,重排零迁移)
-class FBXBehaviorSettingsCustomization : public IDetailCustomization
+// 单元格悬停时其行头/列头与单元格本身全部黄底黑字高亮,一眼定位当前在配哪两个行为的关系
+class SBXBehaviorRelationMatrix : public SCompoundWidget
 {
 public:
-	// 创建实例
-	static TSharedRef<IDetailCustomization> MakeInstance();
+	SLATE_BEGIN_ARGS(SBXBehaviorRelationMatrix) {}
+	SLATE_END_ARGS()
 
-	// 定制细节
-	virtual void CustomizeDetails(IDetailLayoutBuilder& InDetailBuilder) override;
+	// 构造(InSettings为空时回退CDO)
+	void Construct(const FArguments& InArgs, UBXBehaviorSettings* InSettings = nullptr);
 
 	// 拖拽排序:把 InFromIndex 的轴移动到插入槽位 InInsertSlot(原数组槽位语义0..Num,
 	// 源自身两侧视为未变不落盘;供行头拖放控件调用,控件类定义在cpp内)
@@ -48,9 +48,6 @@ private:
 	// 添加矩阵轴(弹出GameplayTag选择器)
 	FReply OnAddAxisClicked();
 
-	// 添加轴的Tag选择回调(TagPicker为窗口模态回调,存待选轴索引)
-	void OnAxisTagSelected(const FGameplayTag& InTag);
-
 	// 删除矩阵轴(连带清除该轴的全部关系配置)
 	FReply OnRemoveAxisClicked(int32 InAxisIndex);
 
@@ -63,13 +60,13 @@ private:
 	// 单元格文本
 	FText GetCellText(int32 InRowIndex, int32 InColumnIndex) const;
 
-	// 单元格按钮样式:空=默认,禁用=蓝,中断=红,禁+中=紫(着色副本缓存在定制实例上,指针须长期存活)
+	// 单元格按钮样式:空=默认,禁用=蓝,中断=红,禁+中=紫(着色副本缓存在控件实例上,指针须长期存活)
 	const FButtonStyle* GetCellButtonStyle(uint8 InRelation);
 
 	// 变更落盘:保存配置+重建运行时索引(无视图重建,轻量可高频)
-	void Commit(UBXBehaviorSettings* InSettings);
+	void Commit();
 
-	// 重建矩阵网格本体(SBox容器SetContent换内容,不重建Details整视图)
+	// 重建矩阵网格本体(SBox容器SetContent换内容,不重建宿主Details视图)
 	void RebuildMatrixGrid();
 
 	// 悬停联动:单元格悬停时将其行头/列头染黄,一目了然当前在配哪两个行为的关系
@@ -79,9 +76,9 @@ private:
 	void HandleCellUnhovered(int32 InRowIndex, int32 InColumnIndex);
 
 private:
-	TWeakObjectPtr<UBXBehaviorSettings> CachedSettings;
+	UBXBehaviorSettings* CachedSettings = nullptr;
 
-	// 矩阵网格容器(增删轴后SetContent换网格;定制实例由视图持有,容器随定制同生命周期)
+	// 矩阵网格容器(增删轴后SetContent换网格;控件由宿主定制持有,容器随控件同生命周期)
 	TSharedPtr<SBox> MatrixContainer;
 
 	// 单元格文本控件缓存(键=(行<<32)|列;单元格点击后SetText直改,避免整视图重建)
@@ -90,7 +87,7 @@ private:
 	// 单元格按钮缓存(键=(行<<32)|列;点击后按关系切换着色样式)
 	TMap<uint64, TWeakPtr<SButton>> CellButtonWidgets;
 
-	// 单元格着色样式缓存(键=关系位码;样式副本被 SButton 指针引用,须随定制实例存活)
+	// 单元格着色样式缓存(键=关系位码;样式副本被 SButton 指针引用,须随控件实例存活)
 	TMap<uint8, TSharedPtr<FButtonStyle>> CellButtonStyles;
 
 	// 单元格悬停高亮覆盖层缓存(键=(行<<32)|列;悬停时点亮黄色覆盖层)

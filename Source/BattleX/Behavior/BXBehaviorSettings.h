@@ -44,6 +44,10 @@ public:
 #if WITH_EDITOR
 	virtual FText GetSectionText() const override;
 	virtual FText GetSectionDescription() const override;
+
+	// 关闭设置页自动注册(2026-09-16起矩阵UI由UBXSettings的BattleX页面定制注入,本类不再有独立页面;
+	// 仅影响页面可见性——配置加载/GetDefault访问/直连ini读写均不受影响;基类此虚函数在WITH_EDITOR内,重写须同样包裹)
+	virtual bool SupportsAutoRegistration() const override { return false; }
 #endif
 
 	// 行为关系配置的目标 ini:插件 Config/DefaultBattleX.ini(随插件分发;找不到插件时返回空)
@@ -69,6 +73,9 @@ public:
 
 	// 查询某来源(潜在在位方)禁止的域集合(禁止贡献计算用;调用方沿父链逐级查询)
 	const FGameplayTagContainer* FindForbidDomains(const FGameplayTag& InSourceTag) const { EnsureRelationIndexFresh(); return ForbidDomainsBySource.Find(InSourceTag); }
+
+	// 变更落盘:直写插件Config/DefaultBattleX.ini+Flush+清项目层残留旧节,并重建运行时索引(矩阵编辑器Commit调用)
+	void SaveToPluginConfig();
 
 protected:
 	// 关系查值(行Tag→列Tag),无配置返回空

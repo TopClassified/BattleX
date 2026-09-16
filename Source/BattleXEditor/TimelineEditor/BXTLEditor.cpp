@@ -14,7 +14,7 @@
 
 #include "BXTLEditorToolbar.h"
 #include "BXTLEditorCommands.h"
-#include "BattleXTimelineEditor.h"
+#include "BattleXEditorSettings.h"
 #include "Graph/BXTLGraph.h"
 #include "Graph/BXTLGraphNode.h"
 #include "Graph/SBXTLGraphNode.h"
@@ -196,7 +196,7 @@ void FBXTLEditor::Tick(float DeltaTime)
 		{
 			AlignTimePropertyTS = CurrentTS;
 
-			if (const UBattleXTimelineEditor* Setting = GetDefault<UBattleXTimelineEditor>())
+			if (const UBattleXEditorSettings* Setting = GetDefault<UBattleXEditorSettings>())
 			{
 				if (UBXTLGraph* Graph = Cast<UBXTLGraph>(EditAsset->Graph))
 				{
@@ -304,7 +304,7 @@ void FBXTLEditor::Tick(float DeltaTime)
 	}
 
 	// 清理残留条目:残留期已过的、Task失效的、重新开始运行的(以运行态为准)
-	const UBattleXTimelineEditor* Setting = GetDefault<UBattleXTimelineEditor>();
+	const UBattleXEditorSettings* Setting = GetDefault<UBattleXEditorSettings>();
 	const double ResidualDuration = Setting ? FMath::Max(Setting->RunningHighlightResidualDuration, 0.0) : 0.0;
 	for (int32 i = FadeList.Num() - 1; i >= 0; --i)
 	{
@@ -343,7 +343,7 @@ float FBXTLEditor::GetTaskHighlightAlpha(UBXTask* InTask)
 	}
 
 	// 结束后残留期内:透明度由不透明线性过渡到全透明
-	const UBattleXTimelineEditor* Setting = GetDefault<UBattleXTimelineEditor>();
+	const UBattleXEditorSettings* Setting = GetDefault<UBattleXEditorSettings>();
 	const double ResidualDuration = Setting ? FMath::Max(Setting->RunningHighlightResidualDuration, 0.0) : 0.0;
 	if (ResidualDuration <= 0.0)
 	{
@@ -469,7 +469,7 @@ void FBXTLEditor::AddReferencedObjects(FReferenceCollector& Collector)
 
 FString FBXTLEditor::GetReferencerName() const
 {
-	return TEXT("BattleXTimelineEditor");
+	return TEXT("BattleXEditorSettings");
 }
 
 #pragma endregion Important
@@ -695,7 +695,7 @@ void FBXTLEditor::Step()
 	TSharedPtr<FBXTLEditorViewportClient> ViewportClient = StaticCastSharedPtr<FBXTLEditorViewportClient>(Viewport->GetViewportClient());
 	if (ViewportClient.IsValid())
 	{
-		if (const UBattleXTimelineEditor* Setting = GetDefault<UBattleXTimelineEditor>())
+		if (const UBattleXEditorSettings* Setting = GetDefault<UBattleXEditorSettings>())
 		{
 			ViewportClient->TickWorld(1.0f / FMath::Max(Setting->PreviewTickRate, 0.1f));
 		}
@@ -877,7 +877,7 @@ void FBXTLEditor::CreatePreviewScene()
 {
 	if (!PreviewScene.IsValid())
 	{
-		const UBattleXTimelineEditor* EditorSetting = GetDefault<UBattleXTimelineEditor>();
+		const UBattleXEditorSettings* EditorSetting = GetDefault<UBattleXEditorSettings>();
 
 		FPreviewScene::ConstructionValues CVS;
 		CVS.bEditor = true;

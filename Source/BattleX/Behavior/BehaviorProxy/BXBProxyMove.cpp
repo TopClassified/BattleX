@@ -1,4 +1,4 @@
-#include "BXProxyMove.h"
+#include "BXBProxyMove.h"
 
 #include "Movement/BXCharacterMovementComponent.h"
 
@@ -6,7 +6,7 @@
 
 // 开始/停止事件由UBXBehaviorComponent管线统一广播(BXEvent.Behavior.Enter/Exit)
 // 代理只负责基层组件的执行逻辑,不再手动发事件
-bool UBXProxyMove::NativeEnableProxy()
+bool UBXBProxyMove::NativeEnableProxy()
 {
 	if (AActor* ProxyOwner = GetOwner())
 	{
@@ -19,7 +19,7 @@ bool UBXProxyMove::NativeEnableProxy()
 	return true;
 }
 
-bool UBXProxyMove::NativeDisableProxy()
+bool UBXBProxyMove::NativeDisableProxy()
 {
 	if (AActor* ProxyOwner = GetOwner())
 	{
@@ -32,17 +32,17 @@ bool UBXProxyMove::NativeDisableProxy()
 	return true;
 }
 
-bool UBXProxyMove::NativeStartBehavior(const FInstancedStruct& InParameter)
+bool UBXBProxyMove::NativeStartBehavior(const FInstancedStruct& InParameter)
 {
 	return true;
 }
 
-bool UBXProxyMove::NativeStopBehavior()
+bool UBXBProxyMove::NativeStopBehavior()
 {
 	return true;
 }
 
-bool UBXProxyMove::NativeCheckStartBehavior(const FInstancedStruct& InParameter)
+bool UBXBProxyMove::NativeCheckStartBehavior(const FInstancedStruct& InParameter)
 {
 	return true;
 }

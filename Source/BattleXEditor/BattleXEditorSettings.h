@@ -4,21 +4,22 @@
 #include "Engine/DataTable.h"
 #include "Engine/DeveloperSettings.h"
 
-#include "BXTLEditorTemplate.h"
-#include "Preview/BXTLPreviewActor.h"
+#include "TimelineEditor/BXTLEditorTemplate.h"
+#include "TimelineEditor/Preview/BXTLPreviewActor.h"
 
-#include "BattleXTimelineEditor.generated.h" 
-
-
+#include "BattleXEditorSettings.generated.h"
 
 
-UCLASS(Config = BattleX, DefaultConfig, meta = (DisplayName = "BattleXTimelineEditor"))
-class BATTLEXEDITOR_API UBattleXTimelineEditor : public UDeveloperSettings
+
+// BattleX编辑器设置(2026-09-16由BattleXTimelineEditor改名扩展:所有编辑器相关设置项收拢于此;
+// 现含时间轴编辑器的Preview/PreviewScene/Edit配置,后续新增编辑器设置一律入本类)
+UCLASS(Config = BattleX, DefaultConfig, meta = (DisplayName = "BattleXEditor"))
+class BATTLEXEDITOR_API UBattleXEditorSettings : public UDeveloperSettings
 {
 	GENERATED_BODY()
 
 public:
-	UBattleXTimelineEditor(const FObjectInitializer& ObjectInitializer);
+	UBattleXEditorSettings(const FObjectInitializer& ObjectInitializer);
 
 	// Project Settings 页面定位(引擎自动发现UDeveloperSettings,按此注册;勿手动ISettingsModule注册——会双页面)
 	virtual FName GetContainerName() const override;

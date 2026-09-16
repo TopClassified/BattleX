@@ -4,13 +4,13 @@
 
 #include "BXBehaviorProxy.h"
 
-#include "BXProxyLanded.generated.h"
+#include "BXBProxyLanded.generated.h"
 
 
 
 // 落地代理(事件型瞬时事:无基层开关,随管线隐式启停,Hit参数经参数结构传递给监听方)
 UCLASS(Blueprintable, BlueprintType)
-class BATTLEX_API UBXProxyLanded : public UBXBehaviorProxy
+class BATTLEX_API UBXBProxyLanded : public UBXBehaviorProxy
 {
 	GENERATED_BODY()
 

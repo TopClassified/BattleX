@@ -1,11 +1,11 @@
-#include "BXProxyRotate.h"
+#include "BXBProxyRotate.h"
 
 #include "Movement/BXCharacterMovementComponent.h"
 
 
 
 // 开始/停止事件由UBXBehaviorComponent管线统一广播(BXEvent.Behavior.Enter/Exit)
-bool UBXProxyRotate::NativeEnableProxy()
+bool UBXBProxyRotate::NativeEnableProxy()
 {
 	if (AActor* ProxyOwner = GetOwner())
 	{
@@ -18,7 +18,7 @@ bool UBXProxyRotate::NativeEnableProxy()
 	return true;
 }
 
-bool UBXProxyRotate::NativeDisableProxy()
+bool UBXBProxyRotate::NativeDisableProxy()
 {
 	if (AActor* ProxyOwner = GetOwner())
 	{
@@ -31,17 +31,17 @@ bool UBXProxyRotate::NativeDisableProxy()
 	return true;
 }
 
-bool UBXProxyRotate::NativeStartBehavior(const FInstancedStruct& InParameter)
+bool UBXBProxyRotate::NativeStartBehavior(const FInstancedStruct& InParameter)
 {
 	return true;
 }
 
-bool UBXProxyRotate::NativeStopBehavior()
+bool UBXBProxyRotate::NativeStopBehavior()
 {
 	return true;
 }
 
-bool UBXProxyRotate::NativeCheckStartBehavior(const FInstancedStruct& InParameter)
+bool UBXBProxyRotate::NativeCheckStartBehavior(const FInstancedStruct& InParameter)
 {
 	return true;
 }
