@@ -15,7 +15,8 @@ struct FButtonStyle;
 
 // 行为关系矩阵控件(操作UBXBehaviorSettings;2026-09-16起由UBXSettings的BattleX页面定制注入——
 // 该设置类已关闭自动注册无独立页面,矩阵直接操作其CDO,变更经SaveToPluginConfig直写插件ini)
-// 轴经"+添加矩阵轴"(GameplayTag选择器)添加,点击列头删除;行头拖拽排序(行列同步跟随);
+// 轴在打开页面时按已注册Tag自动补齐(BXBehavior根下后代追加到末尾,未注册残留轴移除);
+// 行头拖拽排序(行列同步跟随);表头纯展示(悬停提示完整名);
 // 单元格四态循环:空→禁用→中断→禁用并中断(含对角线自关系:自禁用挡同Tag重入,自中断=新实例顶掉旧实例);
 // 任何变更(单元格/增删轴)都不走ForceRefreshDetails/整视图重建:
 // 单元格点击直改单元格文本,增删轴经SBox容器SetContent只换网格本体;
@@ -42,14 +43,18 @@ private:
 	// 轴显示名(BXBehavior.* 行为族Tag省略父族前缀:BXBehavior.PerfectDodge → PerfectDodge;悬停提示保留完整名)
 	FString GetAxisDisplayName(const FGameplayTag& InTag) const;
 
+	// 表头悬停提示:完整名+原生Tag注释(中文说明,经FGameplayTagNode::GetDevComment;无注释时仅完整名)
+	FString GetTagTooltip(const FGameplayTag& InTag) const;
+
 	// 渲染矩阵网格
 	TSharedRef<SWidget> MakeMatrixWidget();
 
-	// 添加矩阵轴(弹出GameplayTag选择器)
-	FReply OnAddAxisClicked();
+	// 轴同步:BXBehavior根下已注册后代缺失的追加到RelationTags末尾(不打乱现有顺序),
+	// 未注册Tag的轴移除(改名/删除残留);有变更才落盘一次(SaveToPluginConfig内含索引重建,未注册关系条目由其清理)
+	int32 EnsureAxesComplete();
 
-	// 删除矩阵轴(连带清除该轴的全部关系配置)
-	FReply OnRemoveAxisClicked(int32 InAxisIndex);
+	// 递归收集根Tag下全部已注册后代(不含根自身;Tag树无环,递归安全)
+	void CollectTagDescendants(const FGameplayTag& InRootTag, TArray<FGameplayTag>& OutTags) const;
 
 	// 单元格按钮回调(循环切换关系:空→禁用→中断→禁用并中断)
 	FReply OnCellClicked(int32 InRowIndex, int32 InColumnIndex);

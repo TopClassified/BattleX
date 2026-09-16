@@ -34,14 +34,14 @@ namespace BXGameplayTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXDamageType_Default, "BXDamageType.Default", "默认伤害类型");
 
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Normal, "BXStunState.Normal", "无硬直");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Knockback, "BXStunState.Knockback", "击退");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Knockdown, "BXStunState.Knockdown", "击倒");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Prone, "BXStunState.Prone", "击趴");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Ascending, "BXStunState.Ascending", "上升");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Falling, "BXStunState.Falling", "下落");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Floating, "BXStunState.Floating", "滞空");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXStunState_Execution, "BXStunState.Execution", "处决");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Normal, "BXState.Normal", "正常");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Knockback, "BXState.Knockback", "击退");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Knockdown, "BXState.Knockdown", "击倒");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Prone, "BXState.Prone", "击趴");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Ascending, "BXState.Ascending", "上升");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Falling, "BXState.Falling", "下落");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Floating, "BXState.Floating", "滞空");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Execution, "BXState.Execution", "处决");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXAttackType_Light, "BXAttackType.Light", "轻击");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXAttackType_KnockBack, "BXAttackType.KnockBack", "击退");

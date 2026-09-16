@@ -72,7 +72,7 @@ FText UBXBehaviorSettings::GetSectionText() const
 FText UBXBehaviorSettings::GetSectionDescription() const
 {
 #define LOCTEXT_NAMESPACE "BXBehaviorSettings"
-		return LOCTEXT("SectionDesc", "行为矩阵:行为域之间的禁用/中断关系配置(轴经页面内按钮添加;对角线=同行为自关系)");
+		return LOCTEXT("SectionDesc", "行为矩阵:行为域之间的禁用/中断关系配置(轴按已注册Tag自动补齐;对角线=同行为自关系)");
 #undef LOCTEXT_NAMESPACE
 }
 #endif
@@ -130,6 +130,11 @@ void UBXBehaviorSettings::RebuildRelationIndex()
 	ForbidDomainsBySource.Reset();
 
 	// 清理:丢弃不在矩阵轴内的键与列(改名/删轴残留——编辑器矩阵只渲染轴,这些条目不可见无法手清)
+	// 轴为空=配置加载失败的形态(正常流程自动补齐后不可能为空),跳过清理防把关系表连带清盘
+	if (RelationTags.IsEmpty())
+	{
+		return;
+	}
 	FGameplayTagContainer AxisContainer;
 	// 5.8 容器无 AppendTags(TArray) 重载,逐条 AddTag
 	for (const FGameplayTag& AxisTag : RelationTags)

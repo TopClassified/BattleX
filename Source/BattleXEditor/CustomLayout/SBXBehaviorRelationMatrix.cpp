@@ -14,10 +14,9 @@
 #include "Fonts/FontMeasure.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Input/SButton.h"
-#include "Widgets/SWindow.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameplayTagContainer.h"
-#include "SGameplayTagCombo.h"
+#include "GameplayTagsManager.h"
 #include "Styling/CoreStyle.h"
 #include "DragAndDrop/DecoratedDragDropOp.h"
 
@@ -254,7 +253,10 @@ void SBXBehaviorRelationMatrix::Construct(const FArguments& InArgs, UBXBehaviorS
 {
 	CachedSettings = InSettings ? InSettings : GetMutableDefault<UBXBehaviorSettings>();
 
-	// 矩阵网格容器:后续增删轴只SetContent换网格本体,任何变更都不重建宿主Details视图
+	// 打开页面时轴同步:按已注册Tag自动补齐缺失轴+清未注册残留,零变更零写入
+	EnsureAxesComplete();
+
+	// 矩阵网格容器:后续任何变更都不重建宿主Details视图
 	MatrixContainer = SNew(SBox);
 	MatrixContainer->SetContent(MakeMatrixWidget());
 
@@ -262,6 +264,53 @@ void SBXBehaviorRelationMatrix::Construct(const FArguments& InArgs, UBXBehaviorS
 	[
 		MatrixContainer.ToSharedRef()
 	];
+}
+
+int32 SBXBehaviorRelationMatrix::EnsureAxesComplete()
+{
+	UBXBehaviorSettings* Settings = GetSettings();
+	if (!Settings)
+	{
+		return 0;
+	}
+
+	int32 ChangedCount = 0;
+
+	// 残留清理:轴数组中未注册的Tag(改名/删除残留)移除
+	for (int32 i = Settings->RelationTags.Num() - 1; i >= 0; --i)
+	{
+		if (!UGameplayTagsManager::Get().FindTagNode(Settings->RelationTags[i]).IsValid())
+		{
+			Settings->RelationTags.RemoveAt(i);
+			++ChangedCount;
+		}
+	}
+
+	// 自动补齐:BXBehavior根下已注册后代缺失的追加到末尾(不打乱现有顺序,拖拽排序成果保留)
+	TArray<FGameplayTag> Descendants;
+	CollectTagDescendants(BXGameplayTags::BXBehavior_Root.GetTag(), Descendants);
+	for (const FGameplayTag& AxisTag : Descendants)
+	{
+		if (!Settings->RelationTags.Contains(AxisTag))
+		{
+			Settings->RelationTags.Add(AxisTag);
+			++ChangedCount;
+		}
+	}
+
+	// 打开页面零写入(2026-09-16数据损毁教训):轴同步纯内存,仅影响本次渲染;
+	// 补齐的轴与未注册残留的清理都只发生在用户显式编辑(单元格点击/拖拽)的Commit落盘
+	return ChangedCount;
+}
+
+void SBXBehaviorRelationMatrix::CollectTagDescendants(const FGameplayTag& InRootTag, TArray<FGameplayTag>& OutTags) const
+{
+	const FGameplayTagContainer Children = UGameplayTagsManager::Get().RequestGameplayTagChildren(InRootTag);
+	for (const FGameplayTag& Child : Children)
+	{
+		OutTags.AddUnique(Child);
+		CollectTagDescendants(Child, OutTags);
+	}
 }
 
 UBXBehaviorSettings* SBXBehaviorRelationMatrix::GetSettings() const
@@ -275,6 +324,21 @@ FString SBXBehaviorRelationMatrix::GetAxisDisplayName(const FGameplayTag& InTag)
 	FString TagString = InTag.GetTagName().ToString();
 	TagString.RemoveFromStart(BXGameplayTags::BXBehavior_Root.GetTag().GetTagName().ToString() + TEXT("."));
 	return TagString;
+}
+
+FString SBXBehaviorRelationMatrix::GetTagTooltip(const FGameplayTag& InTag) const
+{
+	// 完整名+原生Tag注释(中文说明;UE_DEFINE_GAMEPLAY_TAG_COMMENT 的注释经注册期写入节点 DevComment)
+	FString Tooltip = FString::Printf(TEXT("完整名: %s"), *InTag.ToString());
+	if (TSharedPtr<FGameplayTagNode> TagNode = UGameplayTagsManager::Get().FindTagNode(InTag))
+	{
+		const FString& DevComment = TagNode->GetDevComment();
+		if (!DevComment.IsEmpty())
+		{
+			Tooltip += FString::Printf(TEXT("\n说明: %s"), *DevComment);
+		}
+	}
+	return Tooltip;
 }
 
 TSharedRef<SWidget> SBXBehaviorRelationMatrix::MakeMatrixWidget()
@@ -328,14 +392,12 @@ TSharedRef<SWidget> SBXBehaviorRelationMatrix::MakeMatrixWidget()
 		];
 	for (int32 Col = 0; Col < AxisNum; ++Col)
 	{
-		const int32 ColIndexForHeader = Col;
-
-		// 列头文本(顶层常驻显示;悬停高亮联动染黑,常态=弱化前景;HitTestInvisible 让点击穿透到按钮)
+		// 列头文本(悬停高亮联动染黑,常态=弱化前景;直挂tooltip含完整名+中文说明)
 		TSharedRef<STextBlock> HeaderText = SNew(STextBlock)
 			.Text(FText::FromString(GetAxisDisplayName(Settings->RelationTags[Col])))
 			.Font(GridFont)
 			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-			.Visibility(EVisibility::HitTestInvisible);
+			.ToolTipText(FText::FromString(GetTagTooltip(Settings->RelationTags[Col])));
 		ColumnHeaderWidgets.Add(Col, HeaderText);
 
 		// 列头黄底高亮层(悬停联动点亮)
@@ -355,16 +417,9 @@ TSharedRef<SWidget> SBXBehaviorRelationMatrix::MakeMatrixWidget()
 				.WidthOverride(ColumnWidth)
 				.HeightOverride(MatrixRowHeight)
 				.VAlign(VAlign_Fill)
+				.ToolTipText(FText::FromString(GetTagTooltip(Settings->RelationTags[Col])))
 				[
 					SNew(SOverlay)
-					+ SOverlay::Slot()
-					.HAlign(HAlign_Fill)
-					.VAlign(VAlign_Fill)
-					[
-						SNew(SButton)
-						.OnClicked(FOnClicked::CreateRaw(this, &SBXBehaviorRelationMatrix::OnRemoveAxisClicked, ColIndexForHeader))
-						.ToolTipText(FText::FromString(FString::Printf(TEXT("完整名: %s\n点击删除该轴(连带清除其全部关系配置)"), *Settings->RelationTags[Col].ToString())))
-					]
 					+ SOverlay::Slot()
 					.HAlign(HAlign_Fill)
 					.VAlign(VAlign_Fill)
@@ -399,7 +454,7 @@ TSharedRef<SWidget> SBXBehaviorRelationMatrix::MakeMatrixWidget()
 		TSharedRef<SBXDraggableAxisHeader> RowHeader = SNew(SBXDraggableAxisHeader, this)
 			.SourceIndex(Row)
 			.LabelText(FText::FromString(GetAxisDisplayName(Settings->RelationTags[Row])))
-			.ToolTipText(FText::FromString(FString::Printf(TEXT("完整名: %s\n拖拽可调整轴顺序(行头与列头同步移动)"), *Settings->RelationTags[Row].ToString())));
+			.ToolTipText(FText::FromString(GetTagTooltip(Settings->RelationTags[Row]) + TEXT("\n拖拽可调整轴顺序(行头与列头同步移动)")));
 		RowLabelWidgets.Add(Row, RowHeader->GetLabel());
 		RowLabelHighlightWidgets.Add(Row, RowHeader->GetHighlight());
 
@@ -415,7 +470,7 @@ TSharedRef<SWidget> SBXBehaviorRelationMatrix::MakeMatrixWidget()
 			const int32 RowIndex = Row;
 			const int32 ColIndex = Col;
 
-			// 单元格文本(顶层常驻显示;悬停高亮联动染黑,常态=标准前景;HitTestInvisible 让点击穿透到按钮)
+			// 单元格文本(顶层常驻显示;悬停高亮联动染黑,常态=标准前景;HitTestInvisible 让悬停提示穿透到表头容器)
 			TSharedRef<STextBlock> CellText = SNew(STextBlock)
 				.Text(this, &SBXBehaviorRelationMatrix::GetCellText, RowIndex, ColIndex)
 				.Font(GridFont)
@@ -484,15 +539,13 @@ TSharedRef<SWidget> SBXBehaviorRelationMatrix::MakeMatrixWidget()
 			];
 	}
 
-	// ── 双向滚动视口(仅网格体):外纵向+内横向,滚动条经 ExternalScrollbar 钉在视口右缘/底缘 ──
-	TSharedRef<SScrollBar> VerticalBar = SNew(SScrollBar)
-		.Orientation(Orient_Vertical)
-		.Thickness(FVector2D(9.0f, 9.0f));
+	// ── 纵向平铺(2026-09-16:无纵向滚动器,矩阵随内容自然展开、随设置页滚动)──
+	// 仅横向滚动:滚动条钉在网格体底缘,横向滚动驱动冻结表头条反向平移;
+	// ConsumeMouseWheel=Never 让纵向滚轮穿透给设置页(鼠标悬在矩阵上滚轮仍滚页面)
 	TSharedRef<SScrollBar> HorizontalBar = SNew(SScrollBar)
 		.Orientation(Orient_Horizontal)
 		.Thickness(FVector2D(9.0f, 9.0f));
 
-	// 内层横向:ConsumeMouseWheel=Never 让纵向滚轮穿透给外层;横向滚动驱动冻结表头条反向平移
 	TSharedRef<SScrollBox> BodyHScroller = SNew(SScrollBox)
 		.Orientation(Orient_Horizontal)
 		.ExternalScrollbar(HorizontalBar)
@@ -510,10 +563,12 @@ TSharedRef<SWidget> SBXBehaviorRelationMatrix::MakeMatrixWidget()
 			BodyRows
 		];
 
-	TSharedRef<SScrollBox> BodyVScroller = SNew(SScrollBox)
-		.Orientation(Orient_Vertical)
-		.ExternalScrollbar(VerticalBar)
-		+ SScrollBox::Slot()
+	// 网格体 Overlay:标签列(横向钉住) + 横向滚动区;横向滚动条钉在底缘
+	TSharedRef<SOverlay> BodyViewport = SNew(SOverlay)
+		+ SOverlay::Slot()
+		.HAlign(HAlign_Fill)
+		.VAlign(VAlign_Fill)
+		.Padding(0.0f, 0.0f, 0.0f, 10.0f)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -529,22 +584,6 @@ TSharedRef<SWidget> SBXBehaviorRelationMatrix::MakeMatrixWidget()
 			[
 				BodyHScroller
 			]
-		];
-
-	// 视口 Overlay:两条滚动条钉在右缘/底缘
-	TSharedRef<SOverlay> BodyViewport = SNew(SOverlay)
-		+ SOverlay::Slot()
-		.HAlign(HAlign_Fill)
-		.VAlign(VAlign_Fill)
-		[
-			BodyVScroller
-		]
-		+ SOverlay::Slot()
-		.HAlign(HAlign_Right)
-		.VAlign(VAlign_Fill)
-		.Padding(0.0f, 0.0f, 1.0f, 0.0f)
-		[
-			VerticalBar
 		]
 		+ SOverlay::Slot()
 		.HAlign(HAlign_Fill)
@@ -554,7 +593,7 @@ TSharedRef<SWidget> SBXBehaviorRelationMatrix::MakeMatrixWidget()
 			HorizontalBar
 		];
 
-	// ── 组装:轴编辑行(常驻) + 冻结表头条 + 滚动视口;轴多时视口定高内部滚动 ──
+	// ── 组装:说明行 + 冻结表头条 + 平铺网格体(纵向随内容展开,无定高视口) ──
 	TSharedRef<SVerticalBox> MatrixBox = SNew(SVerticalBox);
 
 	MatrixBox->AddSlot()
@@ -566,18 +605,8 @@ TSharedRef<SWidget> SBXBehaviorRelationMatrix::MakeMatrixWidget()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
-				SNew(SButton)
-				.Text(LOCTEXT("AddAxis", "+ 添加矩阵轴"))
-				.OnClicked(FOnClicked::CreateRaw(this, &SBXBehaviorRelationMatrix::OnAddAxisClicked))
-				.ToolTipText(LOCTEXT("AddAxisTip", "弹出GameplayTag选择器,仅列出 BXBehavior.* 行为族Tag(如 BXBehavior.Dodge)"))
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(12.0f, 0.0f)
-			[
 				SNew(STextBlock)
-				.Text(LOCTEXT("AxisHint", "拖拽行头调整轴顺序(行列同步);点击列头删除该轴;单元格点击循环:空→禁用→中断→禁用并中断(对角线=同行为自关系)"))
+				.Text(LOCTEXT("AxisHint", "轴按已注册Tag自动补齐(BXBehavior.*);拖拽行头调整轴顺序(行列同步);单元格点击循环:空→禁用→中断→禁用并中断(对角线=同行为自关系)"))
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 			]
@@ -589,21 +618,10 @@ TSharedRef<SWidget> SBXBehaviorRelationMatrix::MakeMatrixWidget()
 			HeaderClip
 		];
 
-	// 轴多时给视口定高(内部纵向滚动),轴少时自然高度随设置页滚动
-	TSharedRef<SWidget> BodyArea = BodyViewport;
-	if (AxisNum >= 10)
-	{
-		BodyArea = SNew(SBox)
-			.HeightOverride(400.0f)
-			[
-				BodyViewport
-			];
-	}
-
 	MatrixBox->AddSlot()
 		.AutoHeight()
 		[
-			BodyArea
+			BodyViewport
 		];
 
 	return MatrixBox;
@@ -736,97 +754,7 @@ void SBXBehaviorRelationMatrix::HandleCellUnhovered(int32 InRowIndex, int32 InCo
 	}
 }
 
-FReply SBXBehaviorRelationMatrix::OnAddAxisClicked()
-{
-	UBXBehaviorSettings* Settings = GetSettings();
-	if (!Settings)
-	{
-		return FReply::Unhandled();
-	}
 
-	// 弹出独立窗口内的Tag选择器(SGameplayTagCombo,选择后落轴)
-	TSharedRef<SWindow> PickerWindow = SNew(SWindow)
-		.Title(LOCTEXT("AddAxisWindowTitle", "选择矩阵轴(行为/族Tag)"))
-		.SizingRule(ESizingRule::Autosized)
-		.AutoCenter(EAutoCenter::PrimaryWorkArea);
-
-	TWeakObjectPtr<UBXBehaviorSettings> WeakSettings = Settings;
-	TWeakPtr<SWindow> WeakWindow = PickerWindow;
-
-	PickerWindow->SetContent(
-		SNew(SBorder)
-		.Padding(12.0f)
-		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, 0.0f, 0.0f, 8.0f)
-			[
-				SNew(STextBlock)
-				.Text(LOCTEXT("AddAxisPrompt", "选择加入矩阵轴的行为Tag(仅列出 BXBehavior.* 行为族,如 BXBehavior.Dodge)"))
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			[
-				SNew(SGameplayTagCombo)
-				// 只列 BXBehavior.* 行为族(Filter 为根名串,引擎经 GetFilteredGameplayRootTags 裁剪树根;
-				// 5.8 的原生Tag常量是 FNativeGameplayTag 包装,经 GetTag() 取 FGameplayTag)
-				.Filter(BXGameplayTags::BXBehavior_Root.GetTag().ToString())
-				.OnTagChanged_Lambda([this, WeakSettings, WeakWindow](const FGameplayTag& SelectedTag)
-				{
-					if (!SelectedTag.IsValid())
-					{
-						return;
-					}
-
-					if (UBXBehaviorSettings* SettingsPtr = WeakSettings.Get())
-					{
-						SettingsPtr->RelationTags.AddUnique(SelectedTag);
-						SettingsPtr->SaveToPluginConfig();
-						RebuildMatrixGrid();
-					}
-
-					if (TSharedPtr<SWindow> WindowPin = WeakWindow.Pin())
-					{
-						WindowPin->RequestDestroyWindow();
-					}
-				})
-			]
-		]);
-
-	FSlateApplication::Get().AddWindow(PickerWindow);
-	return FReply::Handled();
-}
-
-FReply SBXBehaviorRelationMatrix::OnRemoveAxisClicked(int32 InAxisIndex)
-{
-	UBXBehaviorSettings* Settings = GetSettings();
-	if (!Settings || !Settings->RelationTags.IsValidIndex(InAxisIndex))
-	{
-		return FReply::Unhandled();
-	}
-
-	const FGameplayTag AxisTag = Settings->RelationTags[InAxisIndex];
-
-	// 清除该轴的全部关系配置(作为行键的两表条目 + 作为列在各行容器中的引用)
-	Settings->ExpelRelations.Remove(AxisTag);
-	Settings->RejectRelations.Remove(AxisTag);
-	for (TPair<FGameplayTag, FGameplayTagContainer>& Pair : Settings->ExpelRelations)
-	{
-		Pair.Value.RemoveTag(AxisTag);
-	}
-	for (TPair<FGameplayTag, FGameplayTagContainer>& Pair : Settings->RejectRelations)
-	{
-		Pair.Value.RemoveTag(AxisTag);
-	}
-
-	// 移除轴本体并收尾(只换网格本体,不重建宿主Details视图)
-	Settings->RelationTags.RemoveAt(InAxisIndex);
-	Commit();
-	RebuildMatrixGrid();
-
-	return FReply::Handled();
-}
 
 FReply SBXBehaviorRelationMatrix::OnCellClicked(int32 InRowIndex, int32 InColumnIndex)
 {

@@ -14,10 +14,9 @@
 #include "Fonts/FontMeasure.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Input/SButton.h"
-#include "Widgets/SWindow.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameplayTagContainer.h"
-#include "SGameplayTagCombo.h"
+#include "GameplayTagsManager.h"
 #include "Styling/CoreStyle.h"
 
 #define LOCTEXT_NAMESPACE "SBXStateRelationMatrix"
@@ -30,7 +29,10 @@ void SBXStateRelationMatrix::Construct(const FArguments& InArgs, UBXStateBehavio
 {
 	CachedSettings = InSettings ? InSettings : GetMutableDefault<UBXStateBehaviorSettings>();
 
-	// 矩阵网格容器:后续增删轴只SetContent换网格本体,任何变更都不重建宿主Details视图
+	// 打开页面时轴同步:按已注册Tag自动补齐缺失轴+清未注册残留,零变更零写入
+	EnsureAxesComplete();
+
+	// 矩阵网格容器:后续任何变更都不重建宿主Details视图
 	MatrixContainer = SNew(SBox);
 	MatrixContainer->SetContent(MakeMatrixWidget());
 
@@ -40,6 +42,79 @@ void SBXStateRelationMatrix::Construct(const FArguments& InArgs, UBXStateBehavio
 	];
 }
 
+int32 SBXStateRelationMatrix::EnsureAxesComplete()
+{
+	UBXStateBehaviorSettings* Settings = GetSettings();
+	if (!Settings)
+	{
+		return 0;
+	}
+
+	int32 ChangedCount = 0;
+
+	// 残留清理:两轴数组中未注册的Tag(改名/删除残留)移除
+	for (int32 i = Settings->StateRelationTags.Num() - 1; i >= 0; --i)
+	{
+		if (!UGameplayTagsManager::Get().FindTagNode(Settings->StateRelationTags[i]).IsValid())
+		{
+			Settings->StateRelationTags.RemoveAt(i);
+			++ChangedCount;
+		}
+	}
+	for (int32 i = Settings->BehaviorRelationTags.Num() - 1; i >= 0; --i)
+	{
+		if (!UGameplayTagsManager::Get().FindTagNode(Settings->BehaviorRelationTags[i]).IsValid())
+		{
+			Settings->BehaviorRelationTags.RemoveAt(i);
+			++ChangedCount;
+		}
+	}
+
+	// 自动补齐:行=BXState根下已注册后代(根未注册=无状态Tag,静默跳过),列=BXBehavior根下后代;
+	// 缺失的追加到末尾(不打乱现有顺序)
+	{
+		const FGameplayTag StateRootTag = UGameplayTagsManager::Get().RequestGameplayTag(FName(TEXT("BXState")), false);
+		TArray<FGameplayTag> StateDescendants;
+		if (StateRootTag.IsValid())
+		{
+			CollectTagDescendants(StateRootTag, StateDescendants);
+		}
+		for (const FGameplayTag& AxisTag : StateDescendants)
+		{
+			if (!Settings->StateRelationTags.Contains(AxisTag))
+			{
+				Settings->StateRelationTags.Add(AxisTag);
+				++ChangedCount;
+			}
+		}
+
+		TArray<FGameplayTag> BehaviorDescendants;
+		CollectTagDescendants(BXGameplayTags::BXBehavior_Root.GetTag(), BehaviorDescendants);
+		for (const FGameplayTag& AxisTag : BehaviorDescendants)
+		{
+			if (!Settings->BehaviorRelationTags.Contains(AxisTag))
+			{
+				Settings->BehaviorRelationTags.Add(AxisTag);
+				++ChangedCount;
+			}
+		}
+	}
+
+	// 打开页面零写入(2026-09-16数据损毁教训):轴同步纯内存,仅影响本次渲染;
+	// 状态矩阵无运行时索引,不做打开期关系清理——未注册残留键不可见且无害,待用户显式编辑时自行处置
+	return ChangedCount;
+}
+
+void SBXStateRelationMatrix::CollectTagDescendants(const FGameplayTag& InRootTag, TArray<FGameplayTag>& OutTags) const
+{
+	const FGameplayTagContainer Children = UGameplayTagsManager::Get().RequestGameplayTagChildren(InRootTag);
+	for (const FGameplayTag& Child : Children)
+	{
+		OutTags.AddUnique(Child);
+		CollectTagDescendants(Child, OutTags);
+	}
+}
+
 UBXStateBehaviorSettings* SBXStateRelationMatrix::GetSettings() const
 {
 	return CachedSettings;
@@ -47,7 +122,7 @@ UBXStateBehaviorSettings* SBXStateRelationMatrix::GetSettings() const
 
 FString SBXStateRelationMatrix::GetStateAxisDisplayName(const FGameplayTag& InTag) const
 {
-	// 状态轴显示省略命名空间首段(BXStunState.Knockback → Knockback,未来 BXState.X → X);无点原样显示
+	// 状态轴显示省略命名空间首段(BXState.Knockback → Knockback,未来 BXState.X → X);无点原样显示
 	FString TagString = InTag.GetTagName().ToString();
 	int32 DotIndex = INDEX_NONE;
 	if (TagString.FindChar(TEXT('.'), DotIndex))
@@ -63,6 +138,21 @@ FString SBXStateRelationMatrix::GetBehaviorAxisDisplayName(const FGameplayTag& I
 	FString TagString = InTag.GetTagName().ToString();
 	TagString.RemoveFromStart(BXGameplayTags::BXBehavior_Root.GetTag().GetTagName().ToString() + TEXT("."));
 	return TagString;
+}
+
+FString SBXStateRelationMatrix::GetTagTooltip(const FGameplayTag& InTag) const
+{
+	// 完整名+原生Tag注释(中文说明;UE_DEFINE_GAMEPLAY_TAG_COMMENT 的注释经注册期写入节点 DevComment)
+	FString Tooltip = FString::Printf(TEXT("完整名: %s"), *InTag.ToString());
+	if (TSharedPtr<FGameplayTagNode> TagNode = UGameplayTagsManager::Get().FindTagNode(InTag))
+	{
+		const FString& DevComment = TagNode->GetDevComment();
+		if (!DevComment.IsEmpty())
+		{
+			Tooltip += FString::Printf(TEXT("\n说明: %s"), *DevComment);
+		}
+	}
+	return Tooltip;
 }
 
 TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
@@ -114,14 +204,12 @@ TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
 		];
 	for (int32 Col = 0; Col < ColNum; ++Col)
 	{
-		const int32 ColIndexForHeader = Col;
-
-		// 列头文本(悬停高亮联动染黑,常态=弱化前景;HitTestInvisible 让点击穿透到按钮)
+		// 列头文本(悬停高亮联动染黑,常态=弱化前景;直挂tooltip含完整名+中文说明)
 		TSharedRef<STextBlock> HeaderText = SNew(STextBlock)
 			.Text(FText::FromString(GetBehaviorAxisDisplayName(Settings->BehaviorRelationTags[Col])))
 			.Font(GridFont)
 			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-			.Visibility(EVisibility::HitTestInvisible);
+			.ToolTipText(FText::FromString(GetTagTooltip(Settings->BehaviorRelationTags[Col])));
 		ColumnHeaderWidgets.Add(Col, HeaderText);
 
 		// 列头黄底高亮层(悬停联动点亮)
@@ -141,16 +229,9 @@ TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
 				.WidthOverride(ColumnWidth)
 				.HeightOverride(StateMatrixRowHeight)
 				.VAlign(VAlign_Fill)
+				.ToolTipText(FText::FromString(GetTagTooltip(Settings->BehaviorRelationTags[Col])))
 				[
 					SNew(SOverlay)
-					+ SOverlay::Slot()
-					.HAlign(HAlign_Fill)
-					.VAlign(VAlign_Fill)
-					[
-						SNew(SButton)
-						.OnClicked(FOnClicked::CreateRaw(this, &SBXStateRelationMatrix::OnRemoveBehaviorAxisClicked, ColIndexForHeader))
-						.ToolTipText(FText::FromString(FString::Printf(TEXT("完整名: %s\n点击删除该行为列(连带清除各状态行中对该行为的配置)"), *Settings->BehaviorRelationTags[Col].ToString())))
-					]
 					+ SOverlay::Slot()
 					.HAlign(HAlign_Fill)
 					.VAlign(VAlign_Fill)
@@ -180,14 +261,15 @@ TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
 
 	for (int32 Row = 0; Row < RowNum; ++Row)
 	{
+		// 单元格循环的回调参数与缓存键沿用本行索引(行头按钮删除后仍被单元格使用,勿再清)
 		const int32 RowIndex = Row;
 
-		// 行头文本(悬停高亮联动染黑,常态=标准前景;HitTestInvisible 让点击穿透到按钮)
+		// 行头文本(悬停高亮联动染黑,常态=标准前景;直挂tooltip含完整名+中文说明)
 		TSharedRef<STextBlock> RowLabelText = SNew(STextBlock)
 			.Text(FText::FromString(GetStateAxisDisplayName(Settings->StateRelationTags[Row])))
 			.Font(GridFont)
 			.ColorAndOpacity(FSlateColor::UseForeground())
-			.Visibility(EVisibility::HitTestInvisible);
+			.ToolTipText(FText::FromString(GetTagTooltip(Settings->StateRelationTags[Row])));
 		RowLabelWidgets.Add(Row, RowLabelText);
 
 		// 行头黄底高亮层(悬停联动点亮)
@@ -205,16 +287,9 @@ TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
 			[
 				SNew(SBox)
 				.HeightOverride(StateMatrixRowHeight)
+				.ToolTipText(FText::FromString(GetTagTooltip(Settings->StateRelationTags[Row])))
 				[
 					SNew(SOverlay)
-					+ SOverlay::Slot()
-					.HAlign(HAlign_Fill)
-					.VAlign(VAlign_Fill)
-					[
-						SNew(SButton)
-						.OnClicked(FOnClicked::CreateRaw(this, &SBXStateRelationMatrix::OnRemoveStateAxisClicked, RowIndex))
-						.ToolTipText(FText::FromString(FString::Printf(TEXT("完整名: %s\n点击删除该状态行(连带清除其全部关系配置)"), *Settings->StateRelationTags[Row].ToString())))
-					]
 					+ SOverlay::Slot()
 					.HAlign(HAlign_Fill)
 					.VAlign(VAlign_Fill)
@@ -235,7 +310,7 @@ TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
 		{
 			const int32 ColIndex = Col;
 
-			// 单元格文本(悬停高亮联动染黑,常态=标准前景;HitTestInvisible 让点击穿透到按钮)
+			// 单元格文本(悬停高亮联动染黑,常态=标准前景;HitTestInvisible 让悬停提示穿透到表头容器)
 			TSharedRef<STextBlock> CellText = SNew(STextBlock)
 				.Text(this, &SBXStateRelationMatrix::GetCellText, RowIndex, ColIndex)
 				.Font(GridFont)
@@ -304,15 +379,13 @@ TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
 			];
 	}
 
-	// ── 双向滚动视口(仅网格体):外纵向+内横向,滚动条经 ExternalScrollbar 钉在视口右缘/底缘 ──
-	TSharedRef<SScrollBar> VerticalBar = SNew(SScrollBar)
-		.Orientation(Orient_Vertical)
-		.Thickness(FVector2D(9.0f, 9.0f));
+	// ── 纵向平铺(2026-09-16:无纵向滚动器,矩阵随内容自然展开、随设置页滚动)──
+	// 仅横向滚动:滚动条钉在网格体底缘,横向滚动驱动冻结表头条反向平移;
+	// ConsumeMouseWheel=Never 让纵向滚轮穿透给设置页(鼠标悬在矩阵上滚轮仍滚页面)
 	TSharedRef<SScrollBar> HorizontalBar = SNew(SScrollBar)
 		.Orientation(Orient_Horizontal)
 		.Thickness(FVector2D(9.0f, 9.0f));
 
-	// 内层横向:ConsumeMouseWheel=Never 让纵向滚轮穿透给外层;横向滚动驱动冻结表头条反向平移
 	TSharedRef<SScrollBox> BodyHScroller = SNew(SScrollBox)
 		.Orientation(Orient_Horizontal)
 		.ExternalScrollbar(HorizontalBar)
@@ -329,10 +402,12 @@ TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
 			BodyRows
 		];
 
-	TSharedRef<SScrollBox> BodyVScroller = SNew(SScrollBox)
-		.Orientation(Orient_Vertical)
-		.ExternalScrollbar(VerticalBar)
-		+ SScrollBox::Slot()
+	// 网格体 Overlay:标签列(横向钉住) + 横向滚动区;横向滚动条钉在底缘
+	TSharedRef<SOverlay> BodyViewport = SNew(SOverlay)
+		+ SOverlay::Slot()
+		.HAlign(HAlign_Fill)
+		.VAlign(VAlign_Fill)
+		.Padding(0.0f, 0.0f, 0.0f, 10.0f)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
@@ -348,22 +423,6 @@ TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
 			[
 				BodyHScroller
 			]
-		];
-
-	// 视口 Overlay:两条滚动条钉在右缘/底缘
-	TSharedRef<SOverlay> BodyViewport = SNew(SOverlay)
-		+ SOverlay::Slot()
-		.HAlign(HAlign_Fill)
-		.VAlign(VAlign_Fill)
-		[
-			BodyVScroller
-		]
-		+ SOverlay::Slot()
-		.HAlign(HAlign_Right)
-		.VAlign(VAlign_Fill)
-		.Padding(0.0f, 0.0f, 1.0f, 0.0f)
-		[
-			VerticalBar
 		]
 		+ SOverlay::Slot()
 		.HAlign(HAlign_Fill)
@@ -373,7 +432,7 @@ TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
 			HorizontalBar
 		];
 
-	// ── 组装:轴编辑行(常驻) + 冻结表头条 + 滚动视口;轴多时视口定高内部滚动 ──
+	// ── 组装:说明行 + 冻结表头条 + 平铺网格体(纵向随内容展开,无定高视口) ──
 	TSharedRef<SVerticalBox> MatrixBox = SNew(SVerticalBox);
 
 	MatrixBox->AddSlot()
@@ -385,28 +444,8 @@ TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
-				SNew(SButton)
-				.Text(LOCTEXT("AddStateAxis", "+ 添加状态轴"))
-				.OnClicked(FOnClicked::CreateRaw(this, &SBXStateRelationMatrix::OnAddAxisClicked, true))
-				.ToolTipText(LOCTEXT("AddStateAxisTip", "弹出GameplayTag选择器,仅列出 BXStunState.* 状态Tag(状态Tag树迁移时需同步更新过滤器)"))
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(12.0f, 0.0f, 0.0f, 0.0f)
-			[
-				SNew(SButton)
-				.Text(LOCTEXT("AddBehaviorAxis", "+ 添加行为轴"))
-				.OnClicked(FOnClicked::CreateRaw(this, &SBXStateRelationMatrix::OnAddAxisClicked, false))
-				.ToolTipText(LOCTEXT("AddBehaviorAxisTip", "弹出GameplayTag选择器,仅列出 BXBehavior.* 行为族Tag(如 BXBehavior.Dodge)"))
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(12.0f, 0.0f)
-			[
 				SNew(STextBlock)
-				.Text(LOCTEXT("AxisHint", "点击行头/列头删除对应轴;单元格点击循环:空→禁用→中断→禁用并中断(行=该状态进入时中断哪些行为+存续期禁用哪些行为)"))
+				.Text(LOCTEXT("AxisHint", "轴按已注册Tag自动补齐(行=BXState.*,列=BXBehavior.*);单元格点击循环:空→禁用→中断→禁用并中断(行=该状态进入时中断哪些行为+存续期禁用哪些行为)"))
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 			]
@@ -418,21 +457,10 @@ TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
 			HeaderClip
 		];
 
-	// 轴多时给视口定高(内部纵向滚动),轴少时自然高度随设置页滚动
-	TSharedRef<SWidget> BodyArea = BodyViewport;
-	if (FMath::Max(RowNum, ColNum) >= 10)
-	{
-		BodyArea = SNew(SBox)
-			.HeightOverride(400.0f)
-			[
-				BodyViewport
-			];
-	}
-
 	MatrixBox->AddSlot()
 		.AutoHeight()
 		[
-			BodyArea
+			BodyViewport
 		];
 
 	return MatrixBox;
@@ -540,126 +568,8 @@ void SBXStateRelationMatrix::HandleCellUnhovered(int32 InRowIndex, int32 InColum
 	}
 }
 
-FReply SBXStateRelationMatrix::OnAddAxisClicked(bool bInStateAxis)
-{
-	UBXStateBehaviorSettings* Settings = GetSettings();
-	if (!Settings)
-	{
-		return FReply::Unhandled();
-	}
 
-	// 弹出独立窗口内的Tag选择器(SGameplayTagCombo,选择后落轴)
-	TSharedRef<SWindow> PickerWindow = SNew(SWindow)
-		.Title(bInStateAxis ? LOCTEXT("AddStateAxisWindowTitle", "选择状态轴(状态Tag)") : LOCTEXT("AddBehaviorAxisWindowTitle", "选择行为轴(行为/族Tag)"))
-		.SizingRule(ESizingRule::Autosized)
-		.AutoCenter(EAutoCenter::PrimaryWorkArea);
 
-	TWeakObjectPtr<UBXStateBehaviorSettings> WeakSettings = Settings;
-	TWeakPtr<SWindow> WeakWindow = PickerWindow;
-
-	PickerWindow->SetContent(
-		SNew(SBorder)
-		.Padding(12.0f)
-		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, 0.0f, 0.0f, 8.0f)
-			[
-				SNew(STextBlock)
-				.Text(bInStateAxis
-					? LOCTEXT("AddStateAxisPrompt", "选择加入矩阵行轴的状态Tag(仅列出 BXStunState.* 硬直状态)")
-					: LOCTEXT("AddBehaviorAxisPrompt", "选择加入矩阵列轴的行为Tag(仅列出 BXBehavior.* 行为族,如 BXBehavior.Dodge)"))
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			[
-				SNew(SGameplayTagCombo)
-				// 状态轴过滤器=当前状态命名空间BXStunState(状态Tag树迁移至BXState.*时需同步更新此过滤串);
-				// 行为轴过滤器=BXBehavior行为族根(Filter 为根名串,引擎经 GetFilteredGameplayRootTags 裁剪树根)
-				.Filter(bInStateAxis ? FString(TEXT("BXStunState")) : BXGameplayTags::BXBehavior_Root.GetTag().ToString())
-				.OnTagChanged_Lambda([this, WeakSettings, WeakWindow, bInStateAxis](const FGameplayTag& SelectedTag)
-				{
-					if (!SelectedTag.IsValid())
-					{
-						return;
-					}
-
-					if (UBXStateBehaviorSettings* SettingsPtr = WeakSettings.Get())
-					{
-						if (bInStateAxis)
-						{
-							SettingsPtr->StateRelationTags.AddUnique(SelectedTag);
-						}
-						else
-						{
-							SettingsPtr->BehaviorRelationTags.AddUnique(SelectedTag);
-						}
-						SettingsPtr->SaveToPluginConfig();
-						RebuildMatrixGrid();
-					}
-
-					if (TSharedPtr<SWindow> WindowPin = WeakWindow.Pin())
-					{
-						WindowPin->RequestDestroyWindow();
-					}
-				})
-			]
-		]);
-
-	FSlateApplication::Get().AddWindow(PickerWindow);
-	return FReply::Handled();
-}
-
-FReply SBXStateRelationMatrix::OnRemoveStateAxisClicked(int32 InAxisIndex)
-{
-	UBXStateBehaviorSettings* Settings = GetSettings();
-	if (!Settings || !Settings->StateRelationTags.IsValidIndex(InAxisIndex))
-	{
-		return FReply::Unhandled();
-	}
-
-	const FGameplayTag AxisTag = Settings->StateRelationTags[InAxisIndex];
-
-	// 清除该状态行的全部关系配置(两表行键条目)
-	Settings->InterruptRelations.Remove(AxisTag);
-	Settings->ForbidRelations.Remove(AxisTag);
-
-	// 移除轴本体并收尾(只换网格本体,不重建宿主Details视图)
-	Settings->StateRelationTags.RemoveAt(InAxisIndex);
-	Commit();
-	RebuildMatrixGrid();
-
-	return FReply::Handled();
-}
-
-FReply SBXStateRelationMatrix::OnRemoveBehaviorAxisClicked(int32 InAxisIndex)
-{
-	UBXStateBehaviorSettings* Settings = GetSettings();
-	if (!Settings || !Settings->BehaviorRelationTags.IsValidIndex(InAxisIndex))
-	{
-		return FReply::Unhandled();
-	}
-
-	const FGameplayTag AxisTag = Settings->BehaviorRelationTags[InAxisIndex];
-
-	// 清除各状态行容器中对该行为列的引用
-	for (TPair<FGameplayTag, FGameplayTagContainer>& Pair : Settings->InterruptRelations)
-	{
-		Pair.Value.RemoveTag(AxisTag);
-	}
-	for (TPair<FGameplayTag, FGameplayTagContainer>& Pair : Settings->ForbidRelations)
-	{
-		Pair.Value.RemoveTag(AxisTag);
-	}
-
-	// 移除轴本体并收尾(只换网格本体,不重建宿主Details视图)
-	Settings->BehaviorRelationTags.RemoveAt(InAxisIndex);
-	Commit();
-	RebuildMatrixGrid();
-
-	return FReply::Handled();
-}
 
 FReply SBXStateRelationMatrix::OnCellClicked(int32 InRowIndex, int32 InColumnIndex)
 {
