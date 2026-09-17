@@ -19,7 +19,7 @@ struct BATTLEX_API FBXBeatenTreeCondParam
 public:
 	// 硬直状态
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	FGameplayTag StunState = BXGameplayTags::BXState_Normal;
+	FGameplayTag StunState = BXGameplayTags::BXState_Stun_Normal;
 
 	// 攻击类型
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)

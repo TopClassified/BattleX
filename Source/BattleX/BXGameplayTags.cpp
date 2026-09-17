@@ -12,36 +12,35 @@ namespace BXGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXEvent_State_Exit, "BXEvent.State.Exit", "状态退出(最后来源退出)");
 
 	// 行为族(平铺:全部直接挂在根下,2026-09-01 整理,移除 Locomotion/Attack 分层)
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Root, "BXBehavior", "行为根Tag(持续行为命名空间,激活记录判定用)");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Walk, "BXBehavior.Walk", "走路");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Run, "BXBehavior.Run", "跑步");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Sprint, "BXBehavior.Sprint", "冲刺");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Rotate, "BXBehavior.Rotate", "转向(纯门控域Tag:无CMC事实上报,作为旋转代理注册域,Forbid/矩阵经此路由到bRotateBlocked)");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Jump, "BXBehavior.Jump", "跳跃(瞬间行为)");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Landed, "BXBehavior.Landed", "落地(瞬间行为)");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Falling, "BXBehavior.Falling", "下坠(滞空持续行为:MOVE_Falling且速度不逆重力方向时开始,离开模式或速度转向上时停止)");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_LowSkill, "BXBehavior.LowSkill", "低优先技能(低优先姿态行为域)");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_HighSkill, "BXBehavior.HighSkill", "高优先技能(高优先姿态行为域)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Rotate, "BXBehavior.Rotate", "主动转向");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Jump, "BXBehavior.Jump", "跳跃");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Falling, "BXBehavior.Falling", "下坠(被动行为)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Landed, "BXBehavior.Landed", "落地(被动行为)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_LowSkill, "BXBehavior.LowSkill", "低优先技能");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_HighSkill, "BXBehavior.HighSkill", "高优先技能");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Defense, "BXBehavior.Defense", "防御");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Block, "BXBehavior.Block", "格挡");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Parry, "BXBehavior.Parry", "弹反");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_Dodge, "BXBehavior.Dodge", "闪避");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_PerfectDodge, "BXBehavior.PerfectDodge", "极限闪避");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_ParallelSkill, "BXBehavior.ParallelSkill", "可并行技能(不与其它姿态互斥的姿态行为域)");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXBehavior_ParallelSkill, "BXBehavior.ParallelSkill", "并行技能");
 
 	// 动画(已移出行为族,原 BXBehavior.PlayMontage.Default)
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXMontage_Default, "BXMontage.Default", "播放Montage默认Tag");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXDamageType_Default, "BXDamageType.Default", "默认伤害类型");
 
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Normal, "BXState.Normal", "正常");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Knockback, "BXState.Knockback", "击退");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Knockdown, "BXState.Knockdown", "击倒");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Prone, "BXState.Prone", "击趴");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Ascending, "BXState.Ascending", "上升");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Falling, "BXState.Falling", "下落");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Floating, "BXState.Floating", "滞空");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Execution, "BXState.Execution", "处决");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Stun_Normal, "BXState.Stun.Normal", "无硬直");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Stun_Knockback, "BXState.Stun.Knockback", "被击退");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Stun_Knockdown, "BXState.Stun.Knockdown", "被击倒");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Stun_Prone, "BXState.Stun.Prone", "被击趴");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Stun_Ascending, "BXState.Stun.Ascending", "上飞中");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Stun_AirFall, "BXState.Stun.AirFall", "坠落中");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Stun_Floating, "BXState.Stun.Floating", "滞空");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXState_Stun_Execution, "BXState.Stun.Execution", "被处决");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXAttackType_Light, "BXAttackType.Light", "轻击");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(BXAttackType_KnockBack, "BXAttackType.KnockBack", "击退");

@@ -1,7 +1,6 @@
 #include "SBXStateRelationMatrix.h"
 
 #include "State/BXStateBehaviorSettings.h"
-#include "BXGameplayTags.h"
 
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SNullWidget.h"
@@ -73,7 +72,7 @@ int32 SBXStateRelationMatrix::EnsureAxesComplete()
 	// 自动补齐:行=BXState根下已注册后代(根未注册=无状态Tag,静默跳过),列=BXBehavior根下后代;
 	// 缺失的追加到末尾(不打乱现有顺序)
 	{
-		const FGameplayTag StateRootTag = UGameplayTagsManager::Get().RequestGameplayTag(FName(TEXT("BXState")), false);
+		const FGameplayTag StateRootTag = UGameplayTagsManager::Get().RequestGameplayTag(FName(TEXT("BXState.Stun")), false);
 		TArray<FGameplayTag> StateDescendants;
 		if (StateRootTag.IsValid())
 		{
@@ -89,7 +88,8 @@ int32 SBXStateRelationMatrix::EnsureAxesComplete()
 		}
 
 		TArray<FGameplayTag> BehaviorDescendants;
-		CollectTagDescendants(BXGameplayTags::BXBehavior_Root.GetTag(), BehaviorDescendants);
+		// 根Tag已移除显式定义(2026-09-16):层级由字符串天然构成,树根用字面量隐式节点
+		CollectTagDescendants(FGameplayTag::RequestGameplayTag(FName(TEXT("BXBehavior"))), BehaviorDescendants);
 		for (const FGameplayTag& AxisTag : BehaviorDescendants)
 		{
 			if (!Settings->BehaviorRelationTags.Contains(AxisTag))
@@ -122,7 +122,7 @@ UBXStateBehaviorSettings* SBXStateRelationMatrix::GetSettings() const
 
 FString SBXStateRelationMatrix::GetStateAxisDisplayName(const FGameplayTag& InTag) const
 {
-	// 状态轴显示省略命名空间首段(BXState.Knockback → Knockback,未来 BXState.X → X);无点原样显示
+	// 状态轴显示省略命名空间首段(BXState.Stun.Knockback → Stun.Knockback);无点原样显示
 	FString TagString = InTag.GetTagName().ToString();
 	int32 DotIndex = INDEX_NONE;
 	if (TagString.FindChar(TEXT('.'), DotIndex))
@@ -136,7 +136,7 @@ FString SBXStateRelationMatrix::GetBehaviorAxisDisplayName(const FGameplayTag& I
 {
 	// 行为列与行为关系矩阵同规:省略 BXBehavior. 父族前缀;族外 Tag 原样显示
 	FString TagString = InTag.GetTagName().ToString();
-	TagString.RemoveFromStart(BXGameplayTags::BXBehavior_Root.GetTag().GetTagName().ToString() + TEXT("."));
+	TagString.RemoveFromStart(TEXT("BXBehavior."));
 	return TagString;
 }
 
@@ -445,7 +445,7 @@ TSharedRef<SWidget> SBXStateRelationMatrix::MakeMatrixWidget()
 			.VAlign(VAlign_Center)
 			[
 				SNew(STextBlock)
-				.Text(LOCTEXT("AxisHint", "轴按已注册Tag自动补齐(行=BXState.*,列=BXBehavior.*);单元格点击循环:空→禁用→中断→禁用并中断(行=该状态进入时中断哪些行为+存续期禁用哪些行为)"))
+				.Text(LOCTEXT("AxisHint", "轴按已注册Tag自动补齐(行=BXState.Stun.*,列=BXBehavior.*);单元格点击循环:空→禁用→中断→禁用并中断(行=该状态进入时中断哪些行为+存续期禁用哪些行为)"))
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
 				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 			]

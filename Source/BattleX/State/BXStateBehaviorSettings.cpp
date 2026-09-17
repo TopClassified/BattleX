@@ -11,6 +11,11 @@ void UBXStateBehaviorSettings::SaveToPluginConfig()
 	// 与插件层副本形成两份漂移;显式传 Filename 落插件文件(读取侧 PostInitProperties 亦直读该文件)
 	const TCHAR* ConfigSectionName = TEXT("/Script/BattleX.BXStateBehaviorSettings");
 	const FString PluginIniPath = GetPluginConfigIniPath();
+	// 根因修复(2026-09-17,三次数据损毁后定位):SaveConfig对配置系统里无branch的文件走"临时branch"路径——
+	// AddNewBranch创建空内存文件、从不加载磁盘已有内容,Flush时整体覆写目标文件,其余节全部丢失
+	// (Obj.cpp UObject::SaveConfig + ConfigCacheIni SaveBranch/WriteToString,文件头";METADATA=(Diff=true...)"即其指纹);
+	// LoadFile先把完整磁盘文件(含其他类节的全部数据)注册为常驻branch,SaveConfig随后走差量Set,Flush保留全部节
+	GConfig->LoadFile(PluginIniPath);
 	if (!PluginIniPath.IsEmpty())
 	{
 		SaveConfig(CPF_Config, *PluginIniPath);

@@ -9,11 +9,24 @@
 
 void UBXBehaviorSettings::SaveToPluginConfig()
 {
+	// 空轴防御(2026-09-16 两次数据损毁事故后):自动补齐后轴不可能为空,空轴=加载失败/缓存异常的形态,
+	// 此时落盘会把空数据写进文件造成关系清盘——拒绝写入并告警
+	if (RelationTags.IsEmpty())
+	{
+		UE_LOG(LogTemp, Error, TEXT("UBXBehaviorSettings::SaveToPluginConfig: RelationTags is empty (config load failure?), write refused to protect existing ini data."));
+		return;
+	}
+
 	// 变更落盘+重建运行时索引(轻量,单元格点击高频路径)
 	// 行为关系配置写入插件 Config 目录(随插件分发):SaveConfig 默认落点是项目 Config/DefaultBattleX.ini,
 	// 与插件层副本形成两份漂移;显式传 Filename 落插件文件(读取侧 PostInitProperties 亦直读该文件)
 	const TCHAR* ConfigSectionName = TEXT("/Script/BattleX.BXBehaviorSettings");
 	const FString PluginIniPath = GetPluginConfigIniPath();
+	// 根因修复(2026-09-17,三次数据损毁后定位):SaveConfig对配置系统里无branch的文件走"临时branch"路径——
+	// AddNewBranch创建空内存文件、从不加载磁盘已有内容,Flush时整体覆写目标文件,其余节全部丢失
+	// (Obj.cpp UObject::SaveConfig + ConfigCacheIni SaveBranch/WriteToString,文件头";METADATA=(Diff=true...)"即其指纹);
+	// LoadFile先把完整磁盘文件(含其他类节的全部数据)注册为常驻branch,SaveConfig随后走差量Set,Flush保留全部节
+	GConfig->LoadFile(PluginIniPath);
 	if (!PluginIniPath.IsEmpty())
 	{
 		SaveConfig(CPF_Config, *PluginIniPath);

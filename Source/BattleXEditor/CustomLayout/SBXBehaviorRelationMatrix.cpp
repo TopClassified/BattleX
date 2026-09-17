@@ -1,7 +1,6 @@
 #include "SBXBehaviorRelationMatrix.h"
 
 #include "Behavior/BXBehaviorSettings.h"
-#include "BXGameplayTags.h"
 
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SNullWidget.h"
@@ -288,7 +287,8 @@ int32 SBXBehaviorRelationMatrix::EnsureAxesComplete()
 
 	// 自动补齐:BXBehavior根下已注册后代缺失的追加到末尾(不打乱现有顺序,拖拽排序成果保留)
 	TArray<FGameplayTag> Descendants;
-	CollectTagDescendants(BXGameplayTags::BXBehavior_Root.GetTag(), Descendants);
+	// 根Tag已移除显式定义(2026-09-16):层级由字符串天然构成,树根用字面量隐式节点
+	CollectTagDescendants(FGameplayTag::RequestGameplayTag(FName(TEXT("BXBehavior"))), Descendants);
 	for (const FGameplayTag& AxisTag : Descendants)
 	{
 		if (!Settings->RelationTags.Contains(AxisTag))
@@ -322,7 +322,7 @@ FString SBXBehaviorRelationMatrix::GetAxisDisplayName(const FGameplayTag& InTag)
 {
 	// 矩阵轴全部位于 BXBehavior.* 行为族下,UI 显示省略父族前缀;族外 Tag 原样显示
 	FString TagString = InTag.GetTagName().ToString();
-	TagString.RemoveFromStart(BXGameplayTags::BXBehavior_Root.GetTag().GetTagName().ToString() + TEXT("."));
+	TagString.RemoveFromStart(TEXT("BXBehavior."));
 	return TagString;
 }
 
